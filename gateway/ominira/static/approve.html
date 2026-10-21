@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Òmìnira approvals</title>
+<style>
+  :root {
+    --bg: #f6f3ec; --panel: #ffffff; --ink: #14201a; --soft: #4d5a52; --line: #d9d3c6;
+    --go: #106b43; --go-ink: #ffffff; --stop: #a8321f; --focus: #c77d00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0d1813; --panel: #16251e; --ink: #f2eee4; --soft: #b3beb6; --line: #2b3d34;
+            --go: #6fd3a0; --go-ink: #06170f; --stop: #ff9a86; --focus: #f2b33d; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 18px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 34rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+  .eyebrow { color: var(--soft); font-size: 0.95rem; margin: 0; }
+  h1 { font-size: 1.7rem; line-height: 1.2; margin: 0.25rem 0 0.5rem; }
+  #note { color: var(--soft); min-height: 1.5em; margin: 0 0 1rem; }
+  article { background: var(--panel); border: 1px solid var(--line); border-radius: 1rem; padding: 1.1rem 1.1rem 1.2rem; margin-top: 1rem; }
+  .who { color: var(--soft); margin: 0; }
+  .amount { font-size: 2.3rem; font-weight: 800; margin: 0.1rem 0; letter-spacing: -0.01em; }
+  .to { margin: 0; }
+  .when { color: var(--soft); font-size: 0.9rem; margin: 0.4rem 0 0; }
+  .actions { display: flex; gap: 0.75rem; margin-top: 1.1rem; }
+  button { flex: 1; min-height: 3.75rem; border-radius: 0.85rem; font: 700 1.15rem system-ui, sans-serif; cursor: pointer; }
+  button:focus-visible { outline: 4px solid var(--focus); outline-offset: 3px; }
+  button[disabled] { opacity: 0.5; cursor: default; }
+  .approve { background: var(--go); color: var(--go-ink); border: 0; }
+  .decline { background: transparent; color: var(--ink); border: 2px solid var(--soft); }
+  .outcome { font-weight: 700; margin: 0.8rem 0 0; }
+  .outcome.good { color: var(--go); }
+  .outcome.bad { color: var(--stop); }
+</style>
+</head>
+<body>
+<main>
+  <p class="eyebrow">Òmìnira, trusted approver</p>
+  <h1>Requests for you</h1>
+  <p id="note" role="status" aria-live="polite">Checking for requests.</p>
+  <div id="list"></div>
+</main>
+<script>
+(() => {
+  const token = new URLSearchParams(location.search).get("token") || "demo-approver";
+  const list = document.getElementById("list");
+  const note = document.getElementById("note");
+  let shown = "";
+  let keepNoteUntil = 0;
+
+  const OUTCOME = {
+    approved: d => d === "executed" ? "You approved. The money has gone." : d === "processing" ? "You approved. The money is on its way." : "You approved.",
+    declined: () => "You declined. Nothing was sent.",
+    expired: () => "This waited too long and expired. Nothing was sent.",
+    withdrawn: () => "Cancelled by the sender. Nothing was sent.",
+  };
+
+  async function call(path, init = {}) {
+    const res = await fetch(path, {
+      ...init,
+      headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json", ...(init.headers || {}) },
+    });
+    let body = {};
+    try { body = await res.json(); } catch (_) {}
+    return { ok: res.ok, body };
+  }
+
+  function el(tag, cls, text) {
+    const node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function when(iso) {
+    const mins = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60000));
+    return mins === 0 ? "Asked just now" : mins === 1 ? "Asked a minute ago" : `Asked ${mins} minutes ago`;
+  }
+
+  function draw(items) {
+    const key = JSON.stringify(items.map(i => [i.id, i.status, i.draft_status]));
+    const pending = items.filter(i => i.status === "pending");
+    if (Date.now() > keepNoteUntil) {
+      note.textContent = pending.length
+        ? (pending.length === 1 ? "One request is waiting for your answer." : `${pending.length} requests are waiting for your answer.`)
+        : "Nothing is waiting. This page checks every two seconds.";
+    }
+    if (key === shown) return;
+    shown = key;
+    list.replaceChildren();
+    for (const item of items.slice(0, 6)) {
+      const card = el("article");
+      card.setAttribute("aria-label", `${item.customer} wants to send ${item.amount_text} to ${item.to}`);
+      card.append(el("p", "who", `${item.customer} wants to send`));
+      card.append(el("p", "amount", item.amount_text));
+      card.append(el("p", "to", `to ${item.to}, ${item.bank}, ending ${item.account_last4}`));
+      card.append(el("p", "when", when(item.asked_at)));
+      if (item.status === "pending") {
+        const row = el("div", "actions");
+        const yes = el("button", "approve", "Approve");
+        const no = el("button", "decline", "Decline");
+        yes.type = no.type = "button";
+        yes.addEventListener("click", () => decide(item.id, "approve", [yes, no]));
+        no.addEventListener("click", () => decide(item.id, "decline", [yes, no]));
+        row.append(yes, no);
+        card.append(row);
+      } else {
+        const text = (OUTCOME[item.status] || (() => item.status))(item.draft_status);
+        card.append(el("p", "outcome " + (item.status === "approved" ? "good" : "bad"), text));
+      }
+      list.append(card);
+    }
+  }
+
+  async function decide(id, decision, buttons) {
+    buttons.forEach(b => { b.disabled = true; });
+    try {
+      const res = await call(`/v1/approvals/${encodeURIComponent(id)}/decision`, {
+        method: "POST",
+        headers: { "Idempotency-Key": `${id}:${decision}` },
+        body: JSON.stringify({ decision }),
+      });
+      note.textContent = res.body.say || (res.ok ? "Done." : (res.body.title || "That did not go through. Try again."));
+    } catch (_) {
+      note.textContent = "Could not reach Òmìnira. Try again.";
+      buttons.forEach(b => { b.disabled = false; });
+    }
+    keepNoteUntil = Date.now() + 6000;
+    shown = "";
+    poll();
+  }
+
+  async function poll() {
+    try {
+      const res = await call("/v1/approvals");
+      if (res.ok) draw(res.body);
+      else note.textContent = res.body.title || "This link is not working.";
+    } catch (_) {
+      note.textContent = "Could not reach Òmìnira. Trying again.";
+    }
+  }
+
+  poll();
+  setInterval(poll, 2000);
+})();
+</script>
+</body>
+</html>
