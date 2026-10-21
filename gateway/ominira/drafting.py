@@ -4,9 +4,10 @@ reads the readback aloud, and only the confirm gate can carry it out."""
 import secrets
 from datetime import timedelta
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ominira import audit_log, lines, readback
+from ominira import audit_log, lines, ratelimit, readback
 from ominira.core import base, get_core
 from ominira.core.base import CoreError, NameEnquiry
 from ominira.database import iso, utcnow
@@ -34,7 +35,12 @@ def enquiry_problem(err: CoreError, lang: str, bank_label: str) -> Problem:
                    lines.say(lang, "bank_unavailable", bank=bank_label), retry_after=30, zenith_code=err.code)
 
 
-def enquire_account(lang: str, bank_code: str, number: str) -> NameEnquiry:
+def enquire_account(lang: str, bank_code: str, number: str, *, limit_for: str | None = None) -> NameEnquiry:
+    """Name enquiry for an account. With `limit_for` (a customer id) it counts against that
+    customer's new-account limit, wherever it comes from: lookup, draft or assistant. Re-checks
+    of a draft the customer already made do not count."""
+    if limit_for is not None:
+        ratelimit.allow(f"lookup:{limit_for}", settings.lookups_per_minute, "Too many name enquiries")
     core = get_core()
     bank = core.bank(bank_code)
     try:
@@ -50,11 +56,33 @@ def enquire_payee(lang: str, customer: Customer, payee: Payee) -> NameEnquiry:
         raise enquiry_problem(err, lang, payee.bank) from err
 
 
+def known_payee(db: Session, customer: Customer, bank_code: str, number: str) -> Payee | None:
+    """The saved payee behind an account number, if the customer has one. Paying a flagged or new
+    person by typing their number must count exactly like paying them by name."""
+    ref = get_core().find_beneficiary(customer.core_ref, bank_code, number)
+    if ref is None:
+        return None
+    return db.scalars(select(Payee).where(Payee.customer_id == customer.id, Payee.beneficiary_ref == ref)).first()
+
+
+def attach_known_payee(db: Session, customer: Customer, draft: Draft) -> Payee | None:
+    """For a draft made from an account number: if that account is now a saved payee (saved or
+    flagged since the draft was made), treat the draft as a payment to that payee."""
+    if draft.kind != "transfer" or draft.payload.get("payee_id") or not draft.payload.get("account_number"):
+        return payee_of(db, draft)
+    payee = known_payee(db, customer, draft.payload["bank_code"], draft.payload["account_number"])
+    if payee is not None:
+        payload = {k: v for k, v in draft.payload.items() if k not in ("account_number",)}
+        payload["payee_id"] = payee.id
+        draft.payload = payload
+    return payee
+
+
 def _flag_warning(lang: str, payee: Payee | None) -> str | None:
     return lines.say(lang, "payee_flagged") if payee is not None and payee.flagged else None
 
 
-def _transfer_readback(lang: str, enquiry: NameEnquiry, amount_kobo: int, payee: Payee | None) -> dict:
+def transfer_readback(lang: str, enquiry: NameEnquiry, amount_kobo: int, payee: Payee | None) -> dict:
     return readback.for_transfer(lang, name=readback.nip_name(enquiry.account_name), bank=enquiry.bank.short,
                                  last4=enquiry.last4, amount_kobo=amount_kobo, warning=_flag_warning(lang, payee))
 
@@ -67,6 +95,8 @@ def _store(db: Session, customer: Customer, kind: str, payload: dict, rb: dict, 
     db.commit()
     audit_log.record("draft_created", actor=actor, customer_id=customer.id, draft_id=draft.id, kind=kind,
                      source=source, amount_kobo=rb.get("amount_kobo"), account_last4=rb.get("account_last4"))
+    from ominira.gate import sweep_expired  # here, not at the top: gate imports this module
+    sweep_expired(db)
     return draft
 
 
@@ -80,17 +110,21 @@ def new_transfer(db: Session, customer: Customer, *, amount_kobo: int, payee_id:
         payee = db.get(Payee, payee_id)
         if payee is None or payee.customer_id != customer.id:
             raise Problem(404, "payee_not_found", "No such payee")
-        enquiry = enquire_payee(lang, customer, payee)
-        payload = {"amount_kobo": amount_kobo, "payee_id": payee.id}
     elif bank_code and account_number:
-        payee = None
-        enquiry = enquire_account(lang, bank_code, account_number)
-        # Kept only while the draft is open: the gate repeats the name enquiry before sending.
-        payload = {"amount_kobo": amount_kobo, "bank_code": bank_code, "account_number": account_number}
+        account_number = account_number.strip()
+        payee = known_payee(db, customer, bank_code, account_number)
     else:
         raise Problem(422, "invalid_request", "Give payee_id, or bank_code and account_number")
+
+    if payee is not None:
+        enquiry = enquire_payee(lang, customer, payee)
+        payload = {"amount_kobo": amount_kobo, "payee_id": payee.id}
+    else:
+        enquiry = enquire_account(lang, bank_code, account_number, limit_for=customer.id)
+        # Kept only while the draft is open: the gate repeats the name enquiry before sending.
+        payload = {"amount_kobo": amount_kobo, "bank_code": bank_code, "account_number": account_number}
     payload["enquiry_ref"] = enquiry.ref
-    rb = _transfer_readback(lang, enquiry, amount_kobo, payee)
+    rb = transfer_readback(lang, enquiry, amount_kobo, payee)
     return _store(db, customer, "transfer", payload, rb, source, actor)
 
 
@@ -107,7 +141,7 @@ def new_card_block(db: Session, customer: Customer, *, card_id: str, source: str
 
 def payee_of(db: Session, draft: Draft) -> Payee | None:
     pid = draft.payload.get("payee_id")
-    return db.get(Payee, pid) if pid else None
+    return db.get(Payee, pid, populate_existing=True) if pid else None
 
 
 def rebuild_readback(db: Session, customer: Customer, draft: Draft) -> tuple[dict, str | None]:
@@ -119,12 +153,12 @@ def rebuild_readback(db: Session, customer: Customer, draft: Draft) -> tuple[dic
         if card is None or card.status == "blocked":
             raise Problem(409, "already_blocked", "That card is already blocked", lines.say(lang, "card_blocked"))
         return readback.for_card_block(lang, last4=card.last4), None
-    payee = payee_of(db, draft)
+    payee = attach_known_payee(db, customer, draft)
     if payee is not None:
         enquiry = enquire_payee(lang, customer, payee)
     else:
         enquiry = enquire_account(lang, draft.payload["bank_code"], draft.payload["account_number"])
-    return _transfer_readback(lang, enquiry, draft.payload["amount_kobo"], payee), enquiry.ref
+    return transfer_readback(lang, enquiry, draft.payload["amount_kobo"], payee), enquiry.ref
 
 
 def view(draft: Draft) -> dict:

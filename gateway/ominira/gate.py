@@ -3,7 +3,8 @@
 POST /v1/drafts/{id}/confirm runs these checks in order; the first that fails decides the answer.
 
   1. Real draft: this customer's, open, not expired.
-  2. Heard it: name enquiry again, rebuild the readback; its hash must equal the one sent.
+  2. Heard it: name enquiry again, rebuild the readback; its hash must equal the one sent. A draft
+     typed as an account number that belongs to a saved payee is treated as that payee.
   3. Limits (transfers): Zenith per-transaction and daily, then the customer's own lower daily limit.
   4. Scam pause (transfers): (new payee AND amount at or over the pause threshold AND a call is
      active) OR the payee is flagged, unless the customer already answered a pause on this draft.
@@ -13,40 +14,32 @@ POST /v1/drafts/{id}/confirm runs these checks in order; the first that fails de
      not authorise, and an approved draft goes without a second PIN.
   7. Execute with Zenith idempotency key "{draft_id}:{attempt}". The draft is marked processing
      before the call, so nothing can send it twice. A timeout or "in progress" keeps the key and
-     is re-queried by key. Only a definite "not sent" (91, 96) moves the attempt on.
+     the draft stays processing until Zenith gives a final answer for that key; only a definite
+     "not sent" (91, 96) moves the attempt on.
   8. Audit (hash-chained) and answer with `say`.
 
-Every state change on a draft happens under that draft's lock, so a double tap, a cancel and an
-approver's yes can never interleave. On Postgres the row is also locked with SELECT ... FOR UPDATE.
+Locks (see locks.py): every change to a draft happens under that draft's lock, and for transfers
+the limit check and the transfer run under the customer's lock, so a double tap, a cancel, an
+approver's yes and a second draft can never interleave. On Postgres the draft row is also locked
+with SELECT ... FOR UPDATE.
 """
 
-import threading
 import time
-import zlib
-from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from ominira import amounts, audit_log, drafting, lines, readback
+from ominira import amounts, audit_log, drafting, lines, pin, readback
 from ominira.core import base, get_core
 from ominira.core.base import CoreTimeout, MoveResult
 from ominira.database import is_postgres, utcnow
+from ominira.locks import customer_lock, draft_lock
 from ominira.problems import Problem
 from ominira.security import Caller
 from ominira.settings import settings
 from ominira.tables import Approval, Approver, Customer, Draft, Payee
-
-_STRIPES = [threading.Lock() for _ in range(64)]
-
-
-@contextmanager
-def draft_lock(draft_id: str):
-    lock = _STRIPES[zlib.crc32(draft_id.encode()) % len(_STRIPES)]
-    with lock:
-        yield
 
 
 @dataclass
@@ -71,21 +64,12 @@ def _key(draft: Draft) -> str:
     return f"{draft.id}:{draft.attempt}"
 
 
-def _set_payload(draft: Draft, **changes) -> None:
-    payload = dict(draft.payload)
-    for k, v in changes.items():
-        if v is None:
-            payload.pop(k, None)
-        else:
-            payload[k] = v
-    draft.payload = payload  # a new dict, so the JSON column is marked changed
-
-
 def _close(draft: Draft, status: str, say: str) -> None:
     """Every way a draft ends. A full account number never outlives an open draft."""
     draft.status = status
     draft.last_say = say
-    _set_payload(draft, account_number=None, unsure_key=None)
+    if "account_number" in draft.payload:
+        draft.payload = {k: v for k, v in draft.payload.items() if k != "account_number"}
 
 
 def _active_approver(db: Session, customer_id: str) -> Approver | None:
@@ -111,9 +95,18 @@ def _pause_line(db: Session, draft: Draft, lang: str) -> str:
     return lines.say(lang, "pause_flagged" if payee is not None and payee.flagged else "pause")
 
 
+def _withdraw(db: Session, draft: Draft) -> int:
+    count = 0
+    for approval in db.scalars(select(Approval).where(Approval.draft_id == draft.id, Approval.status == "pending")):
+        approval.status, approval.decided_at = "withdrawn", utcnow()
+        count += 1
+    return count
+
+
 def _expire_if_due(db: Session, draft: Draft, customer: Customer) -> bool:
     """Drafts older than ten minutes expire. A co-approver who has not answered within the approval
-    lifetime lets the request expire, so a late yes can never send money on an old readback."""
+    lifetime lets the request expire, so a late yes can never send money on an old readback.
+    A processing draft never expires: its outcome is Zenith's to give."""
     now = utcnow()
     if draft.status in ("awaiting_confirm", "paused") and now > draft.expires_at:
         _close(draft, "expired", lines.say(customer.lang, "draft_expired"))
@@ -163,11 +156,12 @@ def _check_heard(db: Session, customer: Customer, draft: Draft, client_hash: str
             db.commit()
         raise
     if enquiry_ref:
-        _set_payload(draft, enquiry_ref=enquiry_ref)
+        draft.payload = draft.payload | {"enquiry_ref": enquiry_ref}
     fresh = readback.readback_hash(rb)
-    if fresh != draft.readback_hash:
+    changed = fresh != draft.readback_hash
+    draft.readback, draft.readback_hash = rb, fresh  # also picks up a new warning line
+    if changed:
         # The world changed since the customer heard it: a name or an account changed at the bank.
-        draft.readback, draft.readback_hash = rb, fresh
         draft.last_say = lines.say(lang, "readback_mismatch")
         db.commit()
         audit_log.record("readback_changed", actor="system", customer_id=customer.id, draft_id=draft.id)
@@ -211,7 +205,6 @@ def _confirm(db: Session, caller: Caller, draft_id: str, client_hash: str, pin_b
              call_active: bool) -> Answer:
     customer = db.get(Customer, caller.customer.id, populate_existing=True)
     lang = customer.lang
-    core = get_core()
 
     # 1. Real draft.
     draft = _load(db, draft_id, customer.id, lang)
@@ -230,8 +223,12 @@ def _confirm(db: Session, caller: Caller, draft_id: str, client_hash: str, pin_b
     # 2. Heard it.
     _check_heard(db, customer, draft, client_hash)
 
-    amount = draft.payload.get("amount_kobo") or 0
-    if draft.kind == "transfer":
+    if draft.kind == "card_block":
+        pin.require(customer, caller.token, pin_block, purpose="confirm", draft_id=draft.id)  # 5
+        return _execute(db, draft, customer, actor="customer")  # 7 and 8
+
+    with customer_lock(customer.id):
+        amount = draft.payload["amount_kobo"]
         # 3. Limits.
         problem = _limit_problem(customer, amount)
         if problem is not None:
@@ -251,16 +248,10 @@ def _confirm(db: Session, caller: Caller, draft_id: str, client_hash: str, pin_b
                              amount_kobo=amount, new_payee=is_new, flagged=flagged, call_active=bool(call_active))
             raise Problem(409, "pause_required", "Scam pause", draft.last_say, draft_id=draft.id)
 
-    # 5. Pulse PIN. Only ok or tries left comes back; the block itself goes nowhere else.
-    pin = core.verify_pin(customer.core_ref, pin_block)
-    if not pin.ok:
-        audit_log.record("pin_incorrect", actor="customer", customer_id=customer.id, draft_id=draft.id,
-                         tries_left=pin.tries_left)
-        raise Problem(401, "pin_incorrect", "The PIN did not match", lines.pin_wrong(lang, pin.tries_left),
-                      tries_left=pin.tries_left)
+        # 5. Pulse PIN.
+        pin.require(customer, caller.token, pin_block, purpose="confirm", draft_id=draft.id)
 
-    # 6. Co-approver.
-    if draft.kind == "transfer":
+        # 6. Co-approver.
         approver = _active_approver(db, customer.id)
         if approver is not None and amount > approver.threshold_kobo:
             approval = Approval(id=drafting.new_id("apv_"), draft_id=draft.id, approver_id=approver.id)
@@ -274,8 +265,8 @@ def _confirm(db: Session, caller: Caller, draft_id: str, client_hash: str, pin_b
             return Answer(202, {"status": "awaiting_approval", "code": "approval_required",
                                 "approver": approver.name, "say": draft.last_say})
 
-    # 7 and 8.
-    return _execute(db, draft, customer, actor="customer")
+        # 7 and 8.
+        return _execute(db, draft, customer, actor="customer")
 
 
 # ---- steps 7 and 8 ------------------------------------------------------------------------------
@@ -291,66 +282,59 @@ def _requery(key: str) -> MoveResult:
     return result
 
 
-def _execute(db: Session, draft: Draft, customer: Customer, actor: str) -> Answer:
+def _send(customer: Customer, draft: Draft) -> MoveResult | None:
+    """One call to the core under the draft's current key. None means no answer (a timeout)."""
     core = get_core()
     key = _key(draft)
+    try:
+        if draft.kind == "card_block":
+            return core.block_card(customer.core_ref, draft.payload["card_id"], key)
+        return core.transfer(customer.core_ref, draft.payload["enquiry_ref"], draft.payload["amount_kobo"], key,
+                             narration=f"Ominira {draft.id}")
+    except CoreTimeout:
+        audit_log.record("core_timeout", actor="system", customer_id=customer.id, draft_id=draft.id, key=key)
+        return None
+
+
+def _execute(db: Session, draft: Draft, customer: Customer, actor: str) -> Answer:
+    key = _key(draft)
     # Mark the intent first. A second request now sees "processing" and can never send this
-    # draft again; after a crash, GET /v1/drafts/{id} re-checks the key.
+    # draft again, and after a crash GET /v1/drafts/{id} re-checks the same key.
     draft.status = "processing"
-    _set_payload(draft, unsure_key=None)
     db.commit()
     audit_log.record("sending", actor=actor, customer_id=customer.id, draft_id=draft.id, key=key,
                      kind=draft.kind, amount_kobo=draft.payload.get("amount_kobo"))
 
-    if draft.kind == "card_block":
-        try:
-            result = core.block_card(customer.core_ref, draft.payload["card_id"], key)
-        except CoreTimeout:
-            result = core.block_card(customer.core_ref, draft.payload["card_id"], key)  # same key: safe
-        return _settle(db, draft, customer, result, actor)
-
-    try:
-        result = core.transfer(customer.core_ref, draft.payload["enquiry_ref"], draft.payload["amount_kobo"], key,
-                               narration=f"Ominira {draft.id}")
-    except CoreTimeout:
-        audit_log.record("core_timeout", actor="system", customer_id=customer.id, draft_id=draft.id, key=key)
-        result = _requery(key)
-        if result.code == base.NO_RECORD:
-            # The request never arrived. Nothing was sent, and the key stays the same, so a
-            # late arrival and a retry are one and the same transfer.
-            return _not_arrived(db, draft, customer, key)
-    if result.in_progress:
+    result = _send(customer, draft)
+    if result is None:
+        # No answer: the request may still arrive. "No record" now means "not yet", never
+        # "nothing sent", so the draft stays processing and is re-checked by the same key.
+        result = _requery(key) if draft.kind == "transfer" else None
+        if result is None or result.code == base.NO_RECORD:
+            return _still_processing(db, draft, customer, None, actor)
+    elif result.in_progress:
         result = _requery(key)
     return _settle(db, draft, customer, result, actor)
 
 
-def _not_arrived(db: Session, draft: Draft, customer: Customer, key: str) -> Answer:
-    bank = draft.readback.get("bank") or "The other bank"
-    draft.status = "awaiting_confirm"
-    draft.last_say = lines.say(customer.lang, "bank_unavailable", bank=bank)
-    _set_payload(draft, unsure_key=key)
+def _still_processing(db: Session, draft: Draft, customer: Customer, reference: str | None, actor: str) -> Answer:
+    draft.status = "processing"
+    if reference:
+        draft.reference = reference
+    draft.last_say = lines.say(customer.lang, "processing")
     db.commit()
-    audit_log.record("not_sent", actor="system", customer_id=customer.id, draft_id=draft.id, key=key,
-                     zenith_code="timeout")
-    raise Problem(503, "bank_unavailable", "No answer from the bank", draft.last_say, retry_after=30,
-                  zenith_code="timeout")
+    audit_log.record("in_progress", actor=actor, customer_id=customer.id, draft_id=draft.id, reference=reference)
+    return Answer(202, {"status": "processing", "code": "processing", "reference": draft.reference,
+                        "say": draft.last_say})
 
 
 def _settle(db: Session, draft: Draft, customer: Customer, result: MoveResult, actor: str) -> Answer:
-    """Turn the core's answer into the draft's new state and the customer's answer."""
+    """Turn the core's final or in-progress answer into the draft's new state and the answer."""
     lang = customer.lang
-    _set_payload(draft, unsure_key=None)  # the outcome is known now
     if result.done:
         return _finish(db, draft, customer, result, actor)
     if result.in_progress:
-        draft.status = "processing"
-        draft.reference = result.reference
-        draft.last_say = lines.say(lang, "processing")
-        db.commit()
-        audit_log.record("in_progress", actor=actor, customer_id=customer.id, draft_id=draft.id,
-                         reference=result.reference)
-        return Answer(202, {"status": "processing", "code": "processing", "reference": result.reference,
-                            "say": draft.last_say})
+        return _still_processing(db, draft, customer, result.reference, actor)
 
     key = _key(draft)
     bank = draft.readback.get("bank") or "The other bank"
@@ -392,7 +376,7 @@ def _save_new_payee(db: Session, draft: Draft, customer: Customer) -> Payee:
                       account_last4=draft.readback["account_last4"], beneficiary_ref=ben_ref)
         db.add(payee)
         db.flush()
-    _set_payload(draft, payee_id=payee.id)
+    draft.payload = draft.payload | {"payee_id": payee.id}
     return payee
 
 
@@ -426,7 +410,7 @@ def _finish(db: Session, draft: Draft, customer: Customer, result: MoveResult, a
     return Answer(200, {"status": "executed", "reference": result.reference, "say": line})
 
 
-# ---- re-checks for GET ----------------------------------------------------------------------------
+# ---- re-checks and sweeps -----------------------------------------------------------------------
 
 def refresh(db: Session, caller: Caller, draft_id: str) -> Draft:
     """GET /v1/drafts/{id}: expire what is stale, and re-check a transfer that is on its way."""
@@ -434,31 +418,45 @@ def refresh(db: Session, caller: Caller, draft_id: str) -> Draft:
         customer = db.get(Customer, caller.customer.id, populate_existing=True)
         draft = _load(db, draft_id, customer.id, customer.lang)
         _expire_if_due(db, draft, customer)
-        unsure = draft.payload.get("unsure_key")
-        if draft.status == "processing" or (draft.status == "awaiting_confirm" and unsure):
-            _recheck(db, draft, customer, unsure or _key(draft))
+        if draft.status == "processing":
+            _recheck(db, draft, customer)
         return draft
 
 
-def _recheck(db: Session, draft: Draft, customer: Customer, key: str) -> None:
-    core = get_core()
-    if draft.kind == "card_block":
-        result = core.block_card(customer.core_ref, draft.payload["card_id"], key)
+def _recheck(db: Session, draft: Draft, customer: Customer) -> None:
+    """Ask Zenith about the draft's key. If Zenith has no record (a timeout, or a crash between
+    marking and sending), send it again under the same key: a late arrival and the resend are one
+    and the same transfer, so this can never pay twice."""
+    if draft.kind == "transfer":
+        result = get_core().transfer_status(_key(draft))
+        if result.code == base.NO_RECORD:
+            result = _send(customer, draft)
     else:
-        result = core.transfer_status(key)
-    if result.code == base.NO_RECORD:
-        if draft.status == "processing":
-            # Marked as sending but the core never got it (a crash between the two). Same key next time.
-            draft.status = "awaiting_confirm"
-            _set_payload(draft, unsure_key=key)
-            db.commit()
+        result = _send(customer, draft)  # block_card is idempotent on the key
+    if result is None or (result.in_progress and draft.status == "processing" and draft.reference == result.reference):
         return
-    if result.in_progress and draft.status == "processing":
-        return
-    try:
-        _settle(db, draft, customer, result, actor="system")
-    except Problem:
-        pass  # the draft now carries the outcome and its line
+    with customer_lock(customer.id):
+        try:
+            _settle(db, draft, customer, result, actor="system")
+        except Problem:
+            pass  # the draft now carries the outcome and its line
+
+
+def sweep_expired(db: Session) -> int:
+    """Close every draft and approval that has run out of time, so nothing waits on an old
+    readback and no full account number lingers. Runs at start and after each new draft."""
+    now = utcnow()
+    candidates = db.scalars(select(Draft.id).where(or_(
+        Draft.status == "awaiting_approval",
+        (Draft.status.in_(("awaiting_confirm", "paused"))) & (Draft.expires_at < now),
+    ))).all()
+    closed = 0
+    for draft_id in candidates:
+        with draft_lock(draft_id):
+            draft = _load(db, draft_id, None, "en")
+            if _expire_if_due(db, draft, db.get(Customer, draft.customer_id)):
+                closed += 1
+    return closed
 
 
 def sweep_approvals(db: Session, approver_id: str) -> None:
@@ -484,21 +482,46 @@ def answer_pause(db: Session, caller: Caller, draft_id: str, answer: str) -> Ans
             raise _closed_problem(draft, lang)
         if draft.status != "paused":
             raise Problem(409, "not_paused", "This draft is not paused", status_now=draft.status)
-        if answer == "stop":
-            payee = drafting.payee_of(db, draft)
-            if payee is not None:
-                payee.flagged = True
-            _close(draft, "cancelled", lines.say(lang, "pause_stopped"))
+        if answer == "chose_myself":
+            draft.status = "awaiting_confirm"
+            draft.pause_answer = "chose_myself"
+            draft.last_say = lines.say(lang, "pause_continue_call" if draft.paused_on_call else "pause_continue")
             db.commit()
-            audit_log.record("pause_stop", actor="customer", customer_id=customer.id, draft_id=draft.id,
-                             payee_flagged=payee is not None)
-            return Answer(200, {"status": "cancelled", "say": draft.last_say})
-        draft.status = "awaiting_confirm"
-        draft.pause_answer = "chose_myself"
-        draft.last_say = lines.say(lang, "pause_continue_call" if draft.paused_on_call else "pause_continue")
+            audit_log.record("pause_chose_myself", actor="customer", customer_id=customer.id, draft_id=draft.id)
+            return Answer(200, {"status": "awaiting_confirm", "say": draft.last_say})
+
+        payee = drafting.payee_of(db, draft)
+        if payee is not None:
+            payee.flagged = True
+        _close(draft, "cancelled", lines.say(lang, "pause_stopped"))
         db.commit()
-        audit_log.record("pause_chose_myself", actor="customer", customer_id=customer.id, draft_id=draft.id)
-        return Answer(200, {"status": "awaiting_confirm", "say": draft.last_say})
+        audit_log.record("pause_stop", actor="customer", customer_id=customer.id, draft_id=draft.id,
+                         payee_flagged=payee is not None)
+        answer_body = {"status": "cancelled", "say": draft.last_say}
+    # Outside this draft's lock: never hold two draft locks at once.
+    if payee is not None:
+        _cancel_open_drafts_to(db, customer, payee, except_id=draft_id)
+    return Answer(200, answer_body)
+
+
+def _cancel_open_drafts_to(db: Session, customer: Customer, payee: Payee, except_id: str) -> None:
+    """After a "stop", every other open request to that person stops too, approvals included."""
+    open_ids = db.scalars(select(Draft.id).where(Draft.customer_id == customer.id, Draft.kind == "transfer",
+                                                 Draft.status.in_(drafting.OPEN_STATUSES),
+                                                 Draft.id != except_id)).all()
+    for other_id in open_ids:
+        with draft_lock(other_id):
+            other = _load(db, other_id, customer.id, customer.lang)
+            if other.status not in drafting.OPEN_STATUSES:
+                continue
+            target = drafting.attach_known_payee(db, customer, other)
+            if target is None or target.id != payee.id:
+                continue
+            withdrawn = _withdraw(db, other)
+            _close(other, "cancelled", lines.say(customer.lang, "cancelled"))
+            db.commit()
+            audit_log.record("cancelled", actor="system", customer_id=customer.id, draft_id=other.id,
+                             reason="payee_stopped", approvals_withdrawn=withdrawn)
 
 
 def cancel(db: Session, caller: Caller, draft_id: str) -> Answer:
@@ -508,17 +531,35 @@ def cancel(db: Session, caller: Caller, draft_id: str) -> Answer:
         draft = _load(db, draft_id, customer.id, lang)
         _expire_if_due(db, draft, customer)
         if draft.status not in drafting.OPEN_STATUSES:
-            raise _closed_problem(draft, lang)
-        withdrawn = 0
-        for approval in db.scalars(select(Approval).where(Approval.draft_id == draft.id,
-                                                          Approval.status == "pending")):
-            approval.status, approval.decided_at = "withdrawn", utcnow()
-            withdrawn += 1
+            raise _closed_problem(draft, lang)  # processing answers 409 processing: Zenith decides
+        withdrawn = _withdraw(db, draft)
         _close(draft, "cancelled", lines.say(lang, "cancelled"))
         db.commit()
         audit_log.record("cancelled", actor="customer", customer_id=customer.id, draft_id=draft.id,
                          approvals_withdrawn=withdrawn)
         return Answer(200, {"status": "cancelled", "say": draft.last_say})
+
+
+def withdraw_for_approver(db: Session, approver_id: str) -> int:
+    """An approver removed or replaced: their open requests stop, and nothing is sent."""
+    pending = db.scalars(select(Approval).where(Approval.approver_id == approver_id,
+                                                Approval.status == "pending")).all()
+    count = 0
+    for approval in pending:
+        with draft_lock(approval.draft_id):
+            draft = _load(db, approval.draft_id, None, "en")
+            db.refresh(approval)
+            if approval.status != "pending":
+                continue
+            customer = db.get(Customer, draft.customer_id)
+            withdrawn = _withdraw(db, draft)
+            if draft.status == "awaiting_approval":
+                _close(draft, "cancelled", lines.say(customer.lang, "cancelled"))
+            db.commit()
+            audit_log.record("cancelled", actor="customer", customer_id=customer.id, draft_id=draft.id,
+                             reason="approver_removed", approvals_withdrawn=withdrawn)
+            count += 1
+    return count
 
 
 def decide(db: Session, caller: Caller, approval_id: str, decision: str) -> Answer:
@@ -554,27 +595,36 @@ def decide(db: Session, caller: Caller, approval_id: str, decision: str) -> Answ
         audit_log.record("approval_given", actor="approver", customer_id=customer.id, draft_id=draft.id,
                          approval_id=approval.id)
 
-        # Time has passed while the approver thought about it. Check the account and the limits
-        # again just before money moves. If anything changed, nothing moves and the customer
-        # hears it again.
-        try:
-            _check_heard(db, customer, draft, draft.readback_hash)
-            problem = _limit_problem(customer, draft.payload.get("amount_kobo") or 0)
-            if problem is not None:
-                raise problem
-        except Problem as p:
-            if p.code in ("readback_mismatch", "bank_unavailable"):
-                draft.status = "awaiting_confirm"
-                draft.last_say = p.say
-            else:
-                _close(draft, "failed", p.say or lines.say(lang, "failed"))
-            db.commit()
-            audit_log.record("approved_but_held", actor="system", customer_id=customer.id, draft_id=draft.id,
-                             reason=p.code)
-            return Answer(200, {"approval": "approved", "status": draft.status, "say": p.say, "code": p.code})
+        with customer_lock(customer.id):
+            # Time has passed while the approver thought about it. Check the person, the account
+            # and the limits again just before money moves. If anything changed, nothing moves
+            # and the customer hears it again.
+            try:
+                _check_heard(db, customer, draft, draft.readback_hash)
+                payee = drafting.payee_of(db, draft)
+                if payee is not None and payee.flagged and draft.pause_answer is None:
+                    raise Problem(409, "pause_required", "The customer flagged this person while waiting",
+                                  lines.say(lang, "pause_flagged"), draft_id=draft.id)
+                problem = _limit_problem(customer, draft.payload.get("amount_kobo") or 0)
+                if problem is not None:
+                    raise problem
+            except Problem as p:
+                if p.code == "pause_required":
+                    draft.status = "paused"
+                    draft.paused_on_call = False
+                    draft.last_say = p.say
+                elif p.code in ("readback_mismatch", "bank_unavailable"):
+                    draft.status = "awaiting_confirm"
+                    draft.last_say = p.say
+                else:
+                    _close(draft, "failed", p.say or lines.say(lang, "failed"))
+                db.commit()
+                audit_log.record("approved_but_held", actor="system", customer_id=customer.id, draft_id=draft.id,
+                                 reason=p.code)
+                return Answer(200, {"approval": "approved", "status": draft.status, "say": p.say, "code": p.code})
 
-        try:
-            answer = _execute(db, draft, customer, actor="approver")
-        except Problem as p:
-            return Answer(200, {"approval": "approved", "status": draft.status, "say": p.say, "code": p.code})
-        return Answer(200, {"approval": "approved", **answer.body})
+            try:
+                answer = _execute(db, draft, customer, actor="approver")
+            except Problem as p:
+                return Answer(200, {"approval": "approved", "status": draft.status, "say": p.say, "code": p.code})
+            return Answer(200, {"approval": "approved", **answer.body})

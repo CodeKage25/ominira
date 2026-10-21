@@ -149,7 +149,7 @@ _COPY: dict[str, dict[str, str]] = {
     # English only so far: waiting for Pidgin copy.
     "ask_who": {"en": "Who are you sending to? Say a name, like {names}."},
     "ask_amount": {"en": "How much should I send to {nick}?"},
-    "ask_amount_and_account": {"en": "Say the amount and the account together, like: send five thousand to the account number, at GTBank."},
+    "ask_bank": {"en": "Which bank is that account with?"},
     "help": {"en": "I can send money, read your balance, tell you what came in, or block your card. What would you like?"},
     "came_in_none": {"en": "Nothing came in this week."},
     "came_in": {"en": "{amount} came in this week, from {count} {people}."},

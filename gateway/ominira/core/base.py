@@ -162,6 +162,10 @@ class ZenithCore(ABC):
     @abstractmethod
     def save_beneficiary(self, customer_ref: str, enquiry_ref: str) -> str: ...
 
+    @abstractmethod
+    def find_beneficiary(self, customer_ref: str, bank_code: str, account_number: str) -> str | None:
+        """The customer's saved beneficiary for this account, if there is one."""
+
     # The PIN block goes to the core; the Gateway learns only ok or tries left.
     @abstractmethod
     def verify_pin(self, customer_ref: str, pin_block: str) -> PinCheck: ...

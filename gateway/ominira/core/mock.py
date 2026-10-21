@@ -240,6 +240,15 @@ class MockZenith(ZenithCore):
             db.commit()
             return ref
 
+    def find_beneficiary(self, customer_ref: str, bank_code: str, account_number: str) -> str | None:
+        with self._sessions() as db:
+            row = db.scalars(
+                select(MockBeneficiary).where(MockBeneficiary.customer_ref == customer_ref,
+                                              MockBeneficiary.bank_code == bank_code,
+                                              MockBeneficiary.number == account_number.strip())
+            ).first()
+            return row.ref if row else None
+
     # ---- PIN --------------------------------------------------------------------------------
 
     def verify_pin(self, customer_ref: str, pin_block: str) -> PinCheck:

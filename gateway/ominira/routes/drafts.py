@@ -2,18 +2,18 @@
 
 from typing import Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ominira import audit_log, drafting, gate
+from ominira import audit_log, drafting, gate, pin
 from ominira.core import get_core
 from ominira.database import get_session, iso
 from ominira.problems import Problem
 from ominira.security import Caller, approver, customer, reader
-from ominira.tables import Approval, Approver, Draft
+from ominira.tables import Approval, Approver, Draft, Payee
 
 router = APIRouter(prefix="/v1")
 
@@ -89,6 +89,7 @@ class ApproverIn(BaseModel):
     name: str = Field(min_length=1, max_length=60)
     phone: str = Field(min_length=7, max_length=20)
     threshold_kobo: int = Field(gt=0)
+    pin_block: str | None = Field(None, max_length=200)
 
 
 def _approver_view(a: Approver) -> dict:
@@ -103,25 +104,36 @@ def list_approvers(caller: Caller = Depends(customer), db: Session = Depends(get
 
 @router.post("/approvers", status_code=201)
 def add_approver(body: ApproverIn, caller: Caller = Depends(customer), db: Session = Depends(get_session)):
-    for old in db.scalars(select(Approver).where(Approver.customer_id == caller.customer.id, Approver.active.is_(True))):
+    """Replaces the active approver. Needs the PIN: who checks big transfers is a protection."""
+    pin.require(caller.customer, caller.token, body.pin_block, purpose="approver_set")
+    replaced = list(db.scalars(select(Approver).where(Approver.customer_id == caller.customer.id,
+                                                      Approver.active.is_(True))))
+    for old in replaced:
         old.active = False  # one approver at a time in this build
     a = Approver(id=drafting.new_id("ap_", 4), customer_id=caller.customer.id, name=body.name, phone=body.phone,
                  threshold_kobo=body.threshold_kobo)
     db.add(a)
     db.commit()
+    for old in replaced:
+        gate.withdraw_for_approver(db, old.id)
     audit_log.record("approver_set", actor="customer", customer_id=caller.customer.id, approver_id=a.id,
                      threshold_kobo=a.threshold_kobo)
     return _approver_view(a)
 
 
 @router.delete("/approvers/{approver_id}")
-def remove_approver(approver_id: str, caller: Caller = Depends(customer), db: Session = Depends(get_session)):
+def remove_approver(approver_id: str, x_pin_block: str | None = Header(default=None),
+                    caller: Caller = Depends(customer), db: Session = Depends(get_session)):
+    """Needs the PIN in the X-Pin-Block header. Their pending requests are withdrawn."""
     a = db.get(Approver, approver_id)
     if a is None or a.customer_id != caller.customer.id or not a.active:
         raise Problem(404, "not_found", "No such approver")
+    pin.require(caller.customer, caller.token, x_pin_block, purpose="approver_removed")
     a.active = False
     db.commit()
-    audit_log.record("approver_removed", actor="customer", customer_id=caller.customer.id, approver_id=a.id)
+    withdrawn = gate.withdraw_for_approver(db, a.id)
+    audit_log.record("approver_removed", actor="customer", customer_id=caller.customer.id, approver_id=a.id,
+                     approvals_withdrawn=withdrawn)
     return {"removed": a.id}
 
 
@@ -139,9 +151,11 @@ def approvals(caller: Caller = Depends(approver), db: Session = Depends(get_sess
     for a in rows:
         d = db.get(Draft, a.draft_id, populate_existing=True)
         rb = d.readback
+        payee = db.get(Payee, d.payload["payee_id"], populate_existing=True) if d.payload.get("payee_id") else None
         out.append({"id": a.id, "status": a.status, "customer": first_name, "amount_kobo": rb.get("amount_kobo"),
                     "amount_text": rb.get("amount_text"), "to": rb.get("name"), "bank": rb.get("bank"),
-                    "account_last4": rb.get("account_last4"), "asked_at": iso(a.asked_at), "draft_status": d.status})
+                    "account_last4": rb.get("account_last4"), "asked_at": iso(a.asked_at), "draft_status": d.status,
+                    "flagged": bool(payee and payee.flagged)})
     return out
 
 
