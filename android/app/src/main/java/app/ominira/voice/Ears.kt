@@ -57,7 +57,7 @@ fun allowButton(): String = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) 
 @Composable
 fun rememberEars(
     session: Session,
-    quietMs: Long = 1_200,
+    quietMs: Long = 2_000,
     askForMic: Boolean = true,
     onWarned: () -> Unit = {},
     onHeard: (String?) -> Unit,

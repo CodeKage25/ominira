@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import app.ominira.Session
 import app.ominira.core.Aim
 import app.ominira.core.Framing
+import app.ominira.core.Mode
 import app.ominira.core.Steady
 import app.ominira.ui.theme.Corners
 import app.ominira.ui.theme.Om
@@ -45,6 +46,7 @@ class Aiming internal constructor(private val session: Session, private val lens
         private set
 
     private val steady = Steady()
+    private var quietSince = 0L
     private var unreadySince: Long? = null
     private var hintAt = 0L
     private var gate: CompletableDeferred<Sight>? = null
@@ -79,7 +81,13 @@ class Aiming internal constructor(private val session: Session, private val lens
         val next = if (lens == Lens.Face) Framing.face(sight.seen, sight.luma) else Framing.card(sight.seen, sight.luma)
         aim = next
         closeness = Framing.closeness(sight.seen, minSize, maxSize)
-        val direction = steady.feed(next, now)
+        // Never over its own voice: wait for quiet, then a breath, so each line is heard whole.
+        // Spoken only to a customer who listens: Voice mode, or TalkBack; others read the panel.
+        val listens = Mode.Voice in session.modes || session.screenReaderOn()
+        val talking = session.speaker.talking.value
+        if (talking) quietSince = now
+        val canSpeak = listens && !talking && now - quietSince >= 2_500
+        val direction = steady.feed(next, now, canSpeak)
         if (steady.locked(now)) {
             if (ready(sight)) {
                 gate?.complete(sight)
@@ -87,7 +95,7 @@ class Aiming internal constructor(private val session: Session, private val lens
             }
             // Held still but unreadable: say why, instead of "keep still" over and over.
             val since = unreadySince ?: now.also { unreadySince = it }
-            if (now - since >= 2_500 && now - hintAt >= 6_000) {
+            if (canSpeak && now - since >= 2_500 && now - hintAt >= 6_000) {
                 hintAt = now
                 session.say(unready(sight) ?: session.spoken.cardUnreadable)
             }

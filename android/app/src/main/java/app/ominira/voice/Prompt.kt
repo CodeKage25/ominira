@@ -56,7 +56,7 @@ class Prompt internal constructor(
 @Composable
 fun rememberPrompt(
     session: Session,
-    quietMs: Long = 1_200,
+    quietMs: Long = 2_000,
     askForMic: Boolean = true,
     onWarned: () -> Unit = {},
     onAnswer: Prompt.(heard: String?) -> Unit,

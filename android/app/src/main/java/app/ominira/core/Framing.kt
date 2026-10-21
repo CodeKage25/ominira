@@ -46,20 +46,21 @@ object Framing {
 
 // Speaks a direction once it has held for a moment, again every repeatAfterMs so the customer is never
 // left in silence, and locks once Hold has held long enough.
-class Steady(private val sayAfterMs: Long = 900, private val lockAfterMs: Long = 1_200, private val repeatAfterMs: Long = 6_000) {
+class Steady(private val sayAfterMs: Long = 1_500, private val lockAfterMs: Long = 1_200, private val repeatAfterMs: Long = 6_000) {
     private var current: Aim? = null
     private var since = 0L
     private var said: Aim? = null
     private var saidAt = 0L
 
-    // The direction to say now, or null to stay quiet.
-    fun feed(aim: Aim, nowMs: Long): Aim? {
+    // The direction to say now, or null to stay quiet. canSpeak false (the app is still talking) keeps
+    // the direction waiting, so it is said once the app is quiet instead of being lost.
+    fun feed(aim: Aim, nowMs: Long, canSpeak: Boolean = true): Aim? {
         if (aim != current) {
             current = aim
             since = nowMs
             return null
         }
-        if (nowMs - since < sayAfterMs) return null
+        if (nowMs - since < sayAfterMs || !canSpeak) return null
         if (aim == said && nowMs - saidAt < repeatAfterMs) return null
         said = aim
         saidAt = nowMs

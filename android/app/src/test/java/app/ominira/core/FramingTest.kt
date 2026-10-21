@@ -50,6 +50,15 @@ class FramingTest {
         texts.mapIndexed { i, t -> CardLine(t, left, 100 + i * 30, left + 400, 120 + i * 30) }
 
     @Test
+    fun aDirectionWaitsForTheAppToBeQuiet() {
+        val steady = Steady(sayAfterMs = 900)
+        assertNull(steady.feed(Aim.Closer, 0))
+        // Still talking: held back, not lost.
+        assertNull(steady.feed(Aim.Closer, 1_000, canSpeak = false))
+        assertEquals(Aim.Closer, steady.feed(Aim.Closer, 1_500, canSpeak = true))
+    }
+
+    @Test
     fun readsANinSlipKeepingOnlyTheLastFourDigits() {
         val slip = column(
             "NATIONAL IDENTITY MANAGEMENT COMMISSION",
