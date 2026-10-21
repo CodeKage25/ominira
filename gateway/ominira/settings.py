@@ -4,6 +4,7 @@
 """
 
 import os
+import secrets
 from dataclasses import dataclass, field
 
 
@@ -50,7 +51,14 @@ class Settings:
     approval_lifetime_s: int = field(default_factory=lambda: _int("APPROVAL_LIFETIME_S", 900))
     # How long confirm keeps re-checking an "in progress" transfer before answering 202 processing.
     requery_wait_s: float = field(default_factory=lambda: _float("REQUERY_WAIT_S", 3.0))
+    # New-account name enquiries per customer, across lookups, drafts and the assistant.
     lookups_per_minute: int = field(default_factory=lambda: _int("LOOKUPS_PER_MINUTE", 5))
+    # PIN checks per token (unlock, confirm, protective settings).
+    pin_attempts_per_minute: int = field(default_factory=lambda: _int("PIN_ATTEMPTS_PER_MINUTE", 5))
+
+    # Keys the stored request fingerprints for Idempotency-Key, so a stored hash cannot be used to
+    # guess a PIN block. Random per process when unset (replays then last until a restart).
+    idempotency_secret: str = field(default_factory=lambda: _env("IDEMPOTENCY_SECRET", "") or secrets.token_hex(32))
 
     # Speech. Without a key the app uses the phone's own voice and recogniser.
     yarngpt_api_key: str = field(default_factory=lambda: _env("YARNGPT_API_KEY", ""))

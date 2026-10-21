@@ -6,6 +6,7 @@ and replayed for a repeat with the same body. The same key with a different body
 gets the replay instead of running again.
 
 5xx and 429 answers are not kept: a retry after "bank unavailable" or "slow down" really retries.
+Stored fingerprints are HMACs under IDEMPOTENCY_SECRET, never plain hashes of the body.
 
 This protects the client's view of a call. Money is protected one level down as well: the gate
 sends Zenith the key "{draft_id}:{attempt}", so even two different client keys for one draft can
@@ -14,6 +15,7 @@ never pay twice.
 
 import asyncio
 import hashlib
+import hmac
 from datetime import timedelta
 
 from sqlalchemy import delete
@@ -22,11 +24,18 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from ominira.database import SessionFactory, utcnow
 from ominira.problems import Problem
+from ominira.settings import settings
 from ominira.tables import StoredResponse
 
 TTL = timedelta(hours=24)
 METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 _SKIP_HEADERS = {b"content-length", b"date", b"server"}
+
+
+def _fingerprint(data: bytes) -> str:
+    """Keyed, so a stored fingerprint of a confirm body cannot be matched against the 10,000
+    possible PIN blocks by anyone who reads the table."""
+    return hmac.new(settings.idempotency_secret.encode(), data, hashlib.sha256).hexdigest()
 
 
 def _load(scope_key: str) -> StoredResponse | None:
@@ -102,10 +111,9 @@ class IdempotencyMiddleware:
         body = bytes(body)
 
         auth = headers.get(b"authorization", b"")
-        scope_key = hashlib.sha256(b"\n".join([
-            auth, scope["method"].encode(), scope["path"].encode(), client_key.encode(),
-        ])).hexdigest()
-        request_hash = hashlib.sha256(body).hexdigest()
+        scope_key = _fingerprint(b"\n".join([auth, scope["method"].encode(), scope["path"].encode(),
+                                             client_key.encode()]))
+        request_hash = _fingerprint(body)
 
         lock = self.locks.get(scope_key)
         try:

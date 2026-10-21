@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from ominira import lines
 from ominira.database import get_session
 from ominira.problems import Problem
-from ominira.tables import Customer, Token
+from ominira.tables import Approver, Customer, Token
 
 
 @dataclass
@@ -60,7 +60,11 @@ def customer(caller: Caller = Depends(authenticated)) -> Caller:
     return caller
 
 
-def approver(caller: Caller = Depends(authenticated)) -> Caller:
+def approver(caller: Caller = Depends(authenticated), db: Session = Depends(get_session)) -> Caller:
+    """An approver whose customer removed or replaced them can no longer see or decide anything."""
     if caller.role != "approver" or caller.approver_id is None:
         raise Problem(403, "forbidden", "Only an approver can do this")
+    row = db.get(Approver, caller.approver_id)
+    if row is None or not row.active:
+        raise Problem(403, "forbidden", "This approver was removed")
     return caller

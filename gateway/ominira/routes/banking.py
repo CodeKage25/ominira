@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from ominira import amounts, audit_log, lines, ratelimit, readback
+from ominira import amounts, audit_log, lines, pin, readback
 from ominira.assistant import toolbox
 from ominira.core import get_core
 from ominira.database import get_session
@@ -27,14 +27,11 @@ class UnlockIn(BaseModel):
 
 @router.post("/auth/unlock")
 def unlock(body: UnlockIn, caller: Caller = Depends(customer)):
-    """The Pulse PIN on the app's first screen. The pilot signs in with a passkey instead."""
-    check = get_core().verify_pin(caller.customer.core_ref, body.pin_block)
-    audit_log.record("unlock", actor="customer", customer_id=caller.customer.id, ok=check.ok,
-                     tries_left=check.tries_left)
-    if check.ok:
-        return {"ok": True, "say": lines.say(caller.lang, "unlocked")}
-    raise Problem(401, "pin_incorrect", "The PIN did not match", lines.pin_wrong(caller.lang, check.tries_left),
-                  tries_left=check.tries_left)
+    """The Pulse PIN on the app's first screen. The pilot signs in with a passkey instead.
+    Limited to PIN_ATTEMPTS_PER_MINUTE per token, shared with every other PIN check."""
+    pin.require(caller.customer, caller.token, body.pin_block, purpose="unlock")
+    audit_log.record("unlock", actor="customer", customer_id=caller.customer.id)
+    return {"ok": True, "say": lines.say(caller.lang, "unlocked")}
 
 
 # ---- accounts ---------------------------------------------------------------------------------
@@ -96,9 +93,9 @@ class LookupIn(BaseModel):
 
 @router.post("/payees/lookup")
 def lookup(body: LookupIn, caller: Caller = Depends(reader)):
-    """NIP name enquiry for an account that is not saved. Five a minute per customer."""
-    ratelimit.allow(f"lookup:{caller.customer.id}", settings.lookups_per_minute, "Too many name enquiries")
-    enquiry = enquire_account(caller.lang, body.bank_code, body.account_number.strip())
+    """NIP name enquiry for an account that is not saved. Five a minute per customer, shared with
+    drafts to new accounts and the assistant's lookups."""
+    enquiry = enquire_account(caller.lang, body.bank_code, body.account_number.strip(), limit_for=caller.customer.id)
     name = readback.nip_name(enquiry.account_name)
     return {"name": name, "bank": enquiry.bank.short, "account_last4": enquiry.last4,
             "say": lines.say(caller.lang, "lookup_found", name=name, bank=enquiry.bank.short,
@@ -123,6 +120,8 @@ class PreferencesIn(BaseModel):
     pulse_gap_ms: int | None = Field(None, ge=400, le=3000)
     daily_limit_kobo: int | None = Field(None, gt=0)
     pause_threshold_kobo: int | None = Field(None, gt=0)
+    # Needed only when a change weakens a protection (see put_preferences).
+    pin_block: str | None = Field(None, max_length=200)
 
 
 _CLEARABLE = {"daily_limit_kobo", "pause_threshold_kobo"}
@@ -134,6 +133,22 @@ def _preferences(c: Customer) -> dict:
             "pause_threshold_kobo": c.pause_threshold_kobo}
 
 
+def weakens_protection(c: Customer, changes: dict) -> bool:
+    """Raising the pause threshold, or raising or clearing the own daily limit, needs the PIN:
+    a scammer on the phone must not be able to talk someone into switching protections off.
+    Lowering them, or anything else, does not."""
+    if "pause_threshold_kobo" in changes:
+        now = c.pause_threshold_kobo or settings.pause_threshold_kobo
+        new = changes["pause_threshold_kobo"] or settings.pause_threshold_kobo
+        if new > now:
+            return True
+    if "daily_limit_kobo" in changes and c.daily_limit_kobo is not None:
+        new = changes["daily_limit_kobo"]
+        if new is None or new > c.daily_limit_kobo:
+            return True
+    return False
+
+
 @router.get("/me/preferences")
 def get_preferences(caller: Caller = Depends(customer)):
     return _preferences(caller.customer)
@@ -143,14 +158,17 @@ def get_preferences(caller: Caller = Depends(customer)):
 def put_preferences(body: PreferencesIn, caller: Caller = Depends(customer), db: Session = Depends(get_session)):
     """Partial: only the fields sent change. null clears daily_limit_kobo or pause_threshold_kobo."""
     c = caller.customer
-    changed = {}
-    for name in body.model_fields_set:
+    changes = {}
+    for name in body.model_fields_set - {"pin_block"}:
         value = getattr(body, name)
         if value is None and name not in _CLEARABLE:
             continue
+        changes[name] = value
+    if weakens_protection(c, changes):
+        pin.require(c, caller.token, body.pin_block, purpose="preferences")
+    for name, value in changes.items():
         setattr(c, name, value)
-        changed[name] = value
     db.commit()
-    if changed:
-        audit_log.record("preferences_changed", actor="customer", customer_id=c.id, fields=sorted(changed))
+    if changes:
+        audit_log.record("preferences_changed", actor="customer", customer_id=c.id, fields=sorted(changes))
     return _preferences(c)

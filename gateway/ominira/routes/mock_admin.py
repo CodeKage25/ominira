@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Header
 from pydantic import BaseModel, Field
 
 from ominira import ratelimit
+from ominira.assistant import memory
 from ominira.core import mock_core
 from ominira.core.mock import TIMEOUT_MODES, Controls
 from ominira.database import engine
@@ -48,6 +49,7 @@ def reset():
     the controls of ZENITH_PROFILE."""
     rebuild(engine)
     ratelimit.clear()
+    memory.clear()
     core = mock_core()
     core.controls = Controls.for_profile(settings.zenith_profile)
     return core.snapshot()
