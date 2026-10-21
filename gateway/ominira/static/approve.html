@@ -80,7 +80,7 @@
   }
 
   function draw(items) {
-    const key = JSON.stringify(items.map(i => [i.id, i.status, i.draft_status]));
+    const key = JSON.stringify(items.map(i => [i.id, i.status, i.draft_status, i.flagged]));
     const pending = items.filter(i => i.status === "pending");
     if (Date.now() > keepNoteUntil) {
       note.textContent = pending.length
@@ -97,6 +97,7 @@
       card.append(el("p", "amount", item.amount_text));
       card.append(el("p", "to", `to ${item.to}, ${item.bank}, ending ${item.account_last4}`));
       card.append(el("p", "when", when(item.asked_at)));
+      if (item.flagged) card.append(el("p", "outcome bad", `${item.customer} stopped a payment to this person after a phone call before.`));
       if (item.status === "pending") {
         const row = el("div", "actions");
         const yes = el("button", "approve", "Approve");
