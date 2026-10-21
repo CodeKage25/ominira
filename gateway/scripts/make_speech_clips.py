@@ -216,7 +216,7 @@ def main(argv: list[str] | None = None) -> int:
 
         # Never index a clip that is not on disk, and drop clips no line uses.
         index = {k: f for k, f in index.items() if (folder / f).exists()}
-        (folder / "index.json").write_text(json.dumps(index, indent=0, sort_keys=True) + "\n", encoding="utf-8")
+        (folder / "index.json").write_bytes((json.dumps(index, indent=0, sort_keys=True) + "\n").encode("utf-8"))
         stale = [p for p in folder.glob("*.mp3") if p.name not in set(index.values())]
         for p in stale:
             p.unlink()
