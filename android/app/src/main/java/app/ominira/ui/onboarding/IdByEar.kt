@@ -123,7 +123,7 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
             var fromCard: IdDetails? = null
             phase = 1
             // Locks only once the name, NIN and date of birth are all read off the card itself.
-            aiming.run { sight -> IdCardText.read(sight.text)?.also { fromCard = it } != null }
+            aiming.run { sight -> IdCardText.read(sight.lines)?.also { fromCard = it } != null }
             phase = 3
             session.haptics.lock()
             // The bank still records the step; what is read back is what the camera read.

@@ -24,6 +24,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.ominira.Session
+import app.ominira.core.CardLine
 import app.ominira.core.Seen
 import app.ominira.voice.allowButton
 import com.google.android.gms.tasks.Task
@@ -37,8 +38,8 @@ import java.util.concurrent.Executors
 
 enum class Lens { Face, Card }
 
-// One frame, as the customer sees it. text is what was read on a card; it is never stored or logged.
-class Sight(val seen: Seen?, val luma: Int, val text: String = "")
+// One frame, as the customer sees it. lines are what was read on a card; never stored or logged.
+class Sight(val seen: Seen?, val luma: Int, val lines: List<CardLine> = emptyList())
 
 // The camera's preview, and each frame's Sight on the main thread. ML Kit runs on the phone.
 @Composable
@@ -142,7 +143,10 @@ private class CardReader(onSight: (Sight) -> Unit) : Reader<com.google.mlkit.vis
         val top = boxes.minOf { it.top }
         val bottom = boxes.maxOf { it.bottom }
         val seen = Seen((left + right) / 2f / width, (top + bottom) / 2f / height, (right - left) / width)
-        return Sight(seen, luma, result.text)
+        val lines = result.textBlocks.flatMap { it.lines }.mapNotNull { line ->
+            line.boundingBox?.let { CardLine(line.text, it.left, it.top, it.right, it.bottom) }
+        }
+        return Sight(seen, luma, lines)
     }
 
     override fun close() = recognizer.close()
