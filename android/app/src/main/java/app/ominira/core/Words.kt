@@ -727,6 +727,59 @@ class Words private constructor(val lang: Lang) {
         "Biko, ekwula PIN gị n'olu ọ bụla. Edebeghị m ya. A na-etinye Pulse PIN gị site na mmetụta, na ihuenyo.",
     )
 
+    // Touch answers, when nothing can understand the customer's language
+    val touchYesNo get() = t(
+        "Tap anywhere for yes. Touch and hold for no.",
+        "Tap anywhere for yes. Press am down small for no.",
+        "Ẹ tẹ ibikíbi fún bẹ́ẹ̀ni. Ẹ tẹ̀ ẹ́ mọ́lẹ̀ díẹ̀ fún rárá.",
+        "Ku taɓa ko'ina don eh. Ku danna ku riƙe don a'a.",
+        "Pịa ebe ọ bụla maka ee. Pịa ma jide maka mba.",
+    )
+    val touchId get() = t(
+        "Tap anywhere if that is you. Touch and hold to take the card again.",
+        "Tap anywhere if na you. Press am down small make we snap the card again.",
+        "Ẹ tẹ ibikíbi tí ẹ̀yin ni. Ẹ tẹ̀ ẹ́ mọ́lẹ̀ díẹ̀ láti tún ya káàdì náà.",
+        "Ku taɓa ko'ina idan ku ne. Ku danna ku riƙe don sake ɗaukar katin.",
+        "Pịa ebe ọ bụla ma ọ bụ gị. Pịa ma jide ka e see kaadị ahụ ọzọ.",
+    )
+    val touchToPin get() = t(
+        "Tap anywhere to go on to your Pulse PIN.",
+        "Tap anywhere make we go your Pulse PIN.",
+        "Ẹ tẹ ibikíbi láti lọ sí Pulse PIN yín.",
+        "Ku taɓa ko'ina don ku je Pulse PIN ɗinku.",
+        "Pịa ebe ọ bụla ka i gaa na Pulse PIN gị.",
+    )
+    val holdToStop get() = t("Touch and hold to stop.", "Press am down small make we stop.", "Ẹ tẹ̀ ẹ́ mọ́lẹ̀ díẹ̀ láti dúró.", "Ku danna ku riƙe don tsayawa.", "Pịa ma jide ka ịkwụsị.")
+    val holdToKeepCard get() = t(
+        "Touch and hold to keep your card.",
+        "Press am down small make you keep your card.",
+        "Ẹ tẹ̀ ẹ́ mọ́lẹ̀ díẹ̀ láti pa káàdì yín mọ́.",
+        "Ku danna ku riƙe don ajiye katinku.",
+        "Pịa ma jide ka i debe kaadị gị.",
+    )
+    // The safe answer is the tap: holding is the deliberate choice to carry on.
+    val touchPause get() = t(
+        "Tap anywhere to stop it. Touch and hold to carry on.",
+        "Tap anywhere make we stop am. Press am down small make we continue.",
+        "Ẹ tẹ ibikíbi láti dá a dúró. Ẹ tẹ̀ ẹ́ mọ́lẹ̀ díẹ̀ láti tẹ̀síwájú.",
+        "Ku taɓa ko'ina don dakatar da shi. Ku danna ku riƙe don ci gaba.",
+        "Pịa ebe ọ bụla ka ịkwụsị ya. Pịa ma jide ka ị gaa n'ihu.",
+    )
+    val touchShip get() = t(
+        "Tap anywhere for your home address. Touch and hold for a Zenith branch.",
+        "Tap anywhere for your house address. Press am down small for Zenith branch.",
+        "Ẹ tẹ ibikíbi fún àdírẹ́sì ilé yín. Ẹ tẹ̀ ẹ́ mọ́lẹ̀ díẹ̀ fún ẹ̀ka Zenith.",
+        "Ku taɓa ko'ina don adireshin gidanku. Ku danna ku riƙe don reshen Zenith.",
+        "Pịa ebe ọ bụla maka adreesị ụlọ gị. Pịa ma jide maka alaka Zenith.",
+    )
+    val touchHome get() = t(
+        "Tap anywhere to go home. Touch and hold to send more.",
+        "Tap anywhere make you go home. Press am down small make you send more.",
+        "Ẹ tẹ ibikíbi láti padà sí ilé. Ẹ tẹ̀ ẹ́ mọ́lẹ̀ díẹ̀ láti fi òmíràn ránṣẹ́.",
+        "Ku taɓa ko'ina don komawa gida. Ku danna ku riƙe don ƙara aikawa.",
+        "Pịa ebe ọ bụla ka ịlaghachi n'ụlọ. Pịa ma jide ka i ziga ọzọ.",
+    )
+
     // Microphone
     val answerOutLoud get() = t("Answer out loud", "Answer with your mouth", "Ẹ dáhùn sókè", "Ku amsa da murya", "Zaa n'olu")
     // allow is the phone's own button label, in the phone's language.

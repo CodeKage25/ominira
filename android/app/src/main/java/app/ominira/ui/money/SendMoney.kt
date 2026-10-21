@@ -58,6 +58,7 @@ import app.ominira.ui.kit.Progress
 import app.ominira.ui.kit.ReadbackPanel
 import app.ominira.ui.kit.Timeline
 import app.ominira.ui.kit.Tone
+import app.ominira.ui.kit.touchAnswer
 import app.ominira.ui.pulse.PulseStep
 import app.ominira.ui.theme.Glyphs
 import app.ominira.ui.theme.Om
@@ -96,7 +97,8 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
     val voice = session.talksFirst
     val w = session.words
     val s = session.spoken
-    val confirmLine = s.confirmSend
+    val touch = session.answersByTouch
+    val confirmLine = if (touch) s.touchToPin + " " + s.holdToStop else s.confirmSend
 
     LaunchedEffect(Unit) { people = runCatching { session.api.payees() }.getOrDefault(emptyList()) }
 
@@ -329,17 +331,17 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
         misses = 0
         val d = draft
         when (step) {
-            Step.Ask -> if (voice) prompt.ask(*listOfNotNull(askLead?.invoke(s), s.whoAndHowMuch).toTypedArray())
+            Step.Ask -> if (voice) prompt.ask(*listOfNotNull(askLead?.invoke(s), s.whoAndHowMuch).toTypedArray(), listen = session.talksFirst)
             Step.Readback -> if (d != null) {
                 val lines = listOfNotNull(problem) + d.readback.spoken
                 if (voice) prompt.ask(*(lines + confirmLine).toTypedArray()) else session.say(*lines.toTypedArray())
             }
             Step.Paused -> {
-                val lines = arrayOf(s.pauseQuestion, s.newAndLarge, s.sayStopOrCarryOn)
+                val lines = arrayOf(s.pauseQuestion, s.newAndLarge, if (touch) s.touchPause else s.sayStopOrCarryOn)
                 if (voice) prompt.ask(*lines) else session.say(*lines)
             }
             Step.Done, Step.Stopped, Step.Unsure -> {
-                if (voice) prompt.ask(ending, s.homeOrSendMore) else session.say(ending)
+                if (voice) prompt.ask(ending, if (touch) s.touchHome else s.homeOrSendMore) else session.say(ending)
             }
             Step.Pulse, Step.Approval -> Unit
         }
@@ -347,7 +349,7 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
     LaunchedEffect(replyCount) {
         val r = reply
         if (replyCount > 0 && r != null && step == Step.Ask) {
-            if (voice) prompt.ask(r) else session.say(r)
+            if (voice) prompt.ask(r, listen = session.talksFirst) else session.say(r)
         }
     }
 
@@ -379,7 +381,32 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
         return
     }
 
-    Box(Modifier.fillMaxSize()) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .touchAnswer(
+                touch && step in setOf(Step.Readback, Step.Paused, Step.Done, Step.Stopped, Step.Unsure),
+                onTap = {
+                    prompt.cancel()
+                    when (step) {
+                        Step.Readback -> {
+                            problem = null
+                            step = Step.Pulse
+                        }
+                        Step.Paused -> stopAtPause()
+                        else -> onHome()
+                    }
+                },
+                onHold = {
+                    prompt.cancel()
+                    when (step) {
+                        Step.Readback -> cancelDraft()
+                        Step.Paused -> carryOn()
+                        else -> startOver(null)
+                    }
+                },
+            ),
+    ) {
         Page(
             // While the scam pause is up, only the pause sheet exists for TalkBack.
             modifier = if (step == Step.Paused) Modifier.clearAndSetSemantics { } else Modifier,

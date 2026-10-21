@@ -30,6 +30,7 @@ import app.ominira.ui.kit.Notice
 import app.ominira.ui.kit.Page
 import app.ominira.ui.kit.ReadbackPanel
 import app.ominira.ui.kit.Tone
+import app.ominira.ui.kit.touchAnswer
 import app.ominira.ui.pulse.PulseStep
 import app.ominira.ui.theme.Glyphs
 import app.ominira.ui.theme.Om
@@ -54,8 +55,9 @@ fun BlockCardScreen(session: Session, onHome: () -> Unit) {
     val voice = session.talksFirst
     val w = session.words
     val s = session.spoken
-    val confirmLine = s.confirmBlock
-    val shipLine = s.whereSendCard + " " + s.sayHomeOrBranch
+    val touch = session.answersByTouch
+    val confirmLine = if (touch) s.touchToPin + " " + s.holdToKeepCard else s.confirmBlock
+    val shipLine = s.whereSendCard + " " + if (touch) s.touchShip else s.sayHomeOrBranch
 
     fun finish(where: String) {
         if (leaving) return
@@ -191,6 +193,22 @@ fun BlockCardScreen(session: Session, onHome: () -> Unit) {
     }
 
     Page(
+        modifier = Modifier.touchAnswer(
+            touch && (blocked || draft != null),
+            onTap = {
+                prompt.cancel()
+                if (blocked) {
+                    finish("home")
+                } else {
+                    problem = null
+                    pulse = true
+                }
+            },
+            onHold = {
+                prompt.cancel()
+                if (blocked) finish("branch") else leave()
+            },
+        ),
         top = {
             IconAction(Glyphs.Back, w.backToHome, {
                 prompt.cancel()

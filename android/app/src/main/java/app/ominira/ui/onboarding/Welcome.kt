@@ -92,6 +92,11 @@ fun WelcomeScreen(session: Session, onTalk: () -> Unit, onRead: () -> Unit) {
 
     LaunchedEffect(Unit) {
         if (session.screenReaderOn()) return@LaunchedEffect
+        // Nothing understands the language: the whole screen is the yes.
+        if (!session.understands) {
+            session.sayIn(speakIn, spoken.welcome, spoken.canTalk, spoken.tapToBegin)
+            return@LaunchedEffect
+        }
         session.sayIn(speakIn, spoken.welcome, spoken.canTalk, spoken.askTalk)
         prompt.ask(listen = true)
     }

@@ -21,7 +21,8 @@ class Prompt internal constructor(
     internal var handler: Prompt.(String?) -> Unit = {}
     private var job: Job? = null
 
-    fun ask(vararg lines: String, listen: Boolean = session.talksFirst) {
+    // Open answers (names, amounts, digits) pass listen = session.talksFirst: en-NG still hears those.
+    fun ask(vararg lines: String, listen: Boolean = session.talksFirst && session.understands) {
         job?.cancel()
         // An open recording would hear this question and return it as the answer.
         ears.stop()

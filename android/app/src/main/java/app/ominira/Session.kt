@@ -20,6 +20,7 @@ import app.ominira.device.Haptics
 import app.ominira.device.Signals
 import app.ominira.ui.theme.Look
 import app.ominira.voice.CloudVoice
+import app.ominira.voice.Hearing
 import app.ominira.voice.Speaker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -98,9 +99,28 @@ class Session(app: Application) : AndroidViewModel(app) {
 
     val roomy: Boolean get() = Mode.Plain in modes || Mode.Switch in modes
 
+    // The tag the phone's recogniser takes for each language it knows; filled in by Hearing.
+    var phoneHears by mutableStateOf(mapOf(Lang.En to "en-NG", Lang.Pcm to "en-NG"))
+        private set
+
     init {
         speaker.rate = speechRate
+        checkHearing(lang)
     }
+
+    private fun checkHearing(value: Lang) {
+        if (value in phoneHears) return
+        Hearing.check(context, value) { tag -> if (tag != null) phoneHears = phoneHears + (value to tag) }
+    }
+
+    // Something can understand the customer's language: YarnGPT through the Gateway, or the phone.
+    val understands: Boolean get() = lang in phoneHears || activeCloudVoice() != null
+
+    // Where nothing can, yes, no and other one-word answers are touches; names and numbers still listen.
+    val answersByTouch: Boolean get() = talksFirst && !understands
+
+    // en-NG still hears English names and numbers said by a customer of any language.
+    fun phoneTag(): String = phoneHears[lang] ?: "en-NG"
 
     private fun readModes(): Set<Mode> =
         store.getStringSet(K_MODES, null)?.mapNotNull { name -> Mode.entries.firstOrNull { it.name == name } }?.toSet()
@@ -116,6 +136,7 @@ class Session(app: Application) : AndroidViewModel(app) {
         lang = value
         store.edit().putString(K_LANG, value.code).apply()
         sync(PreferencePatch(lang = value))
+        checkHearing(value)
     }
 
     fun chooseModes(value: Set<Mode>) {

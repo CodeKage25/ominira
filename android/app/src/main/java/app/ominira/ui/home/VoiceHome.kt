@@ -85,7 +85,7 @@ fun VoiceHomeScreen(session: Session, actions: HomeActions) {
 
     fun ask(vararg lines: String) {
         if (session.talksFirst) orb = OrbState.Listening
-        prompt.ask(*lines)
+        prompt.ask(*lines, listen = session.talksFirst)
     }
 
     fun send(text: String) {

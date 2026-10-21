@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.ominira.Session
 import app.ominira.core.Answers
@@ -23,6 +24,7 @@ import app.ominira.ui.kit.Kicker
 import app.ominira.ui.kit.Notice
 import app.ominira.ui.kit.Page
 import app.ominira.ui.kit.Tone
+import app.ominira.ui.kit.touchAnswer
 import app.ominira.ui.theme.Glyphs
 import app.ominira.voice.rememberPrompt
 import kotlinx.coroutines.launch
@@ -41,6 +43,7 @@ fun BvnScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
     var checkAsked by remember { mutableStateOf(false) }
     val w = session.words
     val s = session.spoken
+    val touch = session.answersByTouch
 
     val error = when {
         tried && bvn.length != 11 -> w.bvnLength(bvn.length)
@@ -100,24 +103,24 @@ fun BvnScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
             }
             pending != null && Answers.isNo(heard) -> {
                 heardBvn = null
-                ask(s.sayBvnAgain)
+                ask(s.sayBvnAgain, listen = session.talksFirst)
             }
             else -> {
                 val d = Answers.digits(heard)
                 when {
                     d.length == 11 -> {
                         heardBvn = d
-                        ask(s.iHeard(s.digits(d)), s.isThatRight)
+                        ask(s.iHeard(s.digits(d)), if (touch) s.touchYesNo else s.isThatRight)
                     }
                     pending != null -> ask(s.yesOrSayAgain)
                     misses >= 3 -> session.say(s.useKeypad)
                     d.isEmpty() -> {
                         misses += 1
-                        ask(s.sayElevenDigits)
+                        ask(s.sayElevenDigits, listen = session.talksFirst)
                     }
                     else -> {
                         misses += 1
-                        ask(s.heardDigitCount(d.length))
+                        ask(s.heardDigitCount(d.length), listen = session.talksFirst)
                     }
                 }
             }
@@ -133,14 +136,27 @@ fun BvnScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
 
     LaunchedEffect(Unit) {
         if (session.talksFirst) {
-            prompt.ask(
-                s.bvnIntro,
-                s.bvnDial,
-            )
+            prompt.ask(s.bvnIntro, s.bvnDial, listen = session.talksFirst)
         }
     }
 
     Page(
+        // The digits are heard in en-NG; only the yes or no that follows is a touch.
+        modifier = Modifier.touchAnswer(
+            touch && heardBvn != null,
+            onTap = {
+                val pending = heardBvn ?: return@touchAnswer
+                prompt.cancel()
+                heardBvn = null
+                bvn = pending
+                tried = false
+                checkAsked = true
+            },
+            onHold = {
+                heardBvn = null
+                prompt.ask(s.sayBvnAgain, listen = session.talksFirst)
+            },
+        ),
         top = { StepBar(4, onBack) },
         bottom = {
             if (open) {

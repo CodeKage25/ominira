@@ -146,7 +146,7 @@ fun SonarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
             prompt.ask(
                 s.selfieHeading,
                 s.holdAtArm,
-                s.sayStartOrTap,
+                if (session.answersByTouch) s.tapToStart else s.sayStartOrTap,
             )
         }
     }

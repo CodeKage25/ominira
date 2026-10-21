@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
@@ -18,8 +19,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.platform.LocalContext
+import app.ominira.BuildConfig
 import app.ominira.Session
-import app.ominira.core.Lang
+import app.ominira.core.Answers
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -49,12 +51,6 @@ private class Hold {
     }
 }
 
-// Phone recognisers often fail quietly on yo/ha/ig: listen in en-NG.
-private fun phoneTag(lang: Lang): String = when (lang) {
-    Lang.Yo, Lang.Ha, Lang.Ig, Lang.Pcm -> "en-NG"
-    Lang.En -> lang.tag
-}
-
 @Composable
 fun rememberEars(
     session: Session,
@@ -65,7 +61,13 @@ fun rememberEars(
 ): Ears {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val heard by rememberUpdatedState(onHeard)
+    val heard by rememberUpdatedState<(String?) -> Unit>({ text ->
+        // Debug builds only, and never digits: a PIN said aloud must not reach the log.
+        if (BuildConfig.DEBUG) {
+            Log.d("OminiraEars", "heard: " + if (text != null && Answers.digits(text).isNotEmpty()) "(digits hidden)" else text)
+        }
+        onHeard(text)
+    })
     val warned by rememberUpdatedState(onWarned)
     val ears = remember { Ears() }
     val hold = remember { Hold() }
@@ -73,7 +75,7 @@ fun rememberEars(
 
     fun intent(): Intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
         .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-        .putExtra(RecognizerIntent.EXTRA_LANGUAGE, phoneTag(session.lang))
+        .putExtra(RecognizerIntent.EXTRA_LANGUAGE, session.phoneTag())
         .putExtra(RecognizerIntent.EXTRA_PROMPT, session.words.answerOutLoud)
         .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
         .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, quietMs)

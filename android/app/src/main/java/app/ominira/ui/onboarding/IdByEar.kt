@@ -56,9 +56,11 @@ import app.ominira.ui.kit.Page
 import app.ominira.ui.kit.ReadbackPanel
 import app.ominira.ui.kit.Tone
 import app.ominira.ui.kit.rememberReduceMotion
+import app.ominira.ui.kit.touchAnswer
 import app.ominira.ui.theme.Corners
 import app.ominira.ui.theme.Glyphs
 import app.ominira.ui.theme.Om
+import app.ominira.voice.Prompt
 import app.ominira.voice.rememberPrompt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -86,10 +88,19 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
     val tilt by animateFloatAsState(cardTilt[phase], if (still) snap<Float>() else tween<Float>(600), label = "tilt")
     val w = session.words
     val s = session.spoken
-    val confirmLine = s.confirmId
-    val startLines = arrayOf(s.nowIdCard, s.holdNin, s.sayStartOrTap)
+    val touch = session.answersByTouch
+    val confirmLine = if (touch) s.touchId else s.confirmId
+    val startLines = arrayOf(s.nowIdCard, s.holdNin, if (touch) s.tapToStart else s.sayStartOrTap)
 
     fun next() = leave.run(onNext)
+
+    fun retake(prompt: Prompt) {
+        details = null
+        phase = 0
+        started = false
+        misses = 0
+        prompt.ask(s.cardAgain, *startLines.drop(1).toTypedArray())
+    }
 
     // Declared before begin(), which asks through it.
     val prompt = rememberPrompt(session) { heard ->
@@ -102,13 +113,7 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
                 ask(s.sayStartOrTap)
             }
             id == null -> session.say(s.tapWhenReady)
-            Answers.isNo(heard) -> {
-                details = null
-                phase = 0
-                started = false
-                misses = 0
-                ask(s.cardAgain, *startLines.drop(1).toTypedArray())
-            }
+            Answers.isNo(heard) -> retake(this)
             Answers.isAgain(heard) -> ask(*idLines(s, id), confirmLine)
             Answers.isYes(heard) -> next()
             misses < 2 -> {
@@ -156,7 +161,17 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
     }
 
     Page(
-        modifier = Modifier.tapAnywhere(details == null && !started, w.startCamera) { begin() },
+        modifier = Modifier
+            .tapAnywhere(details == null && !started, w.startCamera) { begin() }
+            .touchAnswer(
+                touch && details != null,
+                onTap = {
+                    prompt.cancel()
+                    session.speaker.stop()
+                    next()
+                },
+                onHold = { retake(prompt) },
+            ),
         top = { StepBar(3, onBack) },
         bottom = {
             val id = details
