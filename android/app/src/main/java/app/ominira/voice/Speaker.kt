@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -24,6 +25,14 @@ class Speaker(context: Context, private val cloud: () -> CloudVoice?) : TextToSp
     @Volatile private var engineOk = false
     private val engineDone = MutableStateFlow(false)
     private var waiting: Request? = null
+
+    private val app = context.applicationContext
+    private val clips = ClipIndex(app)
+    private val afterLine = ConcurrentHashMap<String, () -> Unit>()
+    private val speech = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_MEDIA)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+        .build()
 
     private val main = Handler(Looper.getMainLooper())
     private val pool = Executors.newCachedThreadPool()
@@ -49,18 +58,12 @@ class Speaker(context: Context, private val cloud: () -> CloudVoice?) : TextToSp
             tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) = Unit
 
-                override fun onDone(utteranceId: String?) {
-                    if (utteranceId != null && utteranceId == lastPhoneLine) _talking.value = false
-                }
+                override fun onDone(utteranceId: String?) = ended(utteranceId)
 
                 @Deprecated("Deprecated in Java")
-                override fun onError(utteranceId: String?) {
-                    if (utteranceId != null && utteranceId == lastPhoneLine) _talking.value = false
-                }
+                override fun onError(utteranceId: String?) = ended(utteranceId)
 
-                override fun onError(utteranceId: String?, errorCode: Int) {
-                    if (utteranceId != null && utteranceId == lastPhoneLine) _talking.value = false
-                }
+                override fun onError(utteranceId: String?, errorCode: Int) = ended(utteranceId)
             })
         }
         engineDone.value = true
@@ -81,13 +84,78 @@ class Speaker(context: Context, private val cloud: () -> CloudVoice?) : TextToSp
         _talking.value = true
         _caption.value = clean.joinToString(" ")
         val request = Request(lang, clean, gapMs, phoneFallback)
+        // Bundled clips first: they need no network. Then the cloud voice, then the phone's.
+        val bundled = clean.map { clips.find(lang, it) }
         val voice = cloud()
         when {
+            bundled.all { it != null } -> onDevice(ticket, request, bundled)
             voice != null && voice.usable -> inCloud(voice, ticket, request)
-            phoneFallback -> onPhone(request)
-            else -> _talking.value = false
+            else -> fallBack(request, ticket)
         }
     }
+
+    private fun ended(utteranceId: String?) {
+        if (utteranceId == null) return
+        if (utteranceId == lastPhoneLine) _talking.value = false
+        afterLine.remove(utteranceId)?.let { main.post(it) }
+    }
+
+    // Main thread. A bundled clip for each line that has one, the phone's voice for the rest, in order.
+    private fun onDevice(ticket: Int, request: Request, bundled: List<String?>) {
+        if (bundled.any { it == null } && !engineDone.value) return onPhone(request)
+        if (engineOk) tts.stop()
+        fun line(i: Int) {
+            if (ticket != turn.get()) return
+            if (i > bundled.lastIndex) {
+                _talking.value = false
+                return
+            }
+            val next: () -> Unit = { main.postDelayed({ line(i + 1) }, if (i < bundled.lastIndex) request.gapMs else 0L) }
+            val clip = bundled[i]
+            when {
+                clip != null -> playClip(clip, ticket, next)
+                request.phoneFallback && engineOk -> phoneLine(request.lang, request.lines[i], next)
+                else -> next()
+            }
+        }
+        line(0)
+    }
+
+    private fun playClip(path: String, ticket: Int, then: () -> Unit) {
+        releasePlayer()
+        val mp = MediaPlayer()
+        player = mp
+        fun finish() {
+            if (player === mp) releasePlayer() else runCatching { mp.release() }
+            if (ticket == turn.get()) then()
+        }
+        try {
+            app.assets.openFd(path).use { mp.setDataSource(it.fileDescriptor, it.startOffset, it.length) }
+            mp.setAudioAttributes(speech)
+            mp.setOnCompletionListener { finish() }
+            mp.setOnErrorListener { _, _, _ ->
+                finish()
+                true
+            }
+            mp.prepare()
+            mp.start()
+            runCatching { mp.playbackParams = mp.playbackParams.setSpeed(playbackSpeed()) }
+        } catch (e: Exception) {
+            finish()
+        }
+    }
+
+    private fun phoneLine(lang: Lang, line: String, then: () -> Unit) {
+        chooseLanguage(lang)
+        tts.setSpeechRate(rate)
+        counter += 1
+        val id = "om-$counter-line"
+        afterLine[id] = then
+        tts.speak(line, TextToSpeech.QUEUE_FLUSH, null, id)
+    }
+
+    // 0.95 is the app's normal rate; recorded voices play normal at 1.0.
+    private fun playbackSpeed(): Float = (rate / 0.95f).coerceIn(0.6f, 2.0f)
 
     private fun inCloud(voice: CloudVoice, ticket: Int, request: Request) {
         if (engineOk) tts.stop()
@@ -100,7 +168,7 @@ class Speaker(context: Context, private val cloud: () -> CloudVoice?) : TextToSp
             val url = voice.audioUrl(text, request.lang)
             main.post {
                 if (ticket != turn.get()) return@post
-                if (url == null) fallBack(request) else play(url, ticket, request)
+                if (url == null) fallBack(request, ticket) else play(url, ticket, request)
             }
         }
     }
@@ -111,20 +179,14 @@ class Speaker(context: Context, private val cloud: () -> CloudVoice?) : TextToSp
         val mp = MediaPlayer()
         player = mp
         try {
-            mp.setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build(),
-            )
+            mp.setAudioAttributes(speech)
             mp.setDataSource(url)
             mp.setOnPreparedListener { prepared ->
                 if (ticket != turn.get()) {
                     releasePlayer()
                 } else {
                     prepared.start()
-                    // 0.95 is the app's normal rate; the cloud voice's normal is 1.0.
-                    runCatching { prepared.playbackParams = prepared.playbackParams.setSpeed((rate / 0.95f).coerceIn(0.6f, 2.0f)) }
+                    runCatching { prepared.playbackParams = prepared.playbackParams.setSpeed(playbackSpeed()) }
                 }
             }
             mp.setOnCompletionListener {
@@ -133,18 +195,24 @@ class Speaker(context: Context, private val cloud: () -> CloudVoice?) : TextToSp
             }
             mp.setOnErrorListener { _, _, _ ->
                 releasePlayer()
-                if (ticket == turn.get()) fallBack(request)
+                if (ticket == turn.get()) fallBack(request, ticket)
                 true
             }
             mp.prepareAsync()
         } catch (e: Exception) {
             releasePlayer()
-            fallBack(request)
+            fallBack(request, ticket)
         }
     }
 
-    private fun fallBack(request: Request) {
-        if (request.phoneFallback) onPhone(request) else _talking.value = false
+    // Clips for the lines that have one, then the phone's voice; phoneFallback false skips the rest.
+    private fun fallBack(request: Request, ticket: Int) {
+        val bundled = request.lines.map { clips.find(request.lang, it) }
+        when {
+            bundled.any { it != null } -> onDevice(ticket, request, bundled)
+            request.phoneFallback -> onPhone(request)
+            else -> _talking.value = false
+        }
     }
 
     private fun releasePlayer() {
@@ -194,7 +262,7 @@ class Speaker(context: Context, private val cloud: () -> CloudVoice?) : TextToSp
 
     suspend fun speakAndWait(lang: Lang, line: String, phoneFallback: Boolean): Boolean {
         val voice = cloud()
-        if ((voice == null || !voice.usable) && !phoneFallback) return false
+        if ((voice == null || !voice.usable) && !phoneFallback && clips.find(lang, line) == null) return false
         speak(lang, listOf(line), phoneFallback = phoneFallback)
         awaitQuiet()
         return true
@@ -203,6 +271,7 @@ class Speaker(context: Context, private val cloud: () -> CloudVoice?) : TextToSp
     fun stop() {
         turn.incrementAndGet()
         waiting = null
+        afterLine.clear()
         if (Looper.myLooper() == Looper.getMainLooper()) releasePlayer() else main.post { releasePlayer() }
         if (engineOk) tts.stop()
         _talking.value = false

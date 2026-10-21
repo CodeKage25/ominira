@@ -53,7 +53,8 @@ fun WelcomeScreen(session: Session, onTalk: () -> Unit, onRead: () -> Unit) {
     // No voice for the language: speak English, not yo/ha/ig in an English voice.
     val voiced = remember(session.lang) { session.speaker.hasVoiceFor(session.lang) }
     val spoken = if (voiced) copy else OnboardingCopy.of(Lang.En)
-    val speakIn = if (voiced) session.lang else Lang.En
+    // The customer's language even for English words: its bundled clips are found by either.
+    val speakIn = session.lang
 
     fun tell(pick: (OnboardingCopy) -> String) {
         line = pick(copy)

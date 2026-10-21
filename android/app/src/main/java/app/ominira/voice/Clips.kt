@@ -3,7 +3,11 @@ package app.ominira.voice
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import app.ominira.core.ClipKey
+import app.ominira.core.Lang
 import kotlinx.coroutines.suspendCancellableCoroutine
+import org.json.JSONObject
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.resume
 
 object Clips {
@@ -54,4 +58,18 @@ object Clips {
             }
         }
     }
+}
+
+// Lines bundled by gateway/scripts/make_speech_clips.py. audio/<lang>/index.json maps the ClipKey
+// of a line, and of its English twin, to the clip that says it in <lang>.
+class ClipIndex(private val context: Context) {
+    private val byLang = ConcurrentHashMap<Lang, Map<String, String>>()
+
+    fun find(lang: Lang, line: String): String? =
+        byLang.getOrPut(lang) { load(lang) }[ClipKey.of(line)]?.let { "audio/${lang.code}/$it" }
+
+    private fun load(lang: Lang): Map<String, String> = runCatching {
+        val json = JSONObject(context.assets.open("audio/${lang.code}/index.json").bufferedReader().use { it.readText() })
+        json.keys().asSequence().associateWith { json.getString(it) }
+    }.getOrDefault(emptyMap())
 }
