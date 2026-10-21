@@ -15,7 +15,6 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.ominira.Session
-import app.ominira.core.Lines
 import app.ominira.ui.kit.ActionButton
 import app.ominira.ui.kit.Brand
 import app.ominira.ui.kit.CaptionBox
@@ -37,6 +36,7 @@ fun PlainHomeScreen(session: Session, actions: HomeActions) {
     var reply by remember { mutableStateOf<String?>(null) }
     var calling by remember { mutableStateOf(false) }
     var working by remember { mutableStateOf(false) }
+    val w = session.words
 
     val ears = rememberEars(session) { text ->
         if (text.isNullOrBlank()) return@rememberEars
@@ -45,7 +45,7 @@ fun PlainHomeScreen(session: Session, actions: HomeActions) {
             val turn = runCatching { session.api.turn(text, session.lang) }.getOrNull()
             working = false
             if (turn == null) {
-                reply = "Sorry, I could not do that just now. Please try again."
+                reply = session.words.couldNotDo
             } else if (!routeTurn(session, turn, actions)) {
                 reply = turn.say
                 session.say(turn.say)
@@ -53,15 +53,15 @@ fun PlainHomeScreen(session: Session, actions: HomeActions) {
         }
     }
 
-    LaunchedEffect(Unit) { session.sayOnArrival(Lines.whatToDo(session.lang)) }
+    LaunchedEffect(Unit) { session.sayOnArrival(session.spoken.whatToDo) }
 
     Page(
         top = {
-            Brand(Modifier.weight(1f)) { IconAction(Glyphs.Settings, "Settings", actions.settings) }
+            Brand(Modifier.weight(1f)) { IconAction(Glyphs.Settings, w.settings, actions.settings) }
         },
         bottom = {
             ActionButton(
-                "Or just say it",
+                w.orJustSay,
                 onClick = {
                     session.speaker.stop()
                     ears.listen()
@@ -73,17 +73,17 @@ fun PlainHomeScreen(session: Session, actions: HomeActions) {
         },
     ) {
         Text(session.greeting(), style = Om.type.lead, color = Om.color.muted)
-        Text(Lines.whatToDo(session.lang), style = Om.type.displayM, color = Om.color.text, modifier = Modifier.semantics { heading() })
-        reply?.let { CaptionBox("Òmìnira said", it) }
-        BigChoice("Send money", Om.color.modeVoice, Glyphs.Send, actions.send)
-        BigChoice("How much do I have?", Om.color.modeSwitch, Glyphs.Wallet, actions.balance)
-        BigChoice("My card", Om.color.modeSign, Glyphs.Card, actions.card)
-        BigChoice("Sign language help", Om.color.modeSign, Glyphs.Sign, actions.sign)
-        BigChoice("Talk to a person", Om.color.modePlain, Glyphs.Phone) {
+        Text(w.whatToDo, style = Om.type.displayM, color = Om.color.text, modifier = Modifier.semantics { heading() })
+        reply?.let { CaptionBox(w.ominiraSaid, it) }
+        BigChoice(w.sendMoney, Om.color.modeVoice, Glyphs.Send, actions.send)
+        BigChoice(w.howMuchHave, Om.color.modeSwitch, Glyphs.Wallet, actions.balance)
+        BigChoice(w.myCard, Om.color.modeSign, Glyphs.Card, actions.card)
+        BigChoice(w.signHelp, Om.color.modeSign, Glyphs.Sign, actions.sign)
+        BigChoice(w.talkToPerson, Om.color.modePlain, Glyphs.Phone) {
             calling = true
-            session.say("Calling a Zenith person who speaks your language. Stay on the line.")
+            session.say(session.spoken.callingPerson, session.spoken.stayOnLine)
         }
-        if (calling) Notice(Tone.Info, "Calling a Zenith person who speaks your language.", body = "Stay on the line.", icon = Glyphs.Phone)
+        if (calling) Notice(Tone.Info, w.callingPerson, body = w.stayOnLine, icon = Glyphs.Phone)
     }
 }
 

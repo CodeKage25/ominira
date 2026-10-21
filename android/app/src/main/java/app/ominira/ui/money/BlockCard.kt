@@ -52,15 +52,17 @@ fun BlockCardScreen(session: Session, onHome: () -> Unit) {
     var leaving by remember { mutableStateOf(false) }
     var readAsked by remember { mutableIntStateOf(0) }
     val voice = session.talksFirst
-    val confirmLine = "Say yes to go on to your Pulse PIN, or no to keep your card."
-    val shipLine = "Where should we send the new card? Say home, or say branch."
+    val w = session.words
+    val s = session.spoken
+    val confirmLine = s.confirmBlock
+    val shipLine = s.whereSendCard + " " + s.sayHomeOrBranch
 
     fun finish(where: String) {
         if (leaving) return
         leaving = true
         ship = where
         scope.launch {
-            session.say(if (where == "home") "Your new card will go to your home address." else "Your new card will wait for you at a Zenith branch.")
+            session.say(if (where == "home") s.cardToHome else s.cardToBranch)
             session.speaker.awaitQuiet()
             onHome()
         }
@@ -75,13 +77,13 @@ fun BlockCardScreen(session: Session, onHome: () -> Unit) {
     val prompt = app.ominira.voice.rememberPrompt(session) { said ->
         if (said == null) return@rememberPrompt
         when {
-            blocked && Answers.mentions(said, "home", "house") -> finish("home")
-            blocked && Answers.mentions(said, "branch", "bank", "office") -> finish("branch")
+            blocked && Answers.mentions(said, "home", "house", "ile", "gida", "ulo") -> finish("home")
+            blocked && Answers.mentions(said, "branch", "bank", "office", "eka", "reshe", "alaka") -> finish("branch")
             blocked && misses < 2 -> {
                 misses += 1
                 ask(shipLine)
             }
-            blocked -> session.say("You can also tap where the card should go, then Done.")
+            blocked -> session.say(s.tapWhereThenDone)
             Answers.isNo(said) -> leave()
             Answers.isAgain(said) -> draft?.let { ask(*it.readback.spoken.toTypedArray(), confirmLine) }
             Answers.isYes(said) || Answers.isStart(said) -> if (draft != null) {
@@ -92,7 +94,7 @@ fun BlockCardScreen(session: Session, onHome: () -> Unit) {
                 misses += 1
                 ask(confirmLine)
             }
-            else -> session.say("You can also use the buttons on the screen.")
+            else -> session.say(s.useButtons)
         }
     }
 
@@ -109,9 +111,8 @@ fun BlockCardScreen(session: Session, onHome: () -> Unit) {
                     session.say(made.say)
                 }
                 null -> {
-                    val line = "I could not reach the bank just now. Nothing has changed."
-                    problem = line
-                    session.say(line)
+                    problem = w.bankUnreachableNoChange
+                    session.say(s.bankUnreachableNoChange)
                 }
             }
         }
@@ -139,7 +140,7 @@ fun BlockCardScreen(session: Session, onHome: () -> Unit) {
                     pulse = false
                     card = card?.copy(blocked = true)
                     session.haptics.stop()
-                    if (voice) prompt.ask(outcome.say, shipLine) else session.say(outcome.say, "Where should we send the new card?")
+                    if (voice) prompt.ask(outcome.say, shipLine) else session.say(outcome.say, s.whereSendCard)
                 }
                 is Outcome.WrongPin -> {
                     problem = outcome.say
@@ -171,7 +172,7 @@ fun BlockCardScreen(session: Session, onHome: () -> Unit) {
     if (pulse && !blocked) {
         PulseStep(
             session = session,
-            title = "Pulse your PIN to block the card",
+            title = w.pulseToBlockCard,
             attempt = attempt,
             problem = problem,
             busy = busy,
@@ -180,9 +181,9 @@ fun BlockCardScreen(session: Session, onHome: () -> Unit) {
                 pulse = false
                 readAsked += 1
             },
-            backLabel = "Back to the readback",
-            doneLine = if (locked) "Your Pulse PIN is locked. Your card has not changed." else null,
-            doneAction = "Back to home",
+            backLabel = w.backToReadback,
+            doneLine = if (locked) w.lockedCardSame else null,
+            doneAction = w.backToHome,
             onDoneAction = { leave() },
             onDigits = { digits -> confirmWith(digits) },
         )
@@ -191,21 +192,21 @@ fun BlockCardScreen(session: Session, onHome: () -> Unit) {
 
     Page(
         top = {
-            IconAction(Glyphs.Back, "Back to home", {
+            IconAction(Glyphs.Back, w.backToHome, {
                 prompt.cancel()
                 leave()
             })
-            Heading("My card", Modifier.weight(1f))
+            Heading(w.myCard, Modifier.weight(1f))
         },
         bottom = {
             if (blocked) {
-                ActionButton("Done", onClick = {
+                ActionButton(w.done, onClick = {
                     prompt.cancel()
                     finish(ship)
                 }, icon = Glyphs.Home)
             } else {
                 ActionButton(
-                    "Pulse PIN to block",
+                    w.pulseToBlock,
                     onClick = {
                         prompt.cancel()
                         problem = null
@@ -215,7 +216,7 @@ fun BlockCardScreen(session: Session, onHome: () -> Unit) {
                     icon = Glyphs.Pulse,
                     enabled = draft != null,
                 )
-                ActionButton("Not now", onClick = {
+                ActionButton(w.notNow, onClick = {
                     prompt.cancel()
                     leave()
                 }, style = Emphasis.Quiet)
@@ -225,18 +226,18 @@ fun BlockCardScreen(session: Session, onHome: () -> Unit) {
         card?.let { BankCardView(it) }
         problem?.let { Notice(if (blocked) Tone.Info else Tone.Caution, it) }
         if (blocked) {
-            Confirmation("Card blocked. A new one is on its way.")
-            Text("Where should the new card go?", style = Om.type.label, color = Om.color.text, modifier = Modifier.semantics { heading() })
-            ChoiceRow("My home address", onClick = {
+            Confirmation(w.cardBlockedNew)
+            Text(w.whereCardGo, style = Om.type.label, color = Om.color.text, modifier = Modifier.semantics { heading() })
+            ChoiceRow(w.myHomeAddress, onClick = {
                 prompt.cancel()
                 ship = "home"
             }, selected = ship == "home", sub = "14 Bode Thomas Street, Surulere")
-            ChoiceRow("A Zenith branch", onClick = {
+            ChoiceRow(w.zenithBranch, onClick = {
                 prompt.cancel()
                 ship = "branch"
-            }, selected = ship == "branch", sub = "I will pick it up myself")
+            }, selected = ship == "branch", sub = w.pickUpMyself)
         } else {
-            draft?.let { ReadbackPanel(it.readback, heading = "Check before you block", accent = Om.color.danger) }
+            draft?.let { ReadbackPanel(it.readback, heading = w.checkBeforeBlock, accent = Om.color.danger) }
         }
     }
 }

@@ -36,6 +36,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import app.ominira.Session
+import app.ominira.core.Words
 import app.ominira.ui.kit.ActionButton
 import app.ominira.ui.kit.Brand
 import app.ominira.ui.kit.Emphasis
@@ -50,17 +51,18 @@ import app.ominira.ui.theme.Glyphs
 import app.ominira.ui.theme.Om
 import kotlinx.coroutines.delay
 
-private class ScanItem(val label: String, val icon: ImageVector, val open: () -> Unit)
+// label picks from Words, so the screen and the voice can each use their own language.
+private class ScanItem(val label: Words.() -> String, val icon: ImageVector, val open: () -> Unit)
 
 @Composable
 fun SwitchHomeScreen(session: Session, actions: HomeActions) {
     val items = remember(actions) {
         listOf(
-            ScanItem("Send money", Glyphs.Send, actions.send),
-            ScanItem("My balance", Glyphs.Wallet, actions.balance),
-            ScanItem("My card", Glyphs.Card, actions.card),
-            ScanItem("Sign language help", Glyphs.Sign, actions.sign),
-            ScanItem("Settings", Glyphs.Settings, actions.settings),
+            ScanItem({ sendMoney }, Glyphs.Send, actions.send),
+            ScanItem({ myBalance }, Glyphs.Wallet, actions.balance),
+            ScanItem({ myCard }, Glyphs.Card, actions.card),
+            ScanItem({ signHelp }, Glyphs.Sign, actions.sign),
+            ScanItem({ settings }, Glyphs.Settings, actions.settings),
         )
     }
     var ring by remember { mutableIntStateOf(0) }
@@ -68,6 +70,7 @@ fun SwitchHomeScreen(session: Session, actions: HomeActions) {
     var paused by remember { mutableStateOf(false) }
     val scanMs = session.scanMs
     val focus = remember { FocusRequester() }
+    val w = session.words
 
     LaunchedEffect(paused, picked, scanMs) {
         if (paused) return@LaunchedEffect
@@ -90,7 +93,7 @@ fun SwitchHomeScreen(session: Session, actions: HomeActions) {
             return
         }
         picked = ring
-        session.say(items[ring].label)
+        session.say(items[ring].label(session.spoken))
     }
 
     Page(
@@ -107,17 +110,17 @@ fun SwitchHomeScreen(session: Session, actions: HomeActions) {
                 }
             },
         top = {
-            Brand(Modifier.weight(1f)) { IconAction(Glyphs.Settings, "Settings", actions.settings) }
+            Brand(Modifier.weight(1f)) { IconAction(Glyphs.Settings, w.settings, actions.settings) }
         },
         bottom = {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconAction(
                     if (paused) Glyphs.Send else Glyphs.Pause,
-                    if (paused) "Resume scanning" else "Pause scanning",
+                    if (paused) w.resumeScanning else w.pauseScanning,
                     { paused = !paused },
                 )
                 ActionButton(
-                    "Press your switch",
+                    w.pressSwitch,
                     onClick = { press() },
                     modifier = Modifier.weight(1f).heightIn(min = 96.dp),
                     style = Emphasis.Sun,
@@ -126,8 +129,8 @@ fun SwitchHomeScreen(session: Session, actions: HomeActions) {
             }
         },
     ) {
-        Heading("What would you like to do?")
-        Hint(if (paused) "Scanning is paused." else "The ring moves every ${scanMs / 1000.0} seconds. Press when it reaches what you want.")
+        Heading(w.whatToDo)
+        Hint(if (paused) w.scanPaused else w.ringMoves(scanMs / 1000.0))
         items.forEachIndexed { i, item ->
             val ringed = i == ring
             val chosen = i == picked
@@ -140,12 +143,12 @@ fun SwitchHomeScreen(session: Session, actions: HomeActions) {
                     .clip(Corners.md)
                     .background(if (chosen) Om.color.actionSoft else Om.color.raised)
                     .border(2.dp, if (chosen) Om.color.action else Om.color.lineStrong, Corners.md)
-                    .clickable(role = Role.Button, onClickLabel = "open") { item.open() }
+                    .clickable(role = Role.Button, onClickLabel = w.open) { item.open() }
                     .padding(horizontal = 20.dp, vertical = 14.dp)
                     .semantics {
                         stateDescription = when {
-                            chosen -> "Chosen. Press again to open."
-                            ringed -> "Highlighted"
+                            chosen -> w.chosenPressAgain
+                            ringed -> w.highlighted
                             else -> ""
                         }
                     },
@@ -153,10 +156,10 @@ fun SwitchHomeScreen(session: Session, actions: HomeActions) {
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 Icon(item.icon, contentDescription = null, tint = Om.color.text, modifier = Modifier.size(28.dp))
-                Text(item.label, style = Om.type.bodyStrong.copy(fontSize = Om.type.lead.fontSize), color = Om.color.text)
+                Text(item.label(w), style = Om.type.bodyStrong.copy(fontSize = Om.type.lead.fontSize), color = Om.color.text)
             }
         }
-        if (picked >= 0) Notice(Tone.Ok, "You chose ${items[picked].label}.", body = "Press again to open it, or wait to keep scanning.")
+        if (picked >= 0) Notice(Tone.Ok, w.youChose(items[picked].label(w)), body = w.pressOrWait)
         Spacer(Modifier.size(8.dp))
     }
 }

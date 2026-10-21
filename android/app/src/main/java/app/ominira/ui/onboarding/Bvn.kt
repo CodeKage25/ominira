@@ -13,7 +13,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.dp
 import app.ominira.Session
 import app.ominira.core.Answers
-import app.ominira.core.Naira
 import app.ominira.ui.kit.ActionButton
 import app.ominira.ui.kit.Badge
 import app.ominira.ui.kit.DigitField
@@ -40,9 +39,11 @@ fun BvnScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
     var heardBvn by remember { mutableStateOf<String?>(null) }
     var misses by remember { mutableIntStateOf(0) }
     var checkAsked by remember { mutableStateOf(false) }
+    val w = session.words
+    val s = session.spoken
 
     val error = when {
-        tried && bvn.length != 11 -> "That is ${bvn.length} digit${if (bvn.length == 1) "" else "s"}. A BVN has 11."
+        tried && bvn.length != 11 -> w.bvnLength(bvn.length)
         else -> refusal
     }
 
@@ -66,14 +67,13 @@ fun BvnScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
             checking = false
             when {
                 result == null -> {
-                    val line = "I could not check your BVN. Check the connection and try again."
-                    refusal = line
-                    session.say(line)
+                    refusal = w.bvnFailed
+                    session.say(s.bvnFailed)
                 }
                 result.match -> {
                     open = true
                     session.haptics.done()
-                    session.say("Your account is open.", "Next, your Pulse PIN.")
+                    session.say(s.accountOpen, s.nextPulse)
                     if (session.talksFirst) {
                         session.speaker.awaitQuiet()
                         next()
@@ -91,7 +91,7 @@ fun BvnScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
     val prompt = rememberPrompt(session, quietMs = 2_000) { heard ->
         val pending = heardBvn
         when {
-            heard == null -> session.say("You can also type your BVN, then tap Check my BVN.")
+            heard == null -> session.say(s.canTypeBvn)
             pending != null && Answers.isYes(heard) -> {
                 heardBvn = null
                 bvn = pending
@@ -100,24 +100,24 @@ fun BvnScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
             }
             pending != null && Answers.isNo(heard) -> {
                 heardBvn = null
-                ask("Okay. Please say your BVN again, one digit at a time.")
+                ask(s.sayBvnAgain)
             }
             else -> {
                 val d = Answers.digits(heard)
                 when {
                     d.length == 11 -> {
                         heardBvn = d
-                        ask("I heard: " + Naira.digitWords(d) + ".", "Is that right? Say yes or no.")
+                        ask(s.iHeard(s.digits(d)), s.isThatRight)
                     }
-                    pending != null -> ask("Say yes if that is right, or no to say it again.")
-                    misses >= 3 -> session.say("Let's use the keypad instead. Type your BVN, then tap Check my BVN.")
+                    pending != null -> ask(s.yesOrSayAgain)
+                    misses >= 3 -> session.say(s.useKeypad)
                     d.isEmpty() -> {
                         misses += 1
-                        ask("Please say the eleven digits of your BVN.")
+                        ask(s.sayElevenDigits)
                     }
                     else -> {
                         misses += 1
-                        ask("I heard ${d.length} digits. A BVN has eleven. Please say it again.")
+                        ask(s.heardDigitCount(d.length))
                     }
                 }
             }
@@ -134,8 +134,8 @@ fun BvnScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
     LaunchedEffect(Unit) {
         if (session.talksFirst) {
             prompt.ask(
-                "Last step. Please say your BVN, all eleven digits.",
-                "If you do not know it, dial star five six five star zero hash from this phone.",
+                s.bvnIntro,
+                s.bvnDial,
             )
         }
     }
@@ -144,28 +144,28 @@ fun BvnScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
         top = { StepBar(4, onBack) },
         bottom = {
             if (open) {
-                ActionButton("Next: your Pulse PIN", onClick = {
+                ActionButton(w.nextPulseButton, onClick = {
                     session.speaker.stop()
                     next()
                 }, icon = Glyphs.Pulse)
             } else {
-                ActionButton("Check my BVN", busy = checking, onClick = {
+                ActionButton(w.checkBvn, busy = checking, onClick = {
                     prompt.cancel()
                     check()
                 })
             }
         },
     ) {
-        Kicker("Last check")
-        Heading("What is your BVN?")
+        Kicker(w.lastCheck)
+        Heading(w.whatIsBvn)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Badge(Tone.Ok, "Selfie")
-            Badge(Tone.Ok, "ID card")
+            Badge(Tone.Ok, w.selfie)
+            Badge(Tone.Ok, w.idCard)
             Badge(if (open) Tone.Ok else Tone.Caution, "BVN")
         }
         DigitField(
-            label = "Your BVN",
-            hint = "It is 11 digits. Dial *565*0# from your phone to hear it.",
+            label = w.yourBvn,
+            hint = w.bvnHint,
             value = bvn,
             onValueChange = {
                 bvn = it
@@ -178,15 +178,15 @@ fun BvnScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
             grouping = Grouping.Fours,
         )
         ActionButton(
-            "Say it instead",
+            w.sayItInstead,
             onClick = {
                 heardBvn = null
-                prompt.ask("Say your BVN, one digit at a time.", listen = true)
+                prompt.ask(session.spoken.sayBvnDigits, listen = true)
             },
             style = Emphasis.Quiet,
             icon = Glyphs.Mic,
             wide = false,
         )
-        if (open) Notice(Tone.Ok, "Your account is open.", body = "Your BVN matches your card and your face.")
+        if (open) Notice(Tone.Ok, w.accountOpen, body = w.bvnMatches)
     }
 }

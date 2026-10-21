@@ -33,10 +33,11 @@ object Answers {
     )
     private val noPhrases = listOf("read it myself", "read and tap", "i'll read", "i will read", "by myself", "no o")
 
-    private val startWords = setOf("start", "ready", "begin", "go", "now", "proceed", "continue", "oya")
-    private val againWords = setOf("again", "repeat", "what", "pardon", "sorry", "huh")
-    private val stopWords = setOf("stop", "cancel", "wait", "hold", "halt", "abeg")
-    private val carryOnPhrases = listOf("carry on", "continue", "go on", "go ahead", "chose", "choose", "myself", "my own")
+    // Then yo, ha and ig: the words the screens ask for.
+    private val startWords = setOf("start", "ready", "begin", "go", "now", "proceed", "continue", "oya", "bere", "fara", "malite")
+    private val againWords = setOf("again", "repeat", "what", "pardon", "sorry", "huh", "leekan", "sake", "ozo")
+    private val stopWords = setOf("stop", "cancel", "wait", "hold", "halt", "abeg", "duro", "tsaya", "kwusi")
+    private val carryOnPhrases = listOf("carry on", "continue", "go on", "go ahead", "chose", "choose", "myself", "my own", "tesiwaju", "ci gaba", "gaa n'ihu")
 
     private val digitNames = mapOf(
         "zero" to '0', "oh" to '0', "nought" to '0', "nil" to '0',

@@ -156,8 +156,9 @@ fun Brand(modifier: Modifier = Modifier, onDark: Boolean = Om.color.dark, traili
 
 @Composable
 fun StepDots(step: Int, of: Int, modifier: Modifier = Modifier) {
+    val label = Om.words.stepOf(step, of)
     Row(
-        modifier.clearAndSetSemantics { contentDescription = "Step $step of $of" },
+        modifier.clearAndSetSemantics { contentDescription = label },
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         repeat(of) { i ->

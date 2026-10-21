@@ -53,7 +53,7 @@ fun homeFor(modes: Set<Mode>): String = when {
 
 @Composable
 fun OminiraApp(session: Session) {
-    OminiraTheme(look = session.look, roomy = session.roomy) {
+    OminiraTheme(look = session.look, roomy = session.roomy, lang = session.lang) {
         val nav = rememberNavController()
         val actions = HomeActions(
             send = { nav.navigate(Route.SEND) },

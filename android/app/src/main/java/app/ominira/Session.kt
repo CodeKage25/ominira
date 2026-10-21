@@ -15,6 +15,7 @@ import app.ominira.core.Lines
 import app.ominira.core.Mode
 import app.ominira.core.PreferencePatch
 import app.ominira.core.Turn
+import app.ominira.core.Words
 import app.ominira.device.Haptics
 import app.ominira.device.Signals
 import app.ominira.ui.theme.Look
@@ -48,7 +49,7 @@ class Session(app: Application) : AndroidViewModel(app) {
 
     private fun newApi(): OminiraApi =
         if (useGateway && BuildConfig.GATEWAY_URL.isNotBlank()) GatewayOminiraApi(BuildConfig.GATEWAY_URL, BuildConfig.GATEWAY_TOKEN, BuildConfig.MOCK_ADMIN_TOKEN)
-        else FakeOminiraApi()
+        else FakeOminiraApi(lang = Lang.fromCode(store.getString(K_LANG, null)) ?: Lang.En)
 
     val speaker = Speaker(app) { activeCloudVoice() }
     val haptics = Haptics(app)
@@ -59,6 +60,15 @@ class Session(app: Application) : AndroidViewModel(app) {
         private set
     var lang by mutableStateOf(Lang.fromCode(store.getString(K_LANG, null)) ?: Lang.En)
         private set
+    // Screen copy, in the customer's language.
+    val words: Words get() = Words.of(lang)
+
+    // No voice for the language: speak English, not yo/ha/ig in an English voice.
+    val voiceLang: Lang get() = if (speaker.hasVoiceFor(lang)) lang else Lang.En
+
+    // Copy to speak: pair each words.x on screen with spoken.x in say().
+    val spoken: Words get() = Words.of(voiceLang)
+
     var modes by mutableStateOf(readModes())
         private set
     var speechRate by mutableStateOf(store.getFloat(K_RATE, 0.95f))
@@ -198,10 +208,10 @@ class Session(app: Application) : AndroidViewModel(app) {
     fun pulseIntro(): String {
         val seen = store.getInt(K_PULSE_INTROS, 0)
         store.edit().putInt(K_PULSE_INTROS, seen + 1).apply()
-        return if (seen < 3) Lines.pulseExplain(lang) else Lines.pulseShort(lang)
+        return if (seen < 3) Lines.pulseExplain(voiceLang) else Lines.pulseShort(voiceLang)
     }
 
-    fun greeting(): String = Lines.greeting(lang, customerName, Calendar.getInstance().get(Calendar.HOUR_OF_DAY))
+    fun greeting(language: Lang = lang): String = Lines.greeting(language, customerName, Calendar.getInstance().get(Calendar.HOUR_OF_DAY))
 
     suspend fun mainAccount(): Account? = runCatching { api.accounts().firstOrNull() }.getOrNull()
 

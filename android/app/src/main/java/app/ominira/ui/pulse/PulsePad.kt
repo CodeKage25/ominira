@@ -100,6 +100,7 @@ fun PulsePad(
     val practising by rememberUpdatedState(practice)
     val zeroAloud by rememberUpdatedState(zeroSound)
     val deliver by rememberUpdatedState(onDigits)
+    val w = Om.words
 
     LaunchedEffect(pad.round, pad.running, gapMs) {
         if (!pad.running) return@LaunchedEffect
@@ -162,7 +163,7 @@ fun PulsePad(
             Modifier
                 .fillMaxWidth()
                 .clearAndSetSemantics {
-                    contentDescription = if (practice) "Practice round" else "${pad.taken} of 4 digits entered"
+                    contentDescription = if (practice) w.practiceRound else w.digitsEntered(pad.taken)
                     liveRegion = LiveRegionMode.Polite
                 },
             horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
@@ -204,12 +205,12 @@ fun PulsePad(
 
         Text(
             when {
-                !enabled -> "Pulse PIN is locked."
-                !pad.running -> "Tap the space below to start the count."
-                practice -> "Practice: wait for the strong double buzz (zero), count to three, then tap. Nothing is sent."
-                pad.inEars -> "Listen in your earphones. Tap at your digit. A higher, longer tick means zero."
-                showCount -> "Tap when the count reaches your next digit. A strong double buzz means zero."
-                else -> "Feel the count. Tap at your digit. A strong double buzz means zero."
+                !enabled -> w.pinLocked
+                !pad.running -> w.tapSpaceToStart
+                practice -> w.practiceHint
+                pad.inEars -> w.earsHint
+                showCount -> w.countHint
+                else -> w.feelHint
             },
             style = Om.type.body,
             color = c.bandMuted,
@@ -236,7 +237,7 @@ fun PulsePad(
                     indication = null,
                     enabled = enabled,
                     role = Role.Button,
-                    onClickLabel = if (pad.running) "take this digit" else "start the count",
+                    onClickLabel = if (pad.running) w.takeThisDigit else w.startTheCount,
                     onClick = { tap() },
                 )
                 .padding(16.dp),
@@ -251,7 +252,7 @@ fun PulsePad(
                         modifier = Modifier.clearAndSetSemantics { },
                     )
                 }
-                Text(if (pad.running) "Tap anywhere here" else "Start the count", style = Om.type.label, color = c.bandText)
+                Text(if (pad.running) w.tapAnywhereHere else w.startTheCount, style = Om.type.label, color = c.bandText)
             }
         }
     }

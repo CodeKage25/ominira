@@ -11,7 +11,6 @@ import app.ominira.core.DraftStatus
 import app.ominira.core.Drafted
 import app.ominira.core.IdDetails
 import app.ominira.core.Lang
-import app.ominira.core.Lines
 import app.ominira.core.Naira
 import app.ominira.core.OnboardingSession
 import app.ominira.core.Outcome
@@ -24,6 +23,7 @@ import app.ominira.core.SpokenAmount
 import app.ominira.core.Turn
 import app.ominira.core.Txn
 import app.ominira.core.Unlock
+import app.ominira.core.Words
 import kotlinx.coroutines.delay
 import java.time.Duration
 import java.time.Instant
@@ -33,13 +33,16 @@ class FakeOminiraApi(
     private val now: () -> Instant = { Instant.now() },
     private val approvalDelayMs: Long = 6_000,
     private val latency: Long = 1,
+    lang: Lang = Lang.En,
 ) : OminiraApi {
 
     private val pin = listOf(2, 0, 7, 5)
     private var triesLeft = 3
     private var balanceKobo = 84_230_000L
     private var sentTodayKobo = 0L
-    private var lang = Lang.En
+    // Every line it says follows the customer's language, like the Gateway's say.
+    private var lang = lang
+    private val w: Words get() = Words.of(lang)
 
     private val approver = "Funmi"
     private val pauseThresholdKobo = 5_000_000L
@@ -116,8 +119,7 @@ class FakeOminiraApi(
         pause(700)
         val match = bvn.length == 11 && bvn.all { it in '0'..'9' } && bvn != "12345678901"
         signups.getOrPut(sessionId) { Signup() }.bvnOk = match
-        return if (match) BvnCheck(true, "Your BVN matches your card and your face.")
-        else BvnCheck(false, "That BVN does not match your card. Please check it and try again.")
+        return if (match) BvnCheck(true, w.bvnMatches) else BvnCheck(false, w.bvnNoMatch)
     }
 
     override suspend fun completeOnboarding(sessionId: String): Boolean {
@@ -129,22 +131,21 @@ class FakeOminiraApi(
     override suspend fun unlock(pinBlock: String): Unlock {
         pause(250)
         return when (val check = checkPin(pinBlock)) {
-            null -> Unlock.Open("Welcome back.")
+            null -> Unlock.Open(w.welcomeBack)
             else -> Unlock.Wrong(check.triesLeft, check.say)
         }
     }
 
     // Null when right. Shared by sign in and confirm: one count of tries.
     private fun checkPin(pinBlock: String): Outcome.WrongPin? {
-        if (triesLeft == 0) return Outcome.WrongPin(0, LOCKED)
+        if (triesLeft == 0) return Outcome.WrongPin(0, w.pinLockedFull)
         if (PinBlock.open(pinBlock) == pin) {
             triesLeft = 3
             return null
         }
         triesLeft -= 1
-        if (triesLeft == 0) return Outcome.WrongPin(0, LOCKED)
-        val tries = if (triesLeft == 1) "one try" else Naira.words(triesLeft.toLong()) + " tries"
-        return Outcome.WrongPin(triesLeft, "That PIN did not match. Feel the count again. You have $tries left.")
+        if (triesLeft == 0) return Outcome.WrongPin(0, w.pinLockedFull)
+        return Outcome.WrongPin(triesLeft, w.pinWrong(triesLeft))
     }
 
     override suspend fun accounts(): List<Account> {
@@ -154,7 +155,7 @@ class FakeOminiraApi(
 
     override suspend fun balance(accountId: String): Balance {
         pause(150)
-        return Balance(balanceKobo, "You have ${Naira.spoken(balanceKobo)}.")
+        return Balance(balanceKobo, w.youHave(balanceKobo))
     }
 
     override suspend fun transactions(accountId: String, limit: Int, direction: String?): List<Txn> {
@@ -176,11 +177,8 @@ class FakeOminiraApi(
     private fun cameIn(): String {
         val weekAgo = now().minus(Duration.ofDays(7))
         val incoming = txns.filter { it.incoming && (Instant.parse(it.at).isAfter(weekAgo)) }
-        if (incoming.isEmpty()) return "Nothing came in this week."
-        val total = incoming.sumOf { it.amountKobo }
-        val people = incoming.map { it.who }.distinct().size
-        val from = if (people == 1) "one person" else Naira.words(people.toLong()) + " people"
-        return "${Naira.spokenSentence(total)} came in this week, from $from."
+        if (incoming.isEmpty()) return w.nothingCameIn
+        return w.cameIn(incoming.sumOf { it.amountKobo }, incoming.map { it.who }.distinct().size)
     }
 
     override suspend fun payees(): List<Payee> {
@@ -206,7 +204,7 @@ class FakeOminiraApi(
         // The spoken PIN check comes first; the PIN is never kept.
         if (Answers.soundsLikePin(text)) {
             waitingFor = null
-            return answer(Lines.PIN_SPOKEN)
+            return answer(w.pinSpoken)
         }
 
         val t = text.lowercase()
@@ -217,34 +215,34 @@ class FakeOminiraApi(
         }
         val amount = SpokenAmount.parseKobo(text)
         val payee = named ?: waitingFor?.takeIf { amount != null }
-        val sending = listOf("send", "transfer", "pay", "give").any { w -> said.any { it.startsWith(w) } } ||
+        // English, then yo, ha and ig words as the en-NG recogniser spells them.
+        val sending = listOf("send", "transfer", "pay", "give", "ranse", "aika", "tura", "ziga").any { v -> said.any { it.startsWith(v) } } ||
             (named == null && payee != null)
 
         return when {
-            "block" in t && ("card" in t || "atm" in t) -> {
+            listOf("block", "toshe", "gbochi").any { it in t } && listOf("card", "atm", "kaadi", "kati").any { it in t } -> {
                 waitingFor = null
                 val card = cardList.first()
                 when (val made = draftCardBlock(card.id)) {
-                    is Drafted.Made -> answer("I can block your card ending ${Naira.digitWords(card.last4)}.", made.draft)
+                    is Drafted.Made -> answer(w.canBlockCard(card.last4), made.draft)
                     is Drafted.Refused -> answer(made.say)
                 }
             }
-            sending && payee == null -> answer("Who are you sending to? Say a name, like Tolu or Mama.")
+            sending && payee == null -> answer(w.whoSendingTo)
             sending && payee != null && amount == null -> {
                 waitingFor = payee
-                answer("How much should I send to ${payee.nickname}?")
+                answer(w.howMuchSend(payee.nickname))
             }
             sending && payee != null && amount != null -> {
                 waitingFor = null
                 when (val made = draftTransfer(payee.id, amount)) {
-                    is Drafted.Made -> answer("I found ${payee.name} at ${payee.bank}. Listen, then pulse your PIN to send.", made.draft)
+                    is Drafted.Made -> answer(w.foundPayee(payee.name, payee.bank), made.draft)
                     is Drafted.Refused -> answer(made.say)
                 }
             }
-            listOf("came in", "this week", "received", "income", "salary").any { it in t } -> answer(cameIn())
-            listOf("balance", "how much", "my money", "account").any { it in t } ->
-                answer("You have ${Naira.spoken(balanceKobo)} in your current account.")
-            else -> answer("I can send money, read your balance, tell you what came in, or block your card. What would you like?")
+            listOf("came in", "this week", "received", "income", "salary", "wole", "shigo", "batara").any { it in t } -> answer(cameIn())
+            listOf("balance", "how much", "my money", "account", "elo", "nawa", "ego ole").any { it in t } -> answer(w.balanceInAccount(balanceKobo))
+            else -> answer(w.help)
         }
     }
 
@@ -254,8 +252,8 @@ class FakeOminiraApi(
     override suspend fun draftTransfer(payeeId: String, amountKobo: Long): Drafted {
         pause(200)
         val p = people.firstOrNull { it.id == payeeId }
-            ?: return Drafted.Refused("payee_not_found", "I could not find that person. Nothing was sent.")
-        if (amountKobo <= 0) return Drafted.Refused("invalid_amount", "That amount is not right. Nothing was sent.")
+            ?: return Drafted.Refused("payee_not_found", w.payeeNotFound)
+        if (amountKobo <= 0) return Drafted.Refused("invalid_amount", w.amountNotRight)
         val readback = Readback(
             kind = DraftKind.Transfer,
             name = p.name,
@@ -264,12 +262,7 @@ class FakeOminiraApi(
             amountKobo = amountKobo,
             amountText = Naira.format(amountKobo),
             lang = lang.code,
-            spoken = listOf(
-                Naira.spokenSentence(amountKobo) + ".",
-                "To ${p.name}.",
-                "${p.bank}, ending ${Naira.digitWords(p.last4)}.",
-                "Pulse your PIN to send.",
-            ),
+            spoken = listOf(w.moneySentence(amountKobo) + ".", w.rbTo(p.name), w.rbBank(p.bank, p.last4), w.rbPulseSend),
         )
         return Drafted.Made(open(readback, p, null))
     }
@@ -277,21 +270,17 @@ class FakeOminiraApi(
     override suspend fun draftCardBlock(cardId: String): Drafted {
         pause(200)
         val c = cardList.firstOrNull { it.id == cardId }
-            ?: return Drafted.Refused("card_not_found", "I could not find that card. Nothing has changed.")
-        if (c.blocked) return Drafted.Refused("already_blocked", "That card is already blocked. A new one is on its way.")
+            ?: return Drafted.Refused("card_not_found", w.cardNotFound)
+        if (c.blocked) return Drafted.Refused("already_blocked", w.alreadyBlocked)
         val readback = Readback(
             kind = DraftKind.CardBlock,
-            name = "Card ending ${c.last4}",
+            name = w.cardName(c.last4),
             bank = "Zenith Bank",
             last4 = c.last4,
             amountKobo = null,
             amountText = null,
             lang = lang.code,
-            spoken = listOf(
-                "Block your card ending ${Naira.digitWords(c.last4)}.",
-                "It stops working at once. A new card reaches you in about five working days.",
-                "Pulse your PIN to block it.",
-            ),
+            spoken = listOf(w.rbBlock(c.last4), w.rbBlockEffect, w.rbPulseBlock),
         )
         return Drafted.Made(open(readback, null, c))
     }
@@ -321,7 +310,7 @@ class FakeOminiraApi(
 
     private fun expireIfStale(r: Record) {
         if (r.draft.status.open && Duration.between(r.createdAt, now()) > Duration.ofMinutes(10)) {
-            set(r, DraftStatus.Expired, EXPIRED)
+            set(r, DraftStatus.Expired, w.expired)
         }
     }
 
@@ -333,70 +322,67 @@ class FakeOminiraApi(
         pause(800)
 
         // Same gate order as the Gateway; do not reorder these checks.
-        val r = records[draftId] ?: return Outcome.NotSent("not_found", false, "I could not find that request. Nothing was sent.")
+        val r = records[draftId] ?: return Outcome.NotSent("not_found", false, w.requestNotFound)
         expireIfStale(r)
         when (r.draft.status) {
-            DraftStatus.Executed -> return Outcome.Sent(r.draft.reference.orEmpty(), "That was already done. Nothing more was sent.")
-            DraftStatus.Cancelled, DraftStatus.Failed -> return Outcome.Stopped("That request is closed. Nothing was sent.")
-            DraftStatus.Expired -> return Outcome.Expired(EXPIRED)
-            DraftStatus.AwaitingApproval -> return Outcome.NeedsApproval(approver, approvalLine())
-            DraftStatus.Processing -> return Outcome.Unsure(ON_ITS_WAY)
+            DraftStatus.Executed -> return Outcome.Sent(r.draft.reference.orEmpty(), w.alreadyDone)
+            DraftStatus.Cancelled, DraftStatus.Failed -> return Outcome.Stopped(w.requestClosed)
+            DraftStatus.Expired -> return Outcome.Expired(w.expired)
+            DraftStatus.AwaitingApproval -> return Outcome.NeedsApproval(approver, w.approvalWait(approver))
+            DraftStatus.Processing -> return Outcome.Unsure(w.onItsWay)
             DraftStatus.AwaitingConfirm, DraftStatus.Paused -> Unit
         }
 
         val fresh = ReadbackHash.of(r.draft.readback)
         if (readbackHash != fresh) {
-            return Outcome.HearAgain(r.draft.readback, fresh, "Something changed since I read it to you. Please listen again.")
+            return Outcome.HearAgain(r.draft.readback, fresh, w.readbackChanged)
         }
 
         val amount = r.draft.readback.amountKobo ?: 0L
         if (r.draft.kind == DraftKind.Transfer) {
             if (amount > perTransferLimitKobo) {
-                return Outcome.NotSent("limit_exceeded", false, "That is more than one million naira, the most you can send at once. Nothing was sent.")
+                return Outcome.NotSent("limit_exceeded", false, w.limitSingle)
             }
             if (sentTodayKobo + amount > dailyLimitKobo) {
                 val left = (dailyLimitKobo - sentTodayKobo).coerceAtLeast(0)
-                return Outcome.NotSent("limit_exceeded", false, "You can send ${Naira.spoken(left)} more today. Nothing was sent.")
+                return Outcome.NotSent("limit_exceeded", false, w.limitDaily(left))
             }
             if (amount > balanceKobo) {
-                return Outcome.NotSent("insufficient_funds", false, "That is more than you have. Nothing was sent.")
+                return Outcome.NotSent("insufficient_funds", false, w.moreThanYouHave)
             }
 
             val p = r.payee
             val risky = p != null && ((p.isNew && amount >= pauseThresholdKobo && callActive) || p.flagged)
             if (risky && !r.pauseAnswered) {
-                set(r, DraftStatus.Paused, PAUSE)
-                return Outcome.Paused(PAUSE)
+                set(r, DraftStatus.Paused, w.pauseFull)
+                return Outcome.Paused(w.pauseFull)
             }
         }
 
         checkPin(pinBlock)?.let { return it }
 
         if (r.draft.kind == DraftKind.Transfer && amount > approverThresholdKobo) {
-            set(r, DraftStatus.AwaitingApproval, approvalLine())
-            return Outcome.NeedsApproval(approver, approvalLine())
+            set(r, DraftStatus.AwaitingApproval, w.approvalWait(approver))
+            return Outcome.NeedsApproval(approver, w.approvalWait(approver))
         }
 
         return execute(r)
     }
-
-    private fun approvalLine() =
-        "$approver checks transfers above fifty thousand naira. I have asked $approver. Nothing moves until $approver says yes."
 
     private fun execute(r: Record): Outcome {
         return when (r.draft.kind) {
             DraftKind.Transfer -> {
                 val amount = r.draft.readback.amountKobo ?: 0L
                 if (amount > balanceKobo) {
-                    set(r, DraftStatus.Failed, "That is more than you have. Nothing was sent.")
-                    return Outcome.NotSent("insufficient_funds", false, "That is more than you have. Nothing was sent.")
+                    set(r, DraftStatus.Failed, w.moreThanYouHave)
+                    return Outcome.NotSent("insufficient_funds", false, w.moreThanYouHave)
                 }
                 val p = r.payee
                 val reference = "ZEN" + Random.nextLong(10_000_000L, 99_999_999L)
                 balanceKobo -= amount
                 sentTodayKobo += amount
                 txns.add(0, Txn(r.draft.id, r.draft.readback.name, amount, incoming = false, at = now().toString(), reference = reference))
-                val say = "Sent. ${p?.nickname ?: r.draft.readback.name} has it."
+                val say = w.sent(p?.nickname ?: r.draft.readback.name)
                 set(r, DraftStatus.Executed, say, reference)
                 Outcome.Sent(reference, say)
             }
@@ -404,7 +390,7 @@ class FakeOminiraApi(
                 val i = cardList.indexOfFirst { it.last4 == r.draft.readback.last4 }
                 if (i >= 0) cardList[i] = cardList[i].copy(blocked = true)
                 val reference = "CRD" + Random.nextLong(100_000L, 999_999L)
-                val say = "Card blocked. A new one is on its way."
+                val say = w.cardBlockedNew
                 set(r, DraftStatus.Executed, say, reference)
                 Outcome.Sent(reference, say)
             }
@@ -413,17 +399,17 @@ class FakeOminiraApi(
 
     override suspend fun answerPause(draftId: String, stop: Boolean): Outcome {
         pause(300)
-        val r = records[draftId] ?: return Outcome.NotSent("not_found", false, "I could not find that request. Nothing was sent.")
+        val r = records[draftId] ?: return Outcome.NotSent("not_found", false, w.requestNotFound)
         if (r.draft.status != DraftStatus.Paused) {
-            return Outcome.NotSent("not_paused", false, "That request is not waiting on a pause.")
+            return Outcome.NotSent("not_paused", false, w.notPaused)
         }
         r.pauseAnswered = true
         return if (stop) {
-            val say = "Stopped. Your money is safe. Nothing was sent."
+            val say = w.stoppedSafeNothingSent
             set(r, DraftStatus.Cancelled, say)
             Outcome.Stopped(say)
         } else {
-            val say = "Okay. Pulse your PIN again to send it."
+            val say = w.pulseAgain
             set(r, DraftStatus.AwaitingConfirm, say)
             Outcome.Resumed(say)
         }
@@ -431,12 +417,12 @@ class FakeOminiraApi(
 
     override suspend fun cancel(draftId: String): Outcome {
         pause(200)
-        val r = records[draftId] ?: return Outcome.Stopped("Cancelled. Nothing was sent.")
+        val r = records[draftId] ?: return Outcome.Stopped(w.cancelled)
         return when (r.draft.status) {
-            DraftStatus.Executed -> Outcome.Sent(r.draft.reference.orEmpty(), "That was already sent.")
-            DraftStatus.Processing -> Outcome.Unsure(ON_ITS_WAY)
+            DraftStatus.Executed -> Outcome.Sent(r.draft.reference.orEmpty(), w.alreadySent)
+            DraftStatus.Processing -> Outcome.Unsure(w.onItsWay)
             else -> {
-                val say = "Cancelled. Nothing was sent."
+                val say = w.cancelled
                 if (r.draft.status.open || r.draft.status == DraftStatus.AwaitingApproval) set(r, DraftStatus.Cancelled, say)
                 Outcome.Stopped(say)
             }
@@ -444,29 +430,22 @@ class FakeOminiraApi(
     }
 
     override suspend fun awaitDecision(draftId: String): Outcome {
-        val r = records[draftId] ?: return Outcome.NotSent("not_found", false, "I could not find that request. Nothing was sent.")
+        val r = records[draftId] ?: return Outcome.NotSent("not_found", false, w.requestNotFound)
         if (r.draft.status == DraftStatus.AwaitingApproval) delay(approvalDelayMs)
         return when (r.draft.status) {
             DraftStatus.AwaitingApproval -> when (val done = execute(r)) {
-                is Outcome.Sent -> done.copy(say = "$approver approved. " + done.say)
+                is Outcome.Sent -> done.copy(say = w.approved(approver) + " " + done.say)
                 else -> done
             }
-            DraftStatus.Executed -> Outcome.Sent(r.draft.reference.orEmpty(), r.draft.say ?: "Sent.")
-            DraftStatus.Cancelled -> Outcome.Stopped(r.draft.say ?: "Cancelled. Nothing was sent.")
-            DraftStatus.Expired -> Outcome.Expired(r.draft.say ?: EXPIRED)
-            else -> Outcome.NotSent("not_waiting", true, "That request is not waiting for $approver.")
+            DraftStatus.Executed -> Outcome.Sent(r.draft.reference.orEmpty(), r.draft.say ?: w.sentShort)
+            DraftStatus.Cancelled -> Outcome.Stopped(r.draft.say ?: w.cancelled)
+            DraftStatus.Expired -> Outcome.Expired(r.draft.say ?: w.expired)
+            else -> Outcome.NotSent("not_waiting", true, w.notWaitingFor(approver))
         }
     }
 
     private fun token(n: Int): String {
         val chars = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
         return (1..n).map { chars[Random.nextInt(chars.length)] }.joinToString("")
-    }
-
-    private companion object {
-        const val LOCKED = "Your Pulse PIN is locked after three wrong tries. Nothing was sent. Zenith will call you to unlock it."
-        const val PAUSE = "Is someone on the phone telling you to send this? Nothing has been sent."
-        const val EXPIRED = "That request is more than ten minutes old, so I closed it. Nothing was sent."
-        const val ON_ITS_WAY = "Your transfer is still on its way. Do not send it again. Check your balance in a few minutes."
     }
 }

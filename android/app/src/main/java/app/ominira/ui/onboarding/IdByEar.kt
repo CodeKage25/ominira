@@ -44,8 +44,8 @@ import app.ominira.core.Answers
 import app.ominira.core.Days
 import app.ominira.core.DraftKind
 import app.ominira.core.IdDetails
-import app.ominira.core.Naira
 import app.ominira.core.Readback
+import app.ominira.core.Words
 import app.ominira.ui.kit.ActionButton
 import app.ominira.ui.kit.Heading
 import app.ominira.ui.kit.Hint
@@ -63,14 +63,13 @@ import app.ominira.voice.rememberPrompt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private val cardLines = listOf("Ready when you are.", "Hold your card up a little.", "Tilt left a little.", "Got it.")
 private val cardTilt = listOf(-14f, -14f, -5f, 0f)
 
-private fun idLines(id: IdDetails): Array<String> = arrayOf(
-    "Is this you?",
+private fun idLines(w: Words, id: IdDetails): Array<String> = arrayOf(
+    w.isThisYou,
     id.fullName + ".",
-    "N I N ending " + Naira.digitWords(id.ninLast4) + ".",
-    "Born " + Days.bornOn(id.bornOn) + ".",
+    w.ninEnding(id.ninLast4, spell = true),
+    w.born(Days.bornOn(id.bornOn, w.lang)),
 )
 
 @Composable
@@ -85,12 +84,10 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
     var problem by remember { mutableStateOf<String?>(null) }
     var startAsked by remember { mutableStateOf(false) }
     val tilt by animateFloatAsState(cardTilt[phase], if (still) snap<Float>() else tween<Float>(600), label = "tilt")
-    val confirmLine = "Say yes if that is you, or say again to hear it again."
-    val startLines = arrayOf(
-        "Now your ID card.",
-        "Hold your NIN slip or ID card in front of the back camera.",
-        "Say start when you are ready, or tap anywhere.",
-    )
+    val w = session.words
+    val s = session.spoken
+    val confirmLine = s.confirmId
+    val startLines = arrayOf(s.nowIdCard, s.holdNin, s.sayStartOrTap)
 
     fun next() = leave.run(onNext)
 
@@ -98,27 +95,27 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
     val prompt = rememberPrompt(session) { heard ->
         val id = details
         when {
-            heard == null -> session.say(if (id == null) "Tap anywhere on the screen to start." else "You can also tap Yes, that is me.")
+            heard == null -> session.say(if (id == null) s.tapToStart else s.alsoTapYes)
             id == null && Answers.isStart(heard) -> startAsked = true
             id == null && misses < 2 -> {
                 misses += 1
-                ask("Say start when you are ready, or tap anywhere.")
+                ask(s.sayStartOrTap)
             }
-            id == null -> session.say("Tap anywhere when you are ready.")
+            id == null -> session.say(s.tapWhenReady)
             Answers.isNo(heard) -> {
                 details = null
                 phase = 0
                 started = false
                 misses = 0
-                ask("Let's try the card again.", *startLines.drop(1).toTypedArray())
+                ask(s.cardAgain, *startLines.drop(1).toTypedArray())
             }
-            Answers.isAgain(heard) -> ask(*idLines(id), confirmLine)
+            Answers.isAgain(heard) -> ask(*idLines(s, id), confirmLine)
             Answers.isYes(heard) -> next()
             misses < 2 -> {
                 misses += 1
                 ask(confirmLine)
             }
-            else -> session.say("You can also tap Yes, that is me.")
+            else -> session.say(s.alsoTapYes)
         }
     }
 
@@ -131,21 +128,20 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
             for (n in 1..3) {
                 delay(1_600)
                 phase = n
-                session.say(cardLines[n])
+                session.say(s.cardSteps[n])
             }
             session.haptics.lock()
             val read = runCatching { session.api.readIdDocument(session.onboardingSession()) }.getOrNull()
             if (read == null) {
-                val line = "I could not read the card. Check the connection and try again."
-                problem = line
-                session.say(line)
+                problem = w.cardFailed
+                session.say(s.cardFailed)
                 phase = 0
                 started = false
                 return@launch
             }
             details = read
             misses = 0
-            if (session.talksFirst) prompt.ask(*idLines(read), confirmLine) else session.say(*idLines(read))
+            if (session.talksFirst) prompt.ask(*idLines(s, read), confirmLine) else session.say(*idLines(s, read))
         }
     }
 
@@ -160,14 +156,14 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
     }
 
     Page(
-        modifier = Modifier.tapAnywhere(details == null && !started, "start the camera") { begin() },
+        modifier = Modifier.tapAnywhere(details == null && !started, w.startCamera) { begin() },
         top = { StepBar(3, onBack) },
         bottom = {
             val id = details
             if (id != null) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     ActionButton(
-                        "Yes, that is me",
+                        w.yesThatsMe,
                         onClick = {
                             prompt.cancel()
                             session.speaker.stop()
@@ -175,11 +171,11 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
                         },
                         modifier = Modifier.weight(1f),
                     )
-                    IconAction(Glyphs.Repeat, "Read it to me again", { session.say(*idLines(id)) })
+                    IconAction(Glyphs.Repeat, w.readAgain, { session.say(*idLines(session.spoken, id)) })
                 }
             } else {
                 ActionButton(
-                    if (phase == 0) "Start the camera" else "Finding your card",
+                    if (phase == 0) w.startCamera else w.findingCard,
                     onClick = { begin() },
                     icon = Glyphs.Camera,
                     busy = phase in 1..2,
@@ -187,8 +183,8 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
             }
         },
     ) {
-        Kicker("ID by ear")
-        Heading("Now your ID card.")
+        Kicker(w.idKicker)
+        Heading(w.nowIdCard)
         problem?.let { Notice(Tone.Danger, it) }
         Box(
             Modifier
@@ -204,7 +200,7 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
             Canvas(
                 Modifier
                     .fillMaxSize()
-                    .clearAndSetSemantics { contentDescription = if (locked) "Card captured" else "Finding your card" },
+                    .clearAndSetSemantics { contentDescription = if (locked) w.cardCaptured else w.findingCard },
             ) {
                 val fw = size.width * 0.8f
                 val fh = size.height * 0.62f
@@ -233,7 +229,7 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
                 )
             }
             Text(
-                cardLines[phase],
+                w.cardSteps[phase],
                 style = Om.type.bodyStrong,
                 color = Om.color.bandText,
                 textAlign = TextAlign.Center,
@@ -245,7 +241,7 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
         }
         val id = details
         if (id == null) {
-            Hint("Hold your NIN slip or ID card in front of the back camera. I will guide you, then read it back.")
+            Hint(w.holdNin + " " + w.guideThenRead)
         } else {
             ReadbackPanel(
                 readback = Readback(
@@ -256,9 +252,9 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
                     amountKobo = null,
                     amountText = null,
                     lang = session.lang.code,
-                    spoken = listOf("${id.fullName}.", "NIN ending ${Naira.digitWords(id.ninLast4)}.", "Born ${Days.bornOn(id.bornOn)}."),
+                    spoken = listOf("${id.fullName}.", w.ninEnding(id.ninLast4), w.born(Days.bornOn(id.bornOn, w.lang))),
                 ),
-                heading = "Is this you?",
+                heading = w.isThisYou,
             )
         }
     }

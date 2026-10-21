@@ -38,6 +38,7 @@ import app.ominira.core.Outcome
 import app.ominira.core.Payee
 import app.ominira.core.PinBlock
 import app.ominira.core.Readback
+import app.ominira.core.Words
 import app.ominira.ui.kit.ActionButton
 import app.ominira.ui.kit.Badge
 import app.ominira.ui.kit.BlockingSheet
@@ -67,8 +68,6 @@ import kotlinx.coroutines.launch
 
 private enum class Step { Ask, Readback, Pulse, Paused, Approval, Done, Stopped, Unsure }
 
-private const val PAUSE_QUESTION = "Is someone on the phone telling you to send this?"
-private const val NEVER_CALLS = "Zenith will never call you to move money. If anyone on this call told you to do this, hang up now."
 
 @Composable
 fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit, onSign: () -> Unit) {
@@ -83,22 +82,25 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
     var replyCount by remember { mutableIntStateOf(0) }
     var problem by remember { mutableStateOf<String?>(null) }
     var ending by remember { mutableStateOf("") }
-    var askLead by remember { mutableStateOf<String?>(null) }
+    // A Words pick, so the lead shows in the customer's language and is spoken in the voice's.
+    var askLead by remember { mutableStateOf<(Words.() -> String)?>(null) }
     var busy by remember { mutableStateOf(false) }
     var attempt by remember { mutableIntStateOf(0) }
     var locked by remember { mutableStateOf(false) }
-    var approver by remember { mutableStateOf("your approver") }
+    var approver by remember { mutableStateOf("") }
     var waiting by remember { mutableStateOf<Job?>(null) }
     var people by remember { mutableStateOf<List<Payee>>(emptyList()) }
     var picked by remember { mutableStateOf<Payee?>(null) }
     var amountText by remember { mutableStateOf("") }
     var misses by remember { mutableIntStateOf(0) }
     val voice = session.talksFirst
-    val confirmLine = "Say yes to go on to your Pulse PIN, or no to stop."
+    val w = session.words
+    val s = session.spoken
+    val confirmLine = s.confirmSend
 
     LaunchedEffect(Unit) { people = runCatching { session.api.payees() }.getOrDefault(emptyList()) }
 
-    fun startOver(lead: String?) {
+    fun startOver(lead: (Words.() -> String)?) {
         waiting?.cancel()
         draft = null
         heard = null
@@ -184,7 +186,7 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
             val turn = runCatching { session.api.turn(text, session.lang) }.getOrNull()
             busy = false
             if (turn == null) {
-                reply = "Sorry, I could not do that just now. Please try again."
+                reply = w.couldNotDo
                 replyCount += 1
                 return@launch
             }
@@ -203,7 +205,7 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
         val kobo = amountText.toLongOrNull()?.times(100) ?: return
         busy = true
         problem = null
-        heard = "Send ${Naira.format(kobo)} to ${who.nickname}"
+        heard = w.sendTo(Naira.format(kobo), who.nickname)
         scope.launch {
             val made = runCatching { session.api.draftTransfer(who.id, kobo) }.getOrNull()
             busy = false
@@ -217,9 +219,8 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
                     session.say(made.say)
                 }
                 null -> {
-                    val line = "I could not prepare that. Nothing was sent. Please try again."
-                    problem = line
-                    session.say(line)
+                    problem = w.couldNotPrepare
+                    session.say(s.couldNotPrepare)
                 }
             }
         }
@@ -228,8 +229,8 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
     fun cancelDraft() {
         val d = draft
         if (d != null) scope.launch { runCatching { session.api.cancel(d.id) } }
-        startOver("Okay, I have stopped. Nothing was sent.")
-        if (!voice) session.say("Okay, I have stopped. Nothing was sent.")
+        startOver { stoppedNothingSent }
+        if (!voice) session.say(s.stoppedNothingSent)
     }
 
     fun stopAtPause() {
@@ -240,8 +241,8 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
             val answer = runCatching { session.api.answerPause(d.id, stop = true) }.getOrNull()
             if (answer is Outcome.NotSent || answer == null) {
                 busy = false
-                problem = answer?.say ?: "I cannot reach the bank right now. Nothing was sent."
-                session.say(problem.orEmpty())
+                problem = answer?.say ?: w.cannotReachBank
+                session.say(answer?.say ?: s.cannotReachBank)
             } else {
                 handle(answer)
                 if (!voice) session.say(answer.say)
@@ -260,14 +261,14 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
                 if (answer != null && answer !is Outcome.NotSent) {
                     handle(answer)
                 } else {
-                    problem = answer?.say ?: "I cannot reach the bank right now. Nothing was sent."
-                    session.say(problem.orEmpty())
+                    problem = answer?.say ?: w.cannotReachBank
+                    session.say(answer?.say ?: s.cannotReachBank)
                 }
                 return@launch
             }
             if (session.callActive()) {
                 // Most important line: it finishes before anything else is said.
-                session.say(NEVER_CALLS)
+                session.say(s.neverCalls)
                 session.speaker.awaitQuiet()
             }
             handle(answer)
@@ -281,7 +282,7 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
             val answer = runCatching { session.api.cancel(d.id) }.getOrNull()
             if (answer == null || answer is Outcome.NotSent) {
                 // Cancel failed: it is still with the approver, so keep waiting.
-                session.say(answer?.say ?: "I could not reach the bank to cancel it. It is still waiting. Try again.")
+                session.say(answer?.say ?: s.cancelFailed)
                 waiting = scope.launch { handle(session.api.awaitDecision(d.id)) }
             } else {
                 handle(answer)
@@ -304,20 +305,20 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
                     misses += 1
                     ask(confirmLine)
                 }
-                else -> session.say("You can also use the buttons on the screen.")
+                else -> session.say(s.useButtons)
             }
             Step.Paused -> when {
                 Answers.isCarryOn(said) -> carryOn()
                 Answers.isStop(said) -> stopAtPause()
                 misses < 2 -> {
                     misses += 1
-                    ask("Say stop, or say carry on.")
+                    ask(s.sayStopOrCarryOn)
                 }
-                else -> session.say("You can also use the buttons on the screen.")
+                else -> session.say(s.useButtons)
             }
             Step.Done, Step.Stopped, Step.Unsure -> when {
-                Answers.mentions(said, "send", "another", "more") -> startOver(null)
-                Answers.mentions(said, "balance") -> onBalance()
+                Answers.mentions(said, "send", "another", "more", "ranse", "aika", "ziga") -> startOver(null)
+                Answers.mentions(said, "balance", "owo", "kudi", "ego") -> onBalance()
                 else -> onHome()
             }
             Step.Pulse, Step.Approval -> Unit
@@ -328,17 +329,17 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
         misses = 0
         val d = draft
         when (step) {
-            Step.Ask -> if (voice) prompt.ask(*listOfNotNull(askLead, "Who would you like to send money to, and how much?").toTypedArray())
+            Step.Ask -> if (voice) prompt.ask(*listOfNotNull(askLead?.invoke(s), s.whoAndHowMuch).toTypedArray())
             Step.Readback -> if (d != null) {
                 val lines = listOfNotNull(problem) + d.readback.spoken
                 if (voice) prompt.ask(*(lines + confirmLine).toTypedArray()) else session.say(*lines.toTypedArray())
             }
             Step.Paused -> {
-                val lines = arrayOf(PAUSE_QUESTION, "This is a new person and a large amount. Nothing has been sent.", "Say stop, or say carry on.")
+                val lines = arrayOf(s.pauseQuestion, s.newAndLarge, s.sayStopOrCarryOn)
                 if (voice) prompt.ask(*lines) else session.say(*lines)
             }
             Step.Done, Step.Stopped, Step.Unsure -> {
-                if (voice) prompt.ask(ending, "Say home to go back, or say send to send more.") else session.say(ending)
+                if (voice) prompt.ask(ending, s.homeOrSendMore) else session.say(ending)
             }
             Step.Pulse, Step.Approval -> Unit
         }
@@ -354,15 +355,15 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
         val d = draft
         PulseStep(
             session = session,
-            title = d?.readback?.let { amountOf(it) }?.let { "Pulse your PIN to send $it" } ?: "Pulse your PIN",
+            title = d?.readback?.let { amountOf(it) }?.let { w.pulseToSend(it) } ?: w.pulseYourPin,
             attempt = attempt,
             problem = problem,
             busy = busy,
             locked = locked,
             onBack = { step = Step.Readback },
-            backLabel = "Back to the readback",
-            doneLine = if (locked) "Your Pulse PIN is locked. Nothing was sent." else null,
-            doneAction = "Back to home",
+            backLabel = w.backToReadback,
+            doneLine = if (locked) w.lockedNothingSent else null,
+            doneAction = w.backToHome,
             onDoneAction = onHome,
             onDigits = { digits ->
                 val current = draft ?: return@PulseStep
@@ -383,13 +384,13 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
             // While the scam pause is up, only the pause sheet exists for TalkBack.
             modifier = if (step == Step.Paused) Modifier.clearAndSetSemantics { } else Modifier,
             top = {
-                IconAction(Glyphs.Back, "Back to home", {
+                IconAction(Glyphs.Back, w.backToHome, {
                     prompt.cancel()
                     waiting?.cancel()
                     onHome()
                 })
-                Heading("Send money", Modifier.weight(1f))
-                if (session.callActive()) Badge(Tone.Caution, "On a call", icon = Glyphs.Phone)
+                Heading(w.sendMoney, Modifier.weight(1f))
+                if (session.callActive()) Badge(Tone.Caution, w.onACall, icon = Glyphs.Phone)
             },
             bottom = {
                 when (step) {
@@ -397,7 +398,7 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
                         val d = draft
                         if (d != null) {
                             ActionButton(
-                                "Pulse PIN to send " + amountOf(d.readback).orEmpty(),
+                                w.pulseButtonSend(amountOf(d.readback).orEmpty()),
                                 onClick = {
                                     prompt.cancel()
                                     problem = null
@@ -405,34 +406,34 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
                                 },
                                 icon = Glyphs.Pulse,
                             )
-                            ActionButton("Something is wrong", onClick = {
+                            ActionButton(w.somethingWrong, onClick = {
                                 prompt.cancel()
                                 cancelDraft()
                             }, style = Emphasis.Secondary)
                         }
                     }
-                    Step.Done, Step.Stopped, Step.Unsure -> ActionButton("Back to home", onClick = {
+                    Step.Done, Step.Stopped, Step.Unsure -> ActionButton(w.backToHome, onClick = {
                         prompt.cancel()
                         onHome()
                     }, icon = Glyphs.Home)
-                    Step.Approval -> ActionButton("Cancel this transfer", onClick = { cancelWaiting() }, style = Emphasis.Secondary)
-                    Step.Ask -> ActionButton("Say it", onClick = { prompt.listenNow() }, style = Emphasis.Sun, icon = Glyphs.Mic)
+                    Step.Approval -> ActionButton(w.cancelTransfer, onClick = { cancelWaiting() }, style = Emphasis.Secondary)
+                    Step.Ask -> ActionButton(w.sayIt, onClick = { prompt.listenNow() }, style = Emphasis.Sun, icon = Glyphs.Mic)
                     Step.Pulse, Step.Paused -> Unit
                 }
             },
         ) {
             when (step) {
                 Step.Ask -> {
-                    ChatLine(false, askLead?.let { "$it Who would you like to send money to, and how much?" } ?: "Who would you like to send money to, and how much?")
+                    ChatLine(false, listOfNotNull(askLead?.invoke(w), w.whoAndHowMuch).joinToString(" "))
                     heard?.let { ChatLine(true, it) }
                     reply?.let { ChatLine(false, it) }
                     problem?.let { Notice(Tone.Danger, it) }
-                    if (busy) Hint("Working it out…")
-                    Kicker("Or choose a person")
+                    if (busy) Hint(w.workingOut)
+                    Kicker(w.orChoosePerson)
                     for (p in people) {
                         ChoiceRow(
                             title = p.nickname,
-                            sub = p.name + ", " + p.bank + if (p.isNew) ". New to you." else "",
+                            sub = p.name + ", " + p.bank + if (p.isNew) ". " + w.newToYou else "",
                             selected = picked?.id == p.id,
                             minHeight = 64.dp,
                             onClick = {
@@ -444,14 +445,14 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
                     val who = picked
                     if (who != null) {
                         DigitField(
-                            label = "How much to ${who.nickname}, in naira?",
+                            label = w.howMuchTo(who.nickname),
                             value = amountText,
                             onValueChange = { amountText = it },
                             maxDigits = 9,
                             grouping = Grouping.Thousands,
                         )
                         ActionButton(
-                            "Check it before sending",
+                            w.checkBeforeSending,
                             onClick = { checkTyped(who) },
                             enabled = (amountText.toLongOrNull() ?: 0L) > 0L,
                             busy = busy,
@@ -465,29 +466,30 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
                 }
                 Step.Approval -> {
                     val d = draft
-                    val who = approver.replaceFirstChar { it.uppercaseChar() }
-                    Heading("Waiting for $approver")
-                    Hint("$who approves transfers above ₦50,000, and sees who and how much, never your PIN.")
+                    val name = approver.ifBlank { w.yourApprover }
+                    val who = name.replaceFirstChar { it.uppercaseChar() }
+                    Heading(w.waitingFor(name))
+                    Hint(w.approverRole(who))
                     Timeline(
                         listOf(
                             Milestone(
-                                "You confirmed ${d?.readback?.amountText ?: ""} to ${d?.readback?.name ?: ""}",
-                                "Just now, with your Pulse PIN",
+                                w.youConfirmed(d?.readback?.amountText ?: "", d?.readback?.name ?: ""),
+                                w.justNowWithPin,
                                 Progress.Done,
                             ),
-                            Milestone("$who is checking", "Sent to $approver's phone", Progress.Now),
-                            Milestone("Money is sent", "As soon as $approver approves", Progress.Next),
+                            Milestone(w.isChecking(who), w.sentToPhone(name), Progress.Now),
+                            Milestone(w.moneyIsSent, w.assoonAsApproves(name), Progress.Next),
                         ),
                     )
                 }
                 Step.Done -> DoneBlock(ending, draft)
                 Step.Stopped -> {
-                    Notice(Tone.Ok, ending.ifBlank { "Stopped. Your money is safe." }, body = "Nobody from Zenith will ever ask you to move money to keep it safe.")
-                    ActionButton("Talk to Zenith now", onClick = onSign, style = Emphasis.Secondary, icon = Glyphs.Phone)
+                    Notice(Tone.Ok, ending.ifBlank { w.stoppedSafe }, body = w.nobodyAsksToMove)
+                    ActionButton(w.talkToZenith, onClick = onSign, style = Emphasis.Secondary, icon = Glyphs.Phone)
                 }
                 Step.Unsure -> {
-                    Notice(Tone.Caution, ending, body = "Do not send it again. Your balance will show what happened.")
-                    ActionButton("Check my balance", onClick = onBalance, style = Emphasis.Secondary, icon = Glyphs.Wallet)
+                    Notice(Tone.Caution, ending, body = w.dontSendAgain)
+                    ActionButton(w.checkMyBalance, onClick = onBalance, style = Emphasis.Secondary, icon = Glyphs.Wallet)
                 }
                 Step.Pulse -> Unit
             }
@@ -504,21 +506,21 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
                     contentAlignment = Alignment.Center,
                 ) { Icon(Glyphs.Pause, contentDescription = null, tint = Om.color.caution, modifier = Modifier.size(34.dp)) }
                 Text(
-                    PAUSE_QUESTION,
+                    w.pauseQuestion,
                     style = Om.type.title,
                     color = Om.color.text,
                     modifier = Modifier.semantics {
                         heading()
-                        paneTitle = "Scam check"
+                        paneTitle = w.scamCheck
                     },
                 )
-                Text("This is a new person and a large amount. Take your time. Nothing has been sent.", style = Om.type.body, color = Om.color.text)
+                Text(w.newAndLargeTakeTime, style = Om.type.body, color = Om.color.text)
                 problem?.let { Notice(Tone.Danger, it) }
-                ActionButton("Yes, stop this payment", onClick = {
+                ActionButton(w.yesStopPayment, onClick = {
                     prompt.cancel()
                     stopAtPause()
                 }, style = Emphasis.Caution, icon = Glyphs.Pause, busy = busy)
-                ActionButton("No, I chose this myself", onClick = {
+                ActionButton(w.noChoseMyself, onClick = {
                     prompt.cancel()
                     carryOn()
                 }, style = Emphasis.Secondary, busy = busy)
@@ -531,6 +533,7 @@ private fun amountOf(rb: Readback): String? = rb.amountText ?: rb.amountKobo?.le
 
 @Composable
 private fun DoneBlock(line: String, draft: Draft?) {
+    val w = Om.words
     Column(
         Modifier.fillMaxWidth().padding(top = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -546,7 +549,7 @@ private fun DoneBlock(line: String, draft: Draft?) {
         ) { Icon(Glyphs.Check, contentDescription = null, tint = Om.color.ok, modifier = Modifier.size(56.dp)) }
         Text(line, style = Om.type.title, color = Om.color.text, textAlign = TextAlign.Center, modifier = Modifier.semantics { heading() })
         draft?.readback?.let { rb ->
-            val what = amountOf(rb)?.let { "$it to " }.orEmpty() + rb.name
+            val what = amountOf(rb)?.let { w.amountTo(it, rb.name) } ?: rb.name
             Text(what + "\n" + rb.bank, style = Om.type.body, color = Om.color.muted, textAlign = TextAlign.Center)
         }
     }

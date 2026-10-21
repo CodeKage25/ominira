@@ -48,16 +48,18 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.sin
 
-enum class OrbState(val label: String) {
-    Idle("Tap to talk"),
-    Listening("Listening"),
-    Thinking("Working it out"),
-    Speaking("Speaking"),
-}
+enum class OrbState { Idle, Listening, Thinking, Speaking }
 
 @Composable
 fun Orb(state: OrbState, onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 88.dp) {
     val c = Om.color
+    val w = Om.words
+    val label = when (state) {
+        OrbState.Idle -> w.tapToTalk
+        OrbState.Listening -> w.listening
+        OrbState.Thinking -> w.workingItOut
+        OrbState.Speaking -> w.speaking
+    }
     val still = rememberReduceMotion()
     val cycle = rememberInfiniteTransition(label = "orb")
     val phase by cycle.animateFloat(
@@ -93,8 +95,8 @@ fun Orb(state: OrbState, onClick: () -> Unit, modifier: Modifier = Modifier, siz
                 .then(if (state == OrbState.Thinking) Modifier.border(3.dp, c.lineStrong, CircleShape) else Modifier)
                 .clickable(interactionSource = interaction, indication = ripple(), role = Role.Button, onClick = onClick)
                 .semantics {
-                    contentDescription = if (state == OrbState.Idle) "Talk to Òmìnira" else "Stop"
-                    stateDescription = state.label
+                    contentDescription = if (state == OrbState.Idle) w.talkToOminira else w.stop
+                    stateDescription = label
                 },
             contentAlignment = Alignment.Center,
         ) {
@@ -116,7 +118,7 @@ fun Orb(state: OrbState, onClick: () -> Unit, modifier: Modifier = Modifier, siz
             }
         }
         Text(
-            state.label,
+            label,
             style = Om.type.smallStrong,
             color = c.muted,
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },

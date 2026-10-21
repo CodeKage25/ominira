@@ -56,15 +56,16 @@ import app.ominira.voice.rememberPrompt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private class SonarStep(val line: String, val tone: Float, val offCentre: Float, val hz: Double)
+// Each step's line is Words.sonarSteps at the same index.
+private class SonarStep(val tone: Float, val offCentre: Float, val hz: Double)
 
 private val sonarSteps = listOf(
-    SonarStep("Hold the phone at arm's length, then press start.", 0f, 0.36f, 0.0),
-    SonarStep("Move the phone up a little.", 0.3f, 0.26f, 450.0),
-    SonarStep("A little to the left.", 0.58f, 0.14f, 650.0),
-    SonarStep("Almost there. Keep still.", 0.84f, 0.05f, 790.0),
-    SonarStep("Got it. Now say the four numbers.", 1f, 0f, 880.0),
-    SonarStep("Thank you. That is you, and you are here.", 1f, 0f, 0.0),
+    SonarStep(0f, 0.36f, 0.0),
+    SonarStep(0.3f, 0.26f, 450.0),
+    SonarStep(0.58f, 0.14f, 650.0),
+    SonarStep(0.84f, 0.05f, 790.0),
+    SonarStep(1f, 0f, 880.0),
+    SonarStep(1f, 0f, 0.0),
 )
 
 @Composable
@@ -77,6 +78,8 @@ fun SonarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
     var started by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf<String?>(null) }
     var misses by remember { mutableIntStateOf(0) }
+    val w = session.words
+    val s = session.spoken
     val now = sonarSteps[phase]
     val offCentre by animateFloatAsState(now.offCentre, if (still) snap<Float>() else tween<Float>(600), label = "face")
     val toneLevel by animateFloatAsState(now.tone, if (still) snap<Float>() else tween<Float>(600), label = "tone")
@@ -91,9 +94,8 @@ fun SonarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
             // New session each time, so the liveness digits are always fresh.
             val fresh = runCatching { session.api.startOnboarding(session.lang) }.getOrNull()
             if (fresh == null) {
-                val line = "I could not start the selfie. Check the connection and try again."
-                problem = line
-                session.say(line)
+                problem = w.selfieFailed
+                session.say(s.selfieFailed)
                 started = false
                 return@launch
             }
@@ -103,24 +105,23 @@ fun SonarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
             for (n in 1..4) {
                 delay(1_300)
                 phase = n
-                session.say(sonarSteps[n].line)
+                session.say(s.sonarSteps[n])
                 Tones.play(sonarSteps[n].hz, if (n == 4) 400 else 160)
             }
             session.haptics.lock()
-            session.say("Got it. Now say these numbers.", digits.joinToString(", "))
+            session.say(s.sayTheseNumbers, digits.joinToString(", "))
             val live = runCatching { session.api.sendSelfie(id, digits) }.getOrDefault(true)
             delay(4_000)
             if (!live) {
-                val line = "I could not confirm that was you. Let's try once more."
-                problem = line
-                session.say(line)
+                problem = w.notYou
+                session.say(s.notYou)
                 phase = 0
                 started = false
                 return@launch
             }
             phase = 5
             session.haptics.done()
-            session.say(sonarSteps[5].line)
+            session.say(s.sonarSteps[5])
             if (session.talksFirst) {
                 session.speaker.awaitQuiet()
                 next()
@@ -130,41 +131,41 @@ fun SonarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
 
     val prompt = rememberPrompt(session) { heard ->
         when {
-            heard == null -> session.say("Tap anywhere on the screen to start.")
+            heard == null -> session.say(s.tapToStart)
             Answers.isStart(heard) -> start()
             misses < 2 -> {
                 misses += 1
-                ask("Say start when you are ready, or tap anywhere.")
+                ask(s.sayStartOrTap)
             }
-            else -> session.say("Tap anywhere on the screen when you are ready.")
+            else -> session.say(s.tapWhenReady)
         }
     }
 
     LaunchedEffect(Unit) {
         if (session.talksFirst) {
             prompt.ask(
-                "Let's take your selfie by sound.",
-                "Hold the phone at arm's length, with the screen facing you.",
-                "Say start when you are ready, or tap anywhere.",
+                s.selfieHeading,
+                s.holdAtArm,
+                s.sayStartOrTap,
             )
         }
     }
 
     Page(
-        modifier = Modifier.tapAnywhere(phase == 0 && !started, "start the sonar") {
+        modifier = Modifier.tapAnywhere(phase == 0 && !started, w.startSonar) {
             prompt.cancel()
             start()
         },
         top = { StepBar(2, onBack) },
         bottom = {
             if (phase == 5) {
-                ActionButton("Next: your ID card", onClick = {
+                ActionButton(w.nextIdCard, onClick = {
                     session.speaker.stop()
                     next()
                 }, icon = Glyphs.Send)
             } else {
                 ActionButton(
-                    if (phase == 0) "Start the sonar" else "Finding your face",
+                    if (phase == 0) w.startSonar else w.findingFace,
                     onClick = {
                         prompt.cancel()
                         start()
@@ -175,8 +176,8 @@ fun SonarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
             }
         },
     ) {
-        Kicker("Sonar selfie")
-        Heading("Let's take your selfie by sound.")
+        Kicker(w.sonarKicker)
+        Heading(w.selfieHeading)
         problem?.let { Notice(Tone.Danger, it) }
         Box(
             Modifier
@@ -191,7 +192,7 @@ fun SonarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
             Canvas(
                 Modifier
                     .fillMaxSize()
-                    .clearAndSetSemantics { contentDescription = if (locked) "Face in the frame" else "Finding your face" },
+                    .clearAndSetSemantics { contentDescription = if (locked) w.faceInFrame else w.findingFace },
             ) {
                 val cx = size.width / 2f
                 val cy = size.height * 0.42f
@@ -214,7 +215,7 @@ fun SonarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
                     Modifier
                         .align(Alignment.TopCenter)
                         .padding(16.dp)
-                        .semantics(mergeDescendants = true) { contentDescription = "Say these numbers: " + digits.joinToString(", ") },
+                        .semantics(mergeDescendants = true) { contentDescription = w.sayNumbers(digits.joinToString(", ")) },
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     for (d in digits) {
@@ -236,7 +237,7 @@ fun SonarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
                     .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(now.line, style = Om.type.bodyStrong, color = Om.color.bandText)
+                Text(w.sonarSteps[phase], style = Om.type.bodyStrong, color = Om.color.bandText)
                 Box(
                     Modifier
                         .fillMaxWidth()

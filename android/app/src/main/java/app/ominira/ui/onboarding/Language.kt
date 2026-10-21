@@ -134,7 +134,7 @@ fun LanguageScreen(session: Session, fromSettings: Boolean, onBack: (() -> Unit)
         if (onBack != null || listening) {
             Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (onBack != null) {
-                    IconAction(Glyphs.Back, "Back", {
+                    IconAction(Glyphs.Back, Om.words.back, {
                         roll?.cancel()
                         ears.stop()
                         session.speaker.stop()

@@ -32,6 +32,7 @@ import app.ominira.core.Days
 import app.ominira.core.Naira
 import app.ominira.core.Readback
 import app.ominira.core.Txn
+import app.ominira.core.Words
 import app.ominira.ui.theme.Corners
 import app.ominira.ui.theme.Glyphs
 import app.ominira.ui.theme.Om
@@ -40,7 +41,7 @@ import app.ominira.ui.theme.Om
 fun ReadbackPanel(
     readback: Readback,
     modifier: Modifier = Modifier,
-    heading: String = "Check before you send",
+    heading: String = Om.words.checkBeforeSend,
     accent: Color = Om.color.action,
     actions: @Composable ColumnScope.() -> Unit = {},
 ) {
@@ -65,7 +66,7 @@ fun ReadbackPanel(
             Text(readback.name, style = Om.type.readback, color = c.text)
             if (readback.last4.isNotBlank()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("${readback.bank} · ending ", style = Om.type.body, color = c.muted)
+                    Text("${readback.bank} · ${Om.words.ending} ", style = Om.type.body, color = c.muted)
                     Text(
                         readback.last4.toList().joinToString(" "),
                         style = Om.type.body.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold),
@@ -113,18 +114,17 @@ fun BalancePanel(label: String, balanceKobo: Long, modifier: Modifier = Modifier
             if (note != null) Text(note, style = Om.type.small, color = c.bandMuted)
         }
         if (onHear != null) {
-            ActionButton("Read it to me", onHear, Modifier.padding(top = 8.dp), style = Emphasis.Sun, icon = Glyphs.Speaker, wide = false)
+            ActionButton(Om.words.readItToMe, onHear, Modifier.padding(top = 8.dp), style = Emphasis.Sun, icon = Glyphs.Speaker, wide = false)
         }
     }
 }
 
-fun txnSentence(t: Txn): String =
-    (if (t.incoming) "In, " else "Out, ") + Naira.format(t.amountKobo) + (if (t.incoming) ", from " else ", to ") + t.who +
-        Days.spoken(t.at).let { if (it.isBlank()) "" else ", $it" }
+fun txnSentence(t: Txn, w: Words): String = w.txn(t.incoming, Naira.format(t.amountKobo), t.who, Days.spoken(t.at, lang = w.lang))
 
 @Composable
 fun TxnRows(items: List<Txn>, modifier: Modifier = Modifier) {
     val c = Om.color
+    val w = Om.words
     Column(
         modifier
             .fillMaxWidth()
@@ -138,7 +138,7 @@ fun TxnRows(items: List<Txn>, modifier: Modifier = Modifier) {
                 Modifier
                     .fillMaxWidth()
                     .padding(16.dp)
-                    .clearAndSetSemantics { contentDescription = txnSentence(t) },
+                    .clearAndSetSemantics { contentDescription = txnSentence(t, w) },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
@@ -155,7 +155,7 @@ fun TxnRows(items: List<Txn>, modifier: Modifier = Modifier) {
                 }
                 Column(Modifier.weight(1f)) {
                     Text(t.who, style = Om.type.bodyStrong, color = c.text)
-                    Text(Days.label(t.at), style = Om.type.small, color = c.muted)
+                    Text(Days.label(t.at, lang = w.lang), style = Om.type.small, color = c.muted)
                 }
                 Column(horizontalAlignment = Alignment.End) {
                     Text(Naira.format(t.amountKobo), style = Om.type.bodyStrong, color = c.text, textAlign = TextAlign.End)
@@ -169,6 +169,7 @@ fun TxnRows(items: List<Txn>, modifier: Modifier = Modifier) {
 @Composable
 fun BankCardView(card: Card, modifier: Modifier = Modifier) {
     val c = Om.color
+    val w = Om.words
     Column(
         modifier
             .fillMaxWidth()
@@ -179,7 +180,7 @@ fun BankCardView(card: Card, modifier: Modifier = Modifier) {
             .border(2.dp, c.forestEdge, Corners.lg)
             .padding(horizontal = 24.dp, vertical = 22.dp)
             .clearAndSetSemantics {
-                contentDescription = "Card ending ${Naira.digitWords(card.last4)}, " + if (card.blocked) "blocked" else "active"
+                contentDescription = w.cardSummary(card.last4, card.blocked)
             },
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
@@ -201,7 +202,7 @@ fun BankCardView(card: Card, modifier: Modifier = Modifier) {
                 Text("•••• ${card.last4}", style = Om.type.bodyStrong.copy(fontFamily = FontFamily.Monospace), color = c.bandText)
                 Text(card.holder, style = Om.type.small, color = c.bandMuted)
             }
-            if (card.blocked) Badge(Tone.Danger, "Blocked", icon = Glyphs.Lock)
+            if (card.blocked) Badge(Tone.Danger, w.blocked, icon = Glyphs.Lock)
         }
     }
 }

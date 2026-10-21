@@ -9,12 +9,13 @@ import androidx.compose.ui.semantics.Role
 import app.ominira.ui.kit.IconAction
 import app.ominira.ui.kit.StepDots
 import app.ominira.ui.theme.Glyphs
+import app.ominira.ui.theme.Om
 
 internal const val STEPS = 4
 
 @Composable
 internal fun RowScope.StepBar(step: Int, onBack: (() -> Unit)?) {
-    if (onBack != null) IconAction(Glyphs.Back, "Back", onBack)
+    if (onBack != null) IconAction(Glyphs.Back, Om.words.back, onBack)
     Spacer(Modifier.weight(1f))
     StepDots(step, STEPS)
 }

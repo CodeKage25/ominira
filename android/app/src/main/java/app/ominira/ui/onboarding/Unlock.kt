@@ -32,11 +32,14 @@ fun UnlockScreen(session: Session, onUnlocked: () -> Unit) {
     var busy by remember { mutableStateOf(false) }
     var unlocked by remember { mutableStateOf(false) }
 
+    val w = session.words
+    val s = session.spoken
+
     fun home() = leave.run(onUnlocked)
 
     PulseStep(
         session = session,
-        title = "Your Pulse PIN, ${session.customerName}.",
+        title = w.yourPulsePin(session.customerName),
         attempt = attempt,
         problem = problem,
         busy = busy,
@@ -47,8 +50,8 @@ fun UnlockScreen(session: Session, onUnlocked: () -> Unit) {
                 Text("Òmìnira", style = Om.type.brand, color = Om.color.bandText)
             }
         },
-        doneLine = if (unlocked) "Unlocked. Nobody saw a thing." else null,
-        doneAction = "Go to my home",
+        doneLine = if (unlocked) w.unlocked else null,
+        doneAction = w.goToMyHome,
         onDoneAction = { home() },
         onDigits = { digits ->
             // Sealed at once; the digits are not kept.
@@ -62,7 +65,7 @@ fun UnlockScreen(session: Session, onUnlocked: () -> Unit) {
                     is Unlock.Open -> {
                         unlocked = true
                         session.haptics.done()
-                        session.say("Unlocked. Nobody saw a thing.")
+                        session.say(s.unlocked)
                         Tones.done()
                         if (session.talksFirst) {
                             session.speaker.awaitQuiet()
@@ -78,9 +81,8 @@ fun UnlockScreen(session: Session, onUnlocked: () -> Unit) {
                     }
                     null -> {
                         attempt += 1
-                        val line = "I could not check your PIN just now. Please try again."
-                        problem = line
-                        session.say(line)
+                        problem = w.pinCheckFailed
+                        session.say(s.pinCheckFailed)
                     }
                 }
             }

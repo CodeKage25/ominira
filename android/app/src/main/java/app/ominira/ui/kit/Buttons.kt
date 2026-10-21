@@ -63,6 +63,7 @@ fun ActionButton(
     val edge = paint.edge
     val interaction = remember { MutableInteractionSource() }
     val shape = Corners.md
+    val working = Om.words.working
     Row(
         modifier
             .then(if (wide) Modifier.fillMaxWidth() else Modifier)
@@ -79,7 +80,7 @@ fun ActionButton(
                 role = Role.Button,
                 onClick = onClick,
             )
-            .semantics { if (busy) stateDescription = "Working" }
+            .semantics { if (busy) stateDescription = working }
             .padding(horizontal = if (style == Emphasis.Quiet) 12.dp else 20.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,

@@ -31,6 +31,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import app.ominira.Session
+import app.ominira.core.Words
 import app.ominira.ui.kit.ActionButton
 import app.ominira.ui.kit.Badge
 import app.ominira.ui.kit.CaptionBox
@@ -45,12 +46,9 @@ import app.ominira.ui.theme.Glyphs
 import app.ominira.ui.theme.Om
 import kotlinx.coroutines.delay
 
-private val signScript = listOf(
-    "Funmi is signing" to "I have blocked the old card. Nobody can use it now.",
-    "You signed" to "Thank you. When will the new one come?",
-    "Funmi is signing" to "Your new card will arrive on Thursday. Should we send it to your home address?",
-    "You signed" to "Yes, my home, please.",
-)
+// Funmi signs the even lines, the customer the odd ones.
+private fun signScript(w: Words): List<Pair<String, String>> =
+    w.signScript.mapIndexed { i, line -> (if (i % 2 == 0) w.funmiSigning else w.youSigned) to line }
 
 @Composable
 fun SignCallScreen(session: Session, onHome: () -> Unit) {
@@ -59,6 +57,8 @@ fun SignCallScreen(session: Session, onHome: () -> Unit) {
     var captions by remember { mutableStateOf(true) }
     var camera by remember { mutableStateOf(true) }
     var ended by remember { mutableStateOf(false) }
+    val w = session.words
+    val script = signScript(w)
 
     LaunchedEffect(ended) {
         while (!ended) {
@@ -70,23 +70,23 @@ fun SignCallScreen(session: Session, onHome: () -> Unit) {
 
     Page(
         top = {
-            IconAction(Glyphs.Back, "Back to home", onHome)
-            Heading("Sign help", Modifier.weight(1f))
-            if (!ended) Badge(Tone.Ok, "Live ${seconds / 60}:${(seconds % 60).toString().padStart(2, '0')}", showIcon = false)
+            IconAction(Glyphs.Back, w.backToHome, onHome)
+            Heading(w.signHelpTitle, Modifier.weight(1f))
+            if (!ended) Badge(Tone.Ok, w.live("${seconds / 60}:${(seconds % 60).toString().padStart(2, '0')}"), showIcon = false)
         },
         bottom = {
             if (ended) {
-                ActionButton("Back to home", onClick = onHome, icon = Glyphs.Home)
-                ActionButton("Call again", onClick = {
+                ActionButton(w.backToHome, onClick = onHome, icon = Glyphs.Home)
+                ActionButton(w.callAgain, onClick = {
                     ended = false
                     seconds = 0
                     shown = 1
                 }, style = Emphasis.Quiet)
             } else {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    IconAction(Glyphs.Camera, "Camera", { camera = !camera }, on = camera)
-                    IconAction(Glyphs.Captions, "Captions", { captions = !captions }, on = captions)
-                    ActionButton("End call", onClick = {
+                    IconAction(Glyphs.Camera, w.camera, { camera = !camera }, on = camera)
+                    IconAction(Glyphs.Captions, w.captions, { captions = !captions }, on = captions)
+                    ActionButton(w.endCall, onClick = {
                         ended = true
                         session.haptics.lock()
                     }, modifier = Modifier.weight(1f), style = Emphasis.Danger, icon = Glyphs.Phone)
@@ -95,8 +95,8 @@ fun SignCallScreen(session: Session, onHome: () -> Unit) {
         },
     ) {
         if (ended) {
-            Heading("Call with Funmi ended.")
-            Notice(Tone.Ok, "New card on its way.", body = "It reaches your home address on Thursday. A text copy of this call is in your messages.")
+            Heading(w.callEnded)
+            Notice(Tone.Ok, w.newCardOnWay, body = w.arrivesThursday)
         } else {
             Box(
                 Modifier
@@ -104,7 +104,7 @@ fun SignCallScreen(session: Session, onHome: () -> Unit) {
                     .aspectRatio(4f / 5f)
                     .clip(Corners.lg)
                     .background(Brush.radialGradient(listOf(Color(0xFF2A5A46), Color(0xFF0E2A20))))
-                    .clearAndSetSemantics { contentDescription = "Video of Funmi, a Zenith sign language agent" },
+                    .clearAndSetSemantics { contentDescription = w.videoOfFunmi },
             ) {
                 Box(
                     Modifier
@@ -132,7 +132,7 @@ fun SignCallScreen(session: Session, onHome: () -> Unit) {
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Box(Modifier.size(10.dp).clip(CircleShape).background(Om.color.mint))
-                    Text("Funmi, Zenith sign agent", style = Om.type.smallStrong, color = Om.color.bandText)
+                    Text(w.funmiAgent, style = Om.type.smallStrong, color = Om.color.bandText)
                 }
                 if (camera) {
                     Box(
@@ -150,7 +150,7 @@ fun SignCallScreen(session: Session, onHome: () -> Unit) {
             if (captions) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     for (k in maxOf(0, shown - 3) until shown) {
-                        val (who, text) = signScript[k % signScript.size]
+                        val (who, text) = script[k % script.size]
                         CaptionBox(who, text)
                     }
                 }

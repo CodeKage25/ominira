@@ -20,7 +20,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.platform.LocalContext
 import app.ominira.Session
 import app.ominira.core.Lang
-import app.ominira.core.Lines
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -75,7 +74,7 @@ fun rememberEars(
     fun intent(): Intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
         .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
         .putExtra(RecognizerIntent.EXTRA_LANGUAGE, phoneTag(session.lang))
-        .putExtra(RecognizerIntent.EXTRA_PROMPT, "Answer out loud")
+        .putExtra(RecognizerIntent.EXTRA_PROMPT, session.words.answerOutLoud)
         .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
         .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, quietMs)
 
@@ -166,7 +165,7 @@ fun rememberEars(
                     when {
                         words == null -> heard(null)
                         words.pinSpoken -> {
-                            session.say(words.say ?: Lines.PIN_SPOKEN)
+                            session.say(words.say ?: session.spoken.pinSpoken)
                             warned()
                         }
                         words.text.isBlank() -> heard(null)
@@ -196,7 +195,7 @@ fun rememberEars(
                 session.micAsked = true
                 // The permission box is silent and easy to miss without sight.
                 val allow = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) "While using the app" else "Allow"
-                session.say("To answer by voice, tap $allow, near the bottom of the screen.")
+                session.say(session.spoken.tapAllow(allow))
                 askMic.launch(Manifest.permission.RECORD_AUDIO)
             }
             else -> systemBox()

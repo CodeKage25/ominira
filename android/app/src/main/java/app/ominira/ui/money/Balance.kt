@@ -10,8 +10,8 @@ import androidx.compose.ui.Modifier
 import app.ominira.Session
 import app.ominira.core.Account
 import app.ominira.core.Days
-import app.ominira.core.Naira
 import app.ominira.core.Txn
+import app.ominira.core.Words
 import app.ominira.ui.kit.ActionButton
 import app.ominira.ui.kit.BalancePanel
 import app.ominira.ui.kit.ChatLine
@@ -25,11 +25,7 @@ import app.ominira.ui.kit.Tone
 import app.ominira.ui.kit.TxnRows
 import app.ominira.ui.theme.Glyphs
 
-private fun spokenTxn(t: Txn): String {
-    val day = Days.spoken(t.at)
-    return (if (t.incoming) "In: " else "Out: ") + Naira.spoken(t.amountKobo) +
-        (if (t.incoming) " from " else " to ") + t.who + (if (day.isBlank()) "." else ", ${day.lowercase()}.")
-}
+private fun spokenTxn(w: Words, t: Txn): String = w.txn(t.incoming, w.money(t.amountKobo), t.who, Days.spoken(t.at, lang = w.lang))
 
 @Composable
 fun BalanceScreen(session: Session, onHome: () -> Unit) {
@@ -38,12 +34,13 @@ fun BalanceScreen(session: Session, onHome: () -> Unit) {
     var txns by remember { mutableStateOf<List<Txn>>(emptyList()) }
     var cameIn by remember { mutableStateOf("") }
     var failed by remember { mutableStateOf(false) }
+    val w = session.words
 
     LaunchedEffect(Unit) {
         val a = session.mainAccount()
         if (a == null) {
             failed = true
-            session.say("I could not reach your account just now. Please try again in a minute.")
+            session.say(session.spoken.accountUnreachable, session.spoken.tryInAMinute)
             return@LaunchedEffect
         }
         account = a
@@ -58,28 +55,28 @@ fun BalanceScreen(session: Session, onHome: () -> Unit) {
 
     Page(
         top = {
-            IconAction(Glyphs.Back, "Back to home", onHome)
-            Heading("Your money", Modifier.weight(1f))
+            IconAction(Glyphs.Back, w.backToHome, onHome)
+            Heading(w.yourMoney, Modifier.weight(1f))
         },
         bottom = {
             ActionButton(
-                "Read the latest to me",
-                onClick = { session.say(*txns.take(5).map { spokenTxn(it) }.toTypedArray()) },
+                w.readLatest,
+                onClick = { session.say(*txns.take(5).map { spokenTxn(session.spoken, it) }.toTypedArray()) },
                 style = Emphasis.Secondary,
                 icon = Glyphs.Speaker,
                 enabled = txns.isNotEmpty(),
             )
         },
     ) {
-        if (failed) Notice(Tone.Danger, "I could not reach your account.", body = "Please try again in a minute.")
+        if (failed) Notice(Tone.Danger, w.accountUnreachable, body = w.tryInAMinute)
         account?.let { a ->
-            BalancePanel("Current account", a.balanceKobo, note = "Updated just now", onHear = {
-                session.say(balanceSay.ifBlank { "You have " + Naira.spoken(a.balanceKobo) + "." })
+            BalancePanel(w.currentAccount, a.balanceKobo, note = w.updatedJustNow, onHear = {
+                session.say(balanceSay.ifBlank { session.spoken.youHave(a.balanceKobo) })
             })
         }
         if (cameIn.isNotBlank()) ChatLine(false, cameIn)
         if (txns.isNotEmpty()) {
-            Hint("Latest money in and out")
+            Hint(w.latestInOut)
             TxnRows(txns.take(5))
         }
     }

@@ -25,7 +25,6 @@ import androidx.compose.ui.unit.dp
 import app.ominira.Session
 import app.ominira.core.Account
 import app.ominira.core.DraftKind
-import app.ominira.core.Naira
 import app.ominira.core.Turn
 import app.ominira.ui.kit.BalancePanel
 import app.ominira.ui.kit.Brand
@@ -77,6 +76,8 @@ fun VoiceHomeScreen(session: Session, actions: HomeActions) {
     val noMic = remember {
         session.activeCloudVoice() == null && !SpeechRecognizer.isRecognitionAvailable(context)
     }
+    val w = session.words
+    val s = session.spoken
 
     val prompt = rememberPrompt(session, onWarned = { orb = OrbState.Speaking }) { said ->
         if (said.isNullOrBlank()) orb = OrbState.Idle else request = said
@@ -95,17 +96,16 @@ fun VoiceHomeScreen(session: Session, actions: HomeActions) {
         scope.launch {
             val turn = runCatching { session.api.turn(text, session.lang) }.getOrNull()
             if (turn == null) {
-                val line = "Sorry, I could not do that just now. Please try again."
-                reply = line
+                reply = w.couldNotDo
                 orb = OrbState.Speaking
-                session.say(line)
+                session.say(s.couldNotDo)
                 return@launch
             }
             reply = turn.say
             orb = OrbState.Idle
             if (routeTurn(session, turn, actions)) return@launch
             if (session.talksFirst) {
-                if (turn.say.trimEnd().endsWith("?")) ask(turn.say) else ask(turn.say, "Anything else?")
+                if (turn.say.trimEnd().endsWith("?")) ask(turn.say) else ask(turn.say, s.anythingElse)
             } else {
                 orb = OrbState.Speaking
                 session.say(turn.say)
@@ -121,7 +121,7 @@ fun VoiceHomeScreen(session: Session, actions: HomeActions) {
 
     LaunchedEffect(Unit) {
         account = session.mainAccount()
-        if (session.talksFirst) ask(session.greeting(), "What would you like to do?")
+        if (session.talksFirst) ask(session.greeting(session.voiceLang), s.whatToDo)
     }
 
     LaunchedEffect(talking, orb) {
@@ -134,7 +134,7 @@ fun VoiceHomeScreen(session: Session, actions: HomeActions) {
     Page(
         top = {
             Brand(Modifier.weight(1f)) {
-                IconAction(Glyphs.Settings, "Settings", {
+                IconAction(Glyphs.Settings, w.settings, {
                     prompt.cancel()
                     actions.settings()
                 })
@@ -147,7 +147,7 @@ fun VoiceHomeScreen(session: Session, actions: HomeActions) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    IconAction(Glyphs.Captions, "Captions", { session.chooseCaptions(!session.captions) }, on = session.captions)
+                    IconAction(Glyphs.Captions, w.captions, { session.chooseCaptions(!session.captions) }, on = session.captions)
                     Orb(
                         state = orb,
                         onClick = {
@@ -161,13 +161,10 @@ fun VoiceHomeScreen(session: Session, actions: HomeActions) {
                             }
                         },
                     )
-                    IconAction(Glyphs.Speaker, "Hear this screen", {
+                    IconAction(Glyphs.Speaker, w.hearThisScreen, {
                         orb = OrbState.Speaking
-                        session.say(
-                            "Home.",
-                            "Your balance is " + (account?.let { Naira.spoken(it.balanceKobo) } ?: "loading") + ".",
-                            "You can say: send money to Tolu, what came in this week, or block my card.",
-                        )
+                        val spoken = session.spoken
+                        session.say(spoken.homeTitle, spoken.balanceIs(account?.balanceKobo), spoken.youCanSay)
                     })
                 }
             }
@@ -175,24 +172,25 @@ fun VoiceHomeScreen(session: Session, actions: HomeActions) {
     ) {
         Heading(session.greeting())
         account?.let { a ->
-            BalancePanel("Current account", a.balanceKobo, onHear = {
+            BalancePanel(w.currentAccount, a.balanceKobo, onHear = {
                 orb = OrbState.Speaking
-                session.say("You have " + Naira.spoken(a.balanceKobo) + ".")
+                session.say(session.spoken.youHave(a.balanceKobo))
             })
         }
         if (session.captions) {
-            heard?.let { CaptionBox("You said", it) }
-            reply?.let { CaptionBox("Òmìnira said", it) }
+            heard?.let { CaptionBox(w.youSaid, it) }
+            reply?.let { CaptionBox(w.ominiraSaid, it) }
         }
-        if (noMic) Notice(Tone.Info, "Voice is not available on this phone yet.", body = "Tap one of the requests below instead.")
-        Kicker("Try saying")
-        Suggestion("“Send ₦20,000 to Tolu”", Glyphs.Send) { send("Send twenty thousand to Tolu") }
-        Suggestion("“What came in this week?”", Glyphs.Wallet) {
+        if (noMic) Notice(Tone.Info, w.noVoice, body = w.tapRequestBelow)
+        Kicker(w.trySaying)
+        // The request sent stays English: the bank inside the app reads English amounts.
+        Suggestion(w.suggestSend, Glyphs.Send) { send("Send twenty thousand to Tolu") }
+        Suggestion(w.suggestCameIn, Glyphs.Wallet) {
             prompt.cancel()
             actions.balance()
         }
-        Suggestion("“Block my card”", Glyphs.Card) { send("Block my card") }
-        Suggestion("Sign language help", Glyphs.Sign) {
+        Suggestion(w.suggestBlock, Glyphs.Card) { send("Block my card") }
+        Suggestion(w.signHelp, Glyphs.Sign) {
             prompt.cancel()
             actions.sign()
         }

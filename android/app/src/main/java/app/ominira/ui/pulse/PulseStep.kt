@@ -35,17 +35,17 @@ import app.ominira.ui.theme.Om
 fun PulseCoach(session: Session, practising: Boolean, onPractising: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         ActionButton(
-            "How does it work?",
-            onClick = { session.say(Lines.pulseExplain(session.lang)) },
+            session.words.howDoesItWork,
+            onClick = { session.say(Lines.pulseExplain(session.voiceLang)) },
             modifier = Modifier.weight(1f),
             style = Emphasis.Secondary,
         )
         ActionButton(
-            if (practising) "Done practising" else "Practise first",
+            if (practising) session.words.donePractising else session.words.practiseFirst,
             onClick = {
                 val next = !practising
                 onPractising(next)
-                if (next) session.say(Lines.practiceStart(session.lang)) else session.speaker.stop()
+                if (next) session.say(Lines.practiceStart(session.voiceLang)) else session.speaker.stop()
             },
             modifier = Modifier.weight(1f),
             style = Emphasis.Secondary,
@@ -63,13 +63,14 @@ fun PulseStep(
     busy: Boolean = false,
     locked: Boolean = false,
     onBack: (() -> Unit)? = null,
-    backLabel: String = "Back",
+    backLabel: String = Om.words.back,
     topStart: (@Composable RowScope.() -> Unit)? = null,
     doneLine: String? = null,
     doneAction: String? = null,
     onDoneAction: () -> Unit = {},
 ) {
     val c = Om.color
+    val w = session.words
     var showCount by rememberSaveable { mutableStateOf(Mode.Voice !in session.modes) }
     var practising by rememberSaveable { mutableStateOf(false) }
     var introduced by rememberSaveable { mutableStateOf(false) }
@@ -86,7 +87,7 @@ fun PulseStep(
             if (onBack != null) IconAction(Glyphs.Back, backLabel, onBack)
             if (topStart != null) topStart() else Spacer(Modifier.weight(1f))
             ActionButton(
-                if (showCount) "Hide count" else "Show count",
+                if (showCount) w.hideCount else w.showCount,
                 onClick = { showCount = !showCount },
                 style = Emphasis.Secondary,
                 wide = false,
@@ -105,7 +106,7 @@ fun PulseStep(
         } else {
             problem?.let { Notice(if (locked) Tone.Danger else Tone.Caution, it) }
             when {
-                busy -> Text("Checking with Zenith…", style = Om.type.bodyStrong, color = c.bandText)
+                busy -> Text(w.checkingWithZenith, style = Om.type.bodyStrong, color = c.bandText)
                 locked -> Unit
                 else -> {
                     PulseCoach(session, practising) { practising = it }
@@ -117,12 +118,12 @@ fun PulseStep(
                             onDigits = onDigits,
                             practice = practising,
                             zeroSound = session.zeroSound,
-                            onPractice = { d -> session.say(Lines.practiceResult(session.lang, d)) },
+                            onPractice = { d -> session.say(Lines.practiceResult(session.voiceLang, d)) },
                         )
                     }
                 }
             }
         }
-        if (showCount) Text("Demo PIN 2 0 7 5. On a real phone the screen stays dark and the count is felt, not seen.", style = Om.type.small, color = c.bandMuted)
+        if (showCount) Text(w.demoPin, style = Om.type.small, color = c.bandMuted)
     }
 }

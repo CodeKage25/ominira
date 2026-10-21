@@ -18,21 +18,25 @@ object Days {
             ?: runCatching { LocalDateTime.parse(iso.removeSuffix("Z")).toInstant(ZoneOffset.UTC) }.getOrNull()
     }
 
-    fun label(iso: String, zone: ZoneId = ZoneId.systemDefault(), today: LocalDate = LocalDate.now(zone)): String =
-        name(iso, zone, today, short)
+    fun label(iso: String, zone: ZoneId = ZoneId.systemDefault(), today: LocalDate = LocalDate.now(zone), lang: Lang = Lang.En): String =
+        name(iso, zone, today, short, lang)
 
-    fun spoken(iso: String, zone: ZoneId = ZoneId.systemDefault(), today: LocalDate = LocalDate.now(zone)): String =
-        name(iso, zone, today, long)
+    fun spoken(iso: String, zone: ZoneId = ZoneId.systemDefault(), today: LocalDate = LocalDate.now(zone), lang: Lang = Lang.En): String =
+        name(iso, zone, today, long, lang)
 
-    fun bornOn(isoDate: String): String =
-        runCatching { DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.UK).format(LocalDate.parse(isoDate)) }.getOrDefault(isoDate)
+    // Pidgin reads dates the English way; yo, ha and ig take their own month and day names.
+    private fun locale(lang: Lang): Locale = if (lang == Lang.En || lang == Lang.Pcm) Locale.UK else Locale.forLanguageTag(lang.code)
 
-    private fun name(iso: String, zone: ZoneId, today: LocalDate, format: DateTimeFormatter): String {
+    fun bornOn(isoDate: String, lang: Lang = Lang.En): String =
+        runCatching { DateTimeFormatter.ofPattern("d MMMM yyyy", locale(lang)).format(LocalDate.parse(isoDate)) }.getOrDefault(isoDate)
+
+    private fun name(iso: String, zone: ZoneId, today: LocalDate, format: DateTimeFormatter, lang: Lang): String {
         val day = parse(iso)?.atZone(zone)?.toLocalDate() ?: return ""
+        val words = Words.of(lang)
         return when (day) {
-            today -> "Today"
-            today.minusDays(1) -> "Yesterday"
-            else -> format.format(day)
+            today -> words.today
+            today.minusDays(1) -> words.yesterday
+            else -> format.withLocale(locale(lang)).format(day)
         }
     }
 }
