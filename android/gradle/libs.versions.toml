@@ -9,7 +9,7 @@ navigation = "2.8.2"
 coroutines = "1.8.1"
 junit = "4.13.2"
 # 1.3.x: the last CameraX for compileSdk 34. ML Kit models are bundled, so they work offline.
-camerax = "1.3.4"
+camerax = "1.4.2"
 mlkitFace = "16.1.7"
 mlkitText = "16.0.1"
 
