@@ -100,6 +100,8 @@ fun BvnScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
     }
 
     val waiting = !open && !checking
+    RemindWhileWaiting(session, waiting) { session.say(askLine) }
+
     Page(
         modifier = if (touch) {
             Modifier.touchAnswer(

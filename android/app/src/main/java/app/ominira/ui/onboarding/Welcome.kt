@@ -101,6 +101,10 @@ fun WelcomeScreen(session: Session, onTalk: () -> Unit, onRead: () -> Unit) {
         prompt.ask(listen = true)
     }
 
+    RemindWhileWaiting(session, waiting = true) {
+        session.sayIn(speakIn, if (session.understands) spoken.sayYes else spoken.tapToBegin)
+    }
+
     Page(
         modifier = Modifier.tapAnywhere(true, "talk me through it") {
             prompt.cancel()

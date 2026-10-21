@@ -145,6 +145,10 @@ fun SonarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
         }
     }
 
+    RemindWhileWaiting(session, waiting = phase == 0 && !started) {
+        session.say(if (session.answersByTouch) s.tapToStart else s.sayStartOrTap)
+    }
+
     Page(
         modifier = Modifier.tapAnywhere(phase == 0 && !started, w.startSonar) {
             prompt.cancel()
