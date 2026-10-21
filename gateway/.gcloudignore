@@ -1,0 +1,14 @@
+# Also keep keys and local databases out of the upload to Cloud Build.
+.gcloudignore
+.venv
+**/__pycache__
+*.pyc
+*.db
+.env
+*.env
+.pytest_cache
+.ruff_cache
+tests
+yarngpt_out
+speech_out
+.git
