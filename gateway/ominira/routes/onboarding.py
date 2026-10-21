@@ -1,7 +1,4 @@
-"""Opening an account by voice. No auth: the person has no account yet.
-
-The camera is simulated at the hackathon. In the pilot, liveness and the ID read come from
-Zenith's vendors, and `complete` opens the account and enrols the device passkey."""
+"""Opening an account by voice. No auth: the person has no account yet."""
 
 import secrets
 from typing import Literal
@@ -42,7 +39,6 @@ def _session(db: Session, sid: str) -> Onboarding:
 
 @router.post("/sessions", status_code=201)
 def start(body: StartIn | None = None, db: Session = Depends(get_session)):
-    """The language picked on the first screen comes along, so every line after it is in that language."""
     lang = body.lang if body else None
     row = Onboarding(id=new_id("ob_"), liveness_digits=[secrets.randbelow(10) for _ in range(4)], lang=lang)
     db.add(row)
@@ -85,7 +81,7 @@ def complete(sid: str, db: Session = Depends(get_session)):
         row.completed = True
         customer = db.get(Customer, CUSTOMER_ID)
         if customer is not None and row.lang:
-            customer.lang = row.lang  # the picker's choice becomes the account's language
+            customer.lang = row.lang
         db.commit()
         audit_log.record("account_opened", actor="customer", customer_id=CUSTOMER_ID, onboarding_id=sid)
     # Hackathon: every new account is the demo customer.

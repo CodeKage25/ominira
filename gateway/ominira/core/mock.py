@@ -1,19 +1,4 @@
-"""A mock of Zenith's core that behaves like the rails instead of always saying yes.
-
-- NIP codes: 07 invalid account, 06 dormant, 16 unknown bank, 25 no record, 51 insufficient
-  funds, 61 over limit, 91 bank unavailable, 96 system malfunction, 09 in progress.
-- ISO PIN answers: 55 wrong PIN with tries left, 75 locked after three wrong tries.
-- Delays close to real name enquiries and transfers, unless the profile is "fast".
-- A transfer can come back 09 and settle on a later status check.
-- A transfer can time out after it went through (its reply lost) or before it arrived.
-- The same idempotency key always returns the first outcome, so nothing is paid twice.
-
-Special accounts on the rails:
-  ten identical digits                -> 07 invalid account
-  any number ending 0006              -> 06 dormant
-  UBA (033) 2109876543                -> 06 dormant
-  any other 10 digits at a known bank -> a consistent generated name
-"""
+"""A mock of Zenith's core that behaves like the rails instead of always saying yes."""
 
 import hashlib
 import random
@@ -91,8 +76,7 @@ class Controls:
 
 
 def unseal_pin_block(pin_block: str) -> str | None:
-    """The app's placeholder block: 'demo-' then each digit as 9 minus the digit.
-    PIN 2075 travels as 'demo-7924'. The pilot uses ISO 9564 blocks encrypted on the device."""
+    """'demo-' then each digit as 9 minus the digit: PIN 2075 is 'demo-7924'."""
     if not isinstance(pin_block, str) or not pin_block.startswith("demo-"):
         return None
     sealed = pin_block[len("demo-"):]

@@ -1,7 +1,4 @@
-"""Configuration from environment variables. Every default is safe for a laptop demo.
-
-`settings` is read once at import. Tests change attributes on it directly.
-"""
+"""Env config with safe laptop defaults, read once at import (tests set attributes)."""
 
 import os
 import secrets
@@ -31,42 +28,30 @@ def _float(name: str, default: float) -> float:
 
 @dataclass
 class Settings:
-    # SQLite on a laptop. Postgres on Cloud SQL looks like
-    # postgresql+psycopg://user:pass@/ominira?host=/cloudsql/PROJECT:REGION:INSTANCE
     database_url: str = field(default_factory=lambda: _env("DATABASE_URL", "sqlite:///./ominira.db"))
 
-    # "claude" uses Claude when ANTHROPIC_API_KEY is set; "rules" always uses the offline parser.
-    assistant: str = field(default_factory=lambda: _env("ASSISTANT", "claude"))
+    assistant: str = field(default_factory=lambda: _env("ASSISTANT", "claude"))  # claude | rules
     claude_model: str = field(default_factory=lambda: _env("CLAUDE_MODEL", "claude-sonnet-5-5"))
     anthropic_api_key: str = field(default_factory=lambda: _env("ANTHROPIC_API_KEY", ""))
-    # A voice turn cannot wait long. After this the rule parser answers instead.
     claude_timeout_s: float = field(default_factory=lambda: _float("CLAUDE_TIMEOUT_S", 8.0))
 
-    # Mock core behaviour: realistic (NIP-like delays), fast (tests), flaky (failures on purpose).
-    zenith_profile: str = field(default_factory=lambda: _env("ZENITH_PROFILE", "realistic"))
+    zenith_profile: str = field(default_factory=lambda: _env("ZENITH_PROFILE", "realistic"))  # fast | flaky
 
-    # Confirm gate. Amounts in kobo, times in seconds.
     pause_threshold_kobo: int = field(default_factory=lambda: _int("PAUSE_THRESHOLD_KOBO", 5_000_000))
     draft_lifetime_s: int = field(default_factory=lambda: _int("DRAFT_LIFETIME_S", 600))
     approval_lifetime_s: int = field(default_factory=lambda: _int("APPROVAL_LIFETIME_S", 900))
-    # How long confirm keeps re-checking an "in progress" transfer before answering 202 processing.
+    # How long confirm re-checks an "in progress" transfer before answering 202.
     requery_wait_s: float = field(default_factory=lambda: _float("REQUERY_WAIT_S", 3.0))
-    # New-account name enquiries per customer, across lookups, drafts and the assistant.
     lookups_per_minute: int = field(default_factory=lambda: _int("LOOKUPS_PER_MINUTE", 5))
-    # PIN checks per token (unlock, confirm, protective settings).
     pin_attempts_per_minute: int = field(default_factory=lambda: _int("PIN_ATTEMPTS_PER_MINUTE", 5))
 
-    # Keys the stored request fingerprints for Idempotency-Key, so a stored hash cannot be used to
-    # guess a PIN block. Random per process when unset (replays then last until a restart).
     idempotency_secret: str = field(default_factory=lambda: _env("IDEMPOTENCY_SECRET", "") or secrets.token_hex(32))
 
-    # Speech. Without a key the app uses the phone's own voice and recogniser.
     yarngpt_api_key: str = field(default_factory=lambda: _env("YARNGPT_API_KEY", ""))
     yarngpt_base: str = field(default_factory=lambda: _env("YARNGPT_BASE", "https://api.yarngpt.ai"))
-    # Pin a voice per language, e.g. "yo=idera,ha=umar,ig=chinenye".
     yarngpt_voices: str = field(default_factory=lambda: _env("YARNGPT_VOICES", ""))
 
-    # Rehearsal controls at /_mock/*. Set MOCK_ADMIN_TOKEN on any public deployment.
+    # Set MOCK_ADMIN_TOKEN on any public deployment.
     mock_admin: bool = field(default_factory=lambda: _flag("MOCK_ADMIN", True))
     mock_admin_token: str = field(default_factory=lambda: _env("MOCK_ADMIN_TOKEN", ""))
 

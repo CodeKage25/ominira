@@ -1,4 +1,4 @@
-"""Sliding one-minute windows kept in memory. Good for one instance (the demo runs max-instances 1)."""
+"""Sliding one-minute windows in memory: one instance only (Cloud Run max-instances 1)."""
 
 import math
 import threading

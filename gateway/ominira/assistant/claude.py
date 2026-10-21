@@ -1,12 +1,4 @@
-"""The assistant on Claude. It understands what the customer asked and prepares drafts. It holds
-no tool that confirms, cancels, answers a pause or approves: those do not exist here at all.
-
-Only masked text reaches the model. Account numbers arrive as ACCOUNT_1 and so on, BVNs as
-[BVN]; a tool that needs the number gets the label and looks it up inside the Gateway.
-
-Once a draft exists the turn ends with a fixed line instead of a second model call. That saves
-about two seconds of silence and keeps the model's own words away from money.
-"""
+"""The assistant on Claude: masked text in, read and draft tools only, no confirm tool."""
 
 import json
 import logging
@@ -194,7 +186,7 @@ def turn(db: Session, customer: Customer, conv: Conversation, masked: str, accou
                 except Problem as p:
                     output, failed = json.dumps({"error": p.say or p.title}), True
                 results.append({"type": "tool_result", "tool_use_id": use.id, "content": output, "is_error": failed})
-            if runner.draft is not None:
+            if runner.draft is not None:  # a fixed line, no second model call
                 return toolbox.drafted_line(db, customer.lang, runner.draft), runner.draft
             if runner.explained:
                 # A fixed line, like a readback: spoken as written, never reworded.
@@ -203,7 +195,7 @@ def turn(db: Session, customer: Customer, conv: Conversation, masked: str, accou
         raise ClaudeUnavailable("too many tool rounds")
     except ClaudeUnavailable:
         raise
-    except Exception as exc:  # network, timeout, auth, rate limit, bad response: all mean "use the rules"
+    except Exception as exc:  # any failure: the rules answer
         if runner.draft is not None:
             return toolbox.drafted_line(db, customer.lang, runner.draft), runner.draft
         raise ClaudeUnavailable(f"{type(exc).__name__}: {exc}") from exc

@@ -27,8 +27,6 @@ class UnlockIn(BaseModel):
 
 @router.post("/auth/unlock")
 def unlock(body: UnlockIn, caller: Caller = Depends(customer)):
-    """The Pulse PIN on the app's first screen. The pilot signs in with a passkey instead.
-    Limited to PIN_ATTEMPTS_PER_MINUTE per token, shared with every other PIN check."""
     pin.require(caller.customer, caller.token, body.pin_block, purpose="unlock")
     audit_log.record("unlock", actor="customer", customer_id=caller.customer.id)
     return {"ok": True, "say": lines.say(caller.lang, "unlocked")}
@@ -93,8 +91,6 @@ class LookupIn(BaseModel):
 
 @router.post("/payees/lookup")
 def lookup(body: LookupIn, caller: Caller = Depends(reader)):
-    """NIP name enquiry for an account that is not saved. Five a minute per customer, shared with
-    drafts to new accounts and the assistant's lookups."""
     enquiry = enquire_account(caller.lang, body.bank_code, body.account_number.strip(), limit_for=caller.customer.id)
     name = readback.nip_name(enquiry.account_name)
     return {"name": name, "bank": enquiry.bank.short, "account_last4": enquiry.last4,
@@ -120,7 +116,7 @@ class PreferencesIn(BaseModel):
     pulse_gap_ms: int | None = Field(None, ge=400, le=3000)
     daily_limit_kobo: int | None = Field(None, gt=0)
     pause_threshold_kobo: int | None = Field(None, gt=0)
-    # Needed only when a change weakens a protection (see put_preferences).
+    # Only when a change weakens a protection.
     pin_block: str | None = Field(None, max_length=200)
 
 
@@ -134,9 +130,7 @@ def _preferences(c: Customer) -> dict:
 
 
 def weakens_protection(c: Customer, changes: dict) -> bool:
-    """Raising the pause threshold, or raising or clearing the own daily limit, needs the PIN:
-    a scammer on the phone must not be able to talk someone into switching protections off.
-    Lowering them, or anything else, does not."""
+    """A scammer on the phone must not talk anyone into switching protections off."""
     if "pause_threshold_kobo" in changes:
         now = c.pause_threshold_kobo or settings.pause_threshold_kobo
         new = changes["pause_threshold_kobo"] or settings.pause_threshold_kobo
@@ -156,7 +150,6 @@ def get_preferences(caller: Caller = Depends(customer)):
 
 @router.put("/me/preferences")
 def put_preferences(body: PreferencesIn, caller: Caller = Depends(customer), db: Session = Depends(get_session)):
-    """Partial: only the fields sent change. null clears daily_limit_kobo or pause_threshold_kobo."""
     c = caller.customer
     changes = {}
     for name in body.model_fields_set - {"pin_block"}:

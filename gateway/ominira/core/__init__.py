@@ -1,5 +1,4 @@
-"""The one place the core is chosen. The pilot returns a Zenith sandbox client from `get_core`
-instead of the mock, and nothing else in the Gateway changes."""
+"""The one place the core is chosen; the pilot returns the sandbox client here."""
 
 from ominira.core.base import ZenithCore
 from ominira.core.mock import Controls, MockZenith

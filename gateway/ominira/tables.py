@@ -1,9 +1,4 @@
-"""The Gateway's own tables.
-
-What Zenith owns stays at Zenith: no PIN, PIN block, BVN, NIN or balance is stored here. A full
-account number lives in a draft's payload only while that draft is open (the gate must repeat the
-name enquiry), and is removed when the draft closes.
-"""
+"""The Gateway's own tables. No PIN, PIN block, BVN, NIN or balance is stored here."""
 
 from datetime import datetime
 
@@ -24,7 +19,7 @@ class Customer(Base):
     theme: Mapped[str] = mapped_column(String(16), default="system")
     speech_rate: Mapped[float] = mapped_column(default=0.95)
     pulse_gap_ms: Mapped[int] = mapped_column(Integer, default=1000)
-    # The customer's own limits. Zenith's limits are the ceiling; these only ever lower them.
+    # Own limits: Zenith's are the ceiling; these only ever lower them.
     daily_limit_kobo: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     pause_threshold_kobo: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
@@ -84,8 +79,7 @@ class Draft(Base):
     payload: Mapped[dict] = mapped_column(JSON)
     readback: Mapped[dict] = mapped_column(JSON)
     readback_hash: Mapped[str] = mapped_column(String(80))
-    # Zenith's idempotency key is "{id}:{attempt}". It moves on only after a definite
-    # "not sent" (NIP 91 or 96), never after a timeout or "in progress".
+    # Zenith key is "{id}:{attempt}"; moves on only after 91/96, never after a timeout.
     attempt: Mapped[int] = mapped_column(Integer, default=1)
     pause_answer: Mapped[str | None] = mapped_column(String(16), nullable=True)
     paused_on_call: Mapped[bool] = mapped_column(Boolean, default=False)

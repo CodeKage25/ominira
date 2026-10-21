@@ -1,8 +1,4 @@
-"""What the customer hears before they confirm, and the hash that proves they heard it.
-
-readback_hash = "sha256:" + hex(sha256(canonical JSON of {kind, name, bank, account_last4, amount_kobo}))
-with sorted keys and (",", ":") separators. Clients never compute it; they echo it back.
-"""
+"""What the customer hears before confirming, and its hash (spec in docs/api.md)."""
 
 import hashlib
 import json

@@ -1,9 +1,4 @@
-"""Tamper-evident audit log.
-
-Each row stores prev_hash and entry_hash = sha256(prev_hash + canonical JSON of the row's
-content). Changing, removing or reordering any past row breaks the chain from that row on.
-Never put a PIN, PIN block, BVN or full account number in `detail`.
-"""
+"""Hash-chained audit log. Never put a PIN, BVN or full account number in `detail`."""
 
 import hashlib
 import json
@@ -38,11 +33,7 @@ def _digest(prev_hash: str, content: dict) -> str:
 
 def record(action: str, *, actor: str, customer_id: str | None = None, draft_id: str | None = None,
            **detail) -> str:
-    """Append one entry in its own transaction, so the record of what the core did survives even
-    when the caller's transaction later fails. Returns the new entry's hash.
-
-    Call it after committing your own session's writes: SQLite allows one writer at a time, so an
-    uncommitted write in the caller's session would make this wait."""
+    """Own transaction. Call after committing your writes: SQLite has one writer."""
     with _write_lock, SessionFactory() as db:
         if is_postgres():
             db.execute(text("SELECT pg_advisory_xact_lock(74471)"))  # one writer across instances

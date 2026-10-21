@@ -1,11 +1,4 @@
-"""Who is calling, and what they may do.
-
-  customer   the account holder's phone: everything for that customer, and the only role that
-             can confirm, cancel or answer a scam pause
-  approver   a trusted co-approver: sees and decides their own queue, never the balance
-  assistant  the language model's identity: reads and drafts, refused by everything that moves
-             money or decides
-"""
+"""Who is calling, and what they may do. Roles are in docs/api.md."""
 
 from dataclasses import dataclass
 
@@ -54,14 +47,13 @@ def reader(caller: Caller = Depends(authenticated)) -> Caller:
 
 
 def customer(caller: Caller = Depends(authenticated)) -> Caller:
-    """The customer's own phone only. The assistant is refused outright."""
     if caller.role != "customer":
         raise _refuse(caller)
     return caller
 
 
 def approver(caller: Caller = Depends(authenticated), db: Session = Depends(get_session)) -> Caller:
-    """An approver whose customer removed or replaced them can no longer see or decide anything."""
+    """A removed or replaced approver can no longer see or decide anything."""
     if caller.role != "approver" or caller.approver_id is None:
         raise Problem(403, "forbidden", "Only an approver can do this")
     row = db.get(Approver, caller.approver_id)

@@ -1,9 +1,4 @@
-"""Naira as words, and words as naira.
-
-Out: 84230000 kobo reads "eight hundred and forty-two thousand, three hundred naira" and shows
-as "₦842,300". In: "20000", "20,000", "₦20k", "20 thousand", "twenty thousand five hundred",
-"1.5 million" all parse to kobo.
-"""
+"""Naira as words, and words as naira."""
 
 import re
 
@@ -87,8 +82,7 @@ def _tokens(text: str) -> list[str]:
 
 
 def parse_kobo(text: str) -> int | None:
-    """The first amount said in `text`, in kobo, or None. Reading stops at the first ordinary
-    word after the number, so 'send 20,000 to Tolu' never reads past 'to'."""
+    """The first amount in `text`, in kobo, or None. Stops at the next ordinary word."""
     total = 0.0
     group = 0.0
     seen = False

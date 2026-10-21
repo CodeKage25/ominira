@@ -1,12 +1,4 @@
-"""Every line a customer hears, keyed by event, in their language.
-
-English and Pidgin are reviewed product copy: change them only with the product team. Yorùbá,
-Hausa and Igbo fall back to English until a native speaker has written and checked them. Add them
-as new entries, never by machine translation.
-
-A few lines are English only so far (marked below). Pidgin customers hear English for those
-until the copy is written and reviewed.
-"""
+"""Every line a customer hears. Reviewed copy: never machine-translate."""
 
 from ominira import amounts
 
@@ -74,7 +66,7 @@ _COPY: dict[str, dict[str, str]] = {
         "en": "That PIN did not match. Feel the count again. You have {tries} tries left.",
         "pcm": "That PIN no match. Feel the count again. You get {tries} try remain.",
     },
-    # "one tries left" read badly; this is the same line with the singular.
+    # Singular: "one tries left" read badly.
     "pin_incorrect_one": {
         "en": "That PIN did not match. Feel the count again. You have one try left.",
         "pcm": "That PIN no match. Feel the count again. You get one try remain.",

@@ -1,5 +1,4 @@
-"""Speech through YarnGPT. Recordings arrive as the raw request body with an audio Content-Type
-(audio/wav from the app). Audio is never stored."""
+"""Speech through YarnGPT. Recordings are the raw audio/* body; audio is never stored."""
 
 import time
 from typing import Literal
@@ -70,8 +69,7 @@ def say(body: SayIn, caller: Caller = Depends(customer)):
 
 @router.post("/speech/listen")
 async def listen(request: Request, caller: Caller = Depends(customer)):
-    """For short answers on a screen (yes, no, a language). Agent turns use voice-turns, so a
-    spoken account number never travels back to the phone."""
+    """Short on-screen answers. Agent turns use voice-turns, which mask numbers."""
     audio, content_type = await _read_audio(request)
     ratelimit.allow(f"listen:{caller.customer.id}", LISTEN_PER_MINUTE, "Too many speech requests")
     try:
@@ -80,8 +78,7 @@ async def listen(request: Request, caller: Caller = Depends(customer)):
         raise _unavailable(caller.lang, err) from err
     if guard.spoken_pin(heard["text"]):
         return {"text": "", "pin_spoken": True, "seconds": heard["seconds"], "say": lines.say(caller.lang, "pin_spoken")}
-    # Not masked: this goes back to the customer's own phone, which may be reading a BVN or an
-    # account number off the customer's voice on purpose.
+    # Not masked: the customer's own phone may want a BVN or account number.
     return {"text": heard["text"], "seconds": heard["seconds"],
             "say": None if heard["text"] else lines.say(caller.lang, "speech_not_heard")}
 
@@ -89,7 +86,6 @@ async def listen(request: Request, caller: Caller = Depends(customer)):
 @router.post("/conversations/{conversation_id}/voice-turns")
 async def voice_turn(conversation_id: str, request: Request, caller: Caller = Depends(customer),
                      db: Session = Depends(get_session)):
-    """Listen, run the same turn as text (guard, assistant, draft), then speak the reply."""
     conv = conversation_of(db, caller, conversation_id)
     audio, content_type = await _read_audio(request)
     ratelimit.allow(f"listen:{caller.customer.id}", LISTEN_PER_MINUTE, "Too many speech requests")

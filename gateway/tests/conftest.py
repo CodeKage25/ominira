@@ -1,12 +1,11 @@
-"""Test setup: a temporary SQLite file, the fast mock profile, no network. Claude and YarnGPT are
-replaced by fakes in the tests that need them."""
+"""Test setup: a temporary SQLite file, the fast mock profile, no network."""
 
 import os
 import tempfile
 
 _DB_DIR = tempfile.mkdtemp(prefix="ominira-tests-")
+# Before any ominira import: settings reads the environment once.
 os.environ.update({
-    # TEST_DATABASE_URL runs the suite against another database, e.g. a throwaway Postgres.
     "DATABASE_URL": os.environ.get("TEST_DATABASE_URL") or f"sqlite:///{_DB_DIR}/test.db",
     "ZENITH_PROFILE": "fast",
     "ASSISTANT": "rules",

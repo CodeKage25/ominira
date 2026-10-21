@@ -1,5 +1,4 @@
-"""Checking the Pulse PIN. Every check goes to Zenith (we learn only ok or tries left) and counts
-against a per-token limit, so nobody can grind through PINs faster than a person would."""
+"""Pulse PIN checks: Zenith verifies; each check counts against a per-token limit."""
 
 from ominira import audit_log, lines, ratelimit
 from ominira.core import get_core
@@ -10,7 +9,7 @@ from ominira.tables import Customer
 
 def require(customer: Customer, token: str, pin_block: str | None, *, purpose: str,
             draft_id: str | None = None) -> None:
-    """Raise unless `pin_block` is this customer's PIN. Never logs or stores the block."""
+    """Raise unless `pin_block` is this customer's PIN. Never log or store the block."""
     if not pin_block:
         raise Problem(401, "pin_required", "This needs the customer's Pulse PIN", lines.say(customer.lang, "only_customer"))
     ratelimit.allow(f"pin:{token}", settings.pin_attempts_per_minute, "Too many PIN attempts")

@@ -1,17 +1,4 @@
-"""Idempotency-Key for state-changing calls.
-
-The first response to a key is kept for 24 hours, scoped to the caller's token, method and path,
-and replayed for a repeat with the same body. The same key with a different body is
-422 idempotency_key_reused. Two requests with the same key at once are serialised, so the second
-gets the replay instead of running again.
-
-5xx and 429 answers are not kept: a retry after "bank unavailable" or "slow down" really retries.
-Stored fingerprints are HMACs under IDEMPOTENCY_SECRET, never plain hashes of the body.
-
-This protects the client's view of a call. Money is protected one level down as well: the gate
-sends Zenith the key "{draft_id}:{attempt}", so even two different client keys for one draft can
-never pay twice.
-"""
+"""Idempotency-Key replay for state-changing calls (rules in docs/api.md)."""
 
 import asyncio
 import hashlib
@@ -33,8 +20,7 @@ _SKIP_HEADERS = {b"content-length", b"date", b"server"}
 
 
 def _fingerprint(data: bytes) -> str:
-    """Keyed, so a stored fingerprint of a confirm body cannot be matched against the 10,000
-    possible PIN blocks by anyone who reads the table."""
+    """Keyed, so a stored confirm can't be matched against all 10,000 PIN blocks."""
     return hmac.new(settings.idempotency_secret.encode(), data, hashlib.sha256).hexdigest()
 
 
@@ -56,7 +42,7 @@ def _save(row: StoredResponse) -> None:
 
 
 class _KeyLocks:
-    """One asyncio lock per key in flight, dropped when nobody holds or waits for it."""
+    """Serialises a key in flight, so a concurrent repeat gets the replay, not a rerun."""
 
     def __init__(self) -> None:
         self._locks: dict[str, tuple[asyncio.Lock, int]] = {}

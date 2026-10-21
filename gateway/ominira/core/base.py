@@ -1,14 +1,8 @@
-"""The interface to Zenith's core banking, and nothing more.
-
-The mock (`mock.py`) implements it now. A Zenith sandbox client implements the same class later,
-and `core/__init__.py` is the only file that changes. Response codes follow NIP (NIBSS Instant
-Payment) and ISO 8583, so the handling written against the mock is the handling we keep.
-"""
+"""The interface to Zenith's core. Codes follow NIP and ISO 8583."""
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-# NIP and ISO 8583 response codes the Gateway acts on.
 APPROVED = "00"
 DORMANT = "06"
 INVALID_ACCOUNT = "07"
@@ -22,7 +16,7 @@ PIN_LOCKED = "75"
 BANK_UNAVAILABLE = "91"
 SYSTEM_MALFUNCTION = "96"
 
-# Definitely not sent, and the same request may work later under a new key.
+# Definitely not sent: safe to retry under a new key.
 NOT_SENT_RETRYABLE = frozenset({BANK_UNAVAILABLE, SYSTEM_MALFUNCTION})
 
 
@@ -36,8 +30,7 @@ class CoreError(Exception):
 
 
 class CoreTimeout(Exception):
-    """No answer in time. The outcome is unknown: the request may or may not have arrived.
-    The caller must re-query by idempotency key, never resend under a new key."""
+    """Outcome unknown. Re-query by the same key; never resend under a new one."""
 
 
 @dataclass(frozen=True)
@@ -163,8 +156,7 @@ class ZenithCore(ABC):
     def save_beneficiary(self, customer_ref: str, enquiry_ref: str) -> str: ...
 
     @abstractmethod
-    def find_beneficiary(self, customer_ref: str, bank_code: str, account_number: str) -> str | None:
-        """The customer's saved beneficiary for this account, if there is one."""
+    def find_beneficiary(self, customer_ref: str, bank_code: str, account_number: str) -> str | None: ...
 
     # The PIN block goes to the core; the Gateway learns only ok or tries left.
     @abstractmethod

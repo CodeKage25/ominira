@@ -1,6 +1,4 @@
-"""The contract test: every endpoint in docs/api.md is called, and its answer has the keys the
-contract promises. A new endpoint in the doc fails `test_every_documented_endpoint_is_walked`
-until it is added here."""
+"""Every endpoint in docs/api.md is called and answers with the promised keys."""
 
 import re
 from pathlib import Path

@@ -36,7 +36,7 @@ class DraftIn(BaseModel):
 
 @router.post("/drafts", status_code=201)
 def create_draft(body: DraftIn, caller: Caller = Depends(reader), db: Session = Depends(get_session)):
-    # The assistant's identity always records itself as the source.
+    # The assistant cannot claim another source.
     source = "assistant" if caller.role == "assistant" else body.source
     actor = caller.role
     if body.kind == "card_block":
@@ -104,7 +104,6 @@ def list_approvers(caller: Caller = Depends(customer), db: Session = Depends(get
 
 @router.post("/approvers", status_code=201)
 def add_approver(body: ApproverIn, caller: Caller = Depends(customer), db: Session = Depends(get_session)):
-    """Replaces the active approver. Needs the PIN: who checks big transfers is a protection."""
     pin.require(caller.customer, caller.token, body.pin_block, purpose="approver_set")
     replaced = list(db.scalars(select(Approver).where(Approver.customer_id == caller.customer.id,
                                                       Approver.active.is_(True))))
@@ -124,7 +123,6 @@ def add_approver(body: ApproverIn, caller: Caller = Depends(customer), db: Sessi
 @router.delete("/approvers/{approver_id}")
 def remove_approver(approver_id: str, x_pin_block: str | None = Header(default=None),
                     caller: Caller = Depends(customer), db: Session = Depends(get_session)):
-    """Needs the PIN in the X-Pin-Block header. Their pending requests are withdrawn."""
     a = db.get(Approver, approver_id)
     if a is None or a.customer_id != caller.customer.id or not a.active:
         raise Problem(404, "not_found", "No such approver")
@@ -141,7 +139,6 @@ def remove_approver(approver_id: str, x_pin_block: str | None = Header(default=N
 
 @router.get("/approvals")
 def approvals(caller: Caller = Depends(approver), db: Session = Depends(get_session)):
-    """Who asks, how much, to whom. Never the balance."""
     gate.sweep_approvals(db, caller.approver_id)
     first_name = get_core().profile(caller.customer.core_ref).first_name
     rows = db.scalars(select(Approval).where(Approval.approver_id == caller.approver_id)

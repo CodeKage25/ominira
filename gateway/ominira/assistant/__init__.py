@@ -25,11 +25,12 @@ class TurnResult:
 def run_turn(db: Session, customer: Customer, conv: Conversation, text: str, source: str = "assistant") -> TurnResult:
     started = time.monotonic()
     mem = memory.get(conv.id)
+    # Mask first: only masked text may reach a model or the database.
     masked, accounts = guard.mask(text, mem.labels)
-    mem.labels = accounts  # this conversation's labels, so ACCOUNT_1 means the same number every turn
+    mem.labels = accounts  # ACCOUNT_1 must mean the same number every turn
 
     if guard.spoken_pin(text):
-        # Never act on a turn that carried a PIN, whatever else it asked for. No model sees it.
+        # A turn that carried a PIN does nothing, and no model sees it.
         conv.waiting_payee_id = None
         mem.waiting_account = None
         reply, draft, engine = lines.say(customer.lang, "pin_spoken"), None, "rules"

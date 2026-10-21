@@ -1,6 +1,4 @@
-"""Rehearsal controls for the mock core: reset the demo world, take a bank down, force the next
-transfer's answer. Off when MOCK_ADMIN=false (404). With MOCK_ADMIN_TOKEN set, every call needs
-the header X-Mock-Admin with that value (403 otherwise)."""
+"""Rehearsal controls for the mock core (see docs/api.md)."""
 
 import hmac
 
@@ -45,8 +43,6 @@ def state():
 
 @router.post("/reset")
 def reset():
-    """Back to the start: balance ₦842,300, three PIN tries, no drafts, an empty audit log, and
-    the controls of ZENITH_PROFILE."""
     rebuild(engine)
     ratelimit.clear()
     memory.clear()
@@ -61,7 +57,7 @@ def controls(body: ControlsIn):
     sent = body.model_dump(exclude_unset=True)
     profile = sent.pop("profile", None)
     if profile:
-        # A new profile brings its own defaults; other fields in the same call apply on top.
+        # The profile's defaults first, then the other fields on top.
         core.controls = Controls.for_profile(profile)
     for name, value in sent.items():
         if name == "banks_down":

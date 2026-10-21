@@ -1,8 +1,3 @@
-"""The Òmìnira Gateway application.
-
-Run: uv run uvicorn ominira.main:app --port 8080
-"""
-
 import logging
 from contextlib import asynccontextmanager
 
@@ -20,8 +15,6 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message
 
 @asynccontextmanager
 async def _lifespan(_: FastAPI):
-    # Hackathon: tables are created at start and the demo world is seeded if missing.
-    # The pilot moves to migrations.
     ensure(engine)
     with SessionFactory() as db:
         sweep_expired(db)  # no stale draft (or full account number) survives a restart

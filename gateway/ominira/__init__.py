@@ -1,4 +1,1 @@
-"""The Òmìnira Gateway: the one service between the app and Zenith's core.
-
-The assistant drafts. Plain code in `gate.py` moves money.
-"""
+"""The Òmìnira Gateway. The assistant drafts; plain code in gate.py moves money."""

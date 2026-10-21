@@ -25,5 +25,4 @@ def health():
 
 @router.get("/approve", include_in_schema=False)
 def approve_page():
-    """Funmi's page: open /approve?token=demo-approver on a second phone."""
     return FileResponse(_STATIC / "approve.html", media_type="text/html")

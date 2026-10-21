@@ -1,5 +1,4 @@
-"""Drafts: every money action starts as one. The customer or the assistant creates it, the app
-reads the readback aloud, and only the confirm gate can carry it out."""
+"""Drafts: every money action starts as one, and only the confirm gate carries it out."""
 
 import secrets
 from datetime import timedelta
@@ -36,9 +35,7 @@ def enquiry_problem(err: CoreError, lang: str, bank_label: str) -> Problem:
 
 
 def enquire_account(lang: str, bank_code: str, number: str, *, limit_for: str | None = None) -> NameEnquiry:
-    """Name enquiry for an account. With `limit_for` (a customer id) it counts against that
-    customer's new-account limit, wherever it comes from: lookup, draft or assistant. Re-checks
-    of a draft the customer already made do not count."""
+    """`limit_for` counts it against the lookup limit; re-checks of a draft pass None."""
     if limit_for is not None:
         ratelimit.allow(f"lookup:{limit_for}", settings.lookups_per_minute, "Too many name enquiries")
     core = get_core()
@@ -57,8 +54,7 @@ def enquire_payee(lang: str, customer: Customer, payee: Payee) -> NameEnquiry:
 
 
 def known_payee(db: Session, customer: Customer, bank_code: str, number: str) -> Payee | None:
-    """The saved payee behind an account number, if the customer has one. Paying a flagged or new
-    person by typing their number must count exactly like paying them by name."""
+    """The saved payee behind a number: typing the number must not dodge a flag."""
     ref = get_core().find_beneficiary(customer.core_ref, bank_code, number)
     if ref is None:
         return None
@@ -66,8 +62,7 @@ def known_payee(db: Session, customer: Customer, bank_code: str, number: str) ->
 
 
 def attach_known_payee(db: Session, customer: Customer, draft: Draft) -> Payee | None:
-    """For a draft made from an account number: if that account is now a saved payee (saved or
-    flagged since the draft was made), treat the draft as a payment to that payee."""
+    """A number-made draft whose account is now a saved payee becomes that payee's."""
     if draft.kind != "transfer" or draft.payload.get("payee_id") or not draft.payload.get("account_number"):
         return payee_of(db, draft)
     payee = known_payee(db, customer, draft.payload["bank_code"], draft.payload["account_number"])
@@ -121,7 +116,7 @@ def new_transfer(db: Session, customer: Customer, *, amount_kobo: int, payee_id:
         payload = {"amount_kobo": amount_kobo, "payee_id": payee.id}
     else:
         enquiry = enquire_account(lang, bank_code, account_number, limit_for=customer.id)
-        # Kept only while the draft is open: the gate repeats the name enquiry before sending.
+        # Kept only while open: the gate repeats the name enquiry.
         payload = {"amount_kobo": amount_kobo, "bank_code": bank_code, "account_number": account_number}
     payload["enquiry_ref"] = enquiry.ref
     rb = transfer_readback(lang, enquiry, amount_kobo, payee)
@@ -145,8 +140,7 @@ def payee_of(db: Session, draft: Draft) -> Payee | None:
 
 
 def rebuild_readback(db: Session, customer: Customer, draft: Draft) -> tuple[dict, str | None]:
-    """Run the name enquiry again and rebuild what the customer should hear, in the language the
-    draft was read in. Returns (readback, fresh enquiry ref). Raises the enquiry's Problem."""
+    """Fresh enquiry and readback, in the draft's original language. (readback, ref)."""
     lang = draft.readback.get("lang", customer.lang)
     if draft.kind == "card_block":
         card = next((c for c in get_core().cards(customer.core_ref) if c.id == draft.payload["card_id"]), None)

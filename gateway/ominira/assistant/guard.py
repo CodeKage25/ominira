@@ -1,19 +1,4 @@
-"""Checks that run in code before any model sees a turn.
-
-Spoken PIN. A run of 4 to 6 digits close to a PIN word, before or after it, stops the turn:
-nothing is drafted and no model is called. PIN words cover English, Pidgin and the common
-Yorùbá, Hausa and Igbo phrasings ("my PIN is 2075", "2075 is my PIN", "pin mi ni 2075",
-"my pin na im be 2075", "the code to my account is 2075"). Digits may be said as words
-("two zero seven five") or split ("2 0 7 5", "20-75"). A number that reads as an amount
-("send 2000", "2000 naira", "₦2000") is not treated as a PIN.
-
-Masking. Account numbers (10 digits) become ACCOUNT_1, ACCOUNT_2, ...; 11 digits (a BVN or a
-phone number) become [BVN]; 12 to 19 digits (a card number) become [CARD]; longer runs become
-[NUMBER]. Numbers split by spaces, dots, commas, slashes or dashes ("204.471.4471",
-"5399 8312 3456 8830") and numbers glued to letters ("acct2044714471") are caught too. The
-label-to-number map stays inside the Gateway (see memory.py), so a model can pass a label to a
-tool without ever seeing the number.
-"""
+"""Checks in code before any model sees a turn: a spoken PIN, and number masking."""
 
 import re
 
@@ -135,8 +120,7 @@ def _mask_group(group: str, accounts: dict[str, str]) -> str:
 
 
 def mask(text: str, known: dict[str, str] | None = None) -> tuple[str, dict[str, str]]:
-    """Returns the masked text and the label map: `known` (this conversation's labels so far)
-    plus any new ones. A number seen before keeps its label; a new number gets the next free one."""
+    """(masked text, labels). A number in `known` keeps its label; new ones get the next."""
     accounts = dict(known or {})
     text = _normalise(text)
     for s, e in reversed(_pin_spans(text)):

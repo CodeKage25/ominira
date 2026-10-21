@@ -1,5 +1,4 @@
-"""Tables that stand in for Zenith's systems. Only MockZenith touches them; the Gateway never
-queries them directly, so swapping in the sandbox removes them without other changes."""
+"""Tables standing in for Zenith's systems. Only MockZenith queries them."""
 
 from datetime import datetime
 

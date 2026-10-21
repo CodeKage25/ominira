@@ -1,15 +1,4 @@
-"""The offline assistant: plain keyword rules, English and Pidgin. It answers when Claude is
-switched off, has no key, or cannot be reached, so the demo survives bad venue Wi-Fi.
-
-It understands:
-  send <amount> to <payee>        "send twenty thousand to Tolu", "abeg send 20k give Mama"
-  send money to <payee>, then <amount> on the next turn
-  send <amount> to <account number> at <bank>, or the number and bank first, then the amount
-  balance                          "what's my balance", "how much I get", "how much dey my account"
-  what came in                     "what came in this week", "wetin enter my account", "who send me money"
-  block my card                    "block my card", "my card don lost"
-  how the Pulse PIN works
-"""
+"""The offline assistant: keyword rules in English and Pidgin, for when Claude is not."""
 
 import re
 
@@ -54,7 +43,6 @@ def turn(db: Session, customer: Customer, conv: Conversation, masked: str, mem: 
     try:
         return _turn(db, customer, conv, text, mem, lang, source)
     except Problem as p:
-        # A refusal from a lookup or a draft (unknown account, bank down): say it, draft nothing.
         return p.say or lines.say(lang, "failed"), None
 
 
@@ -86,7 +74,6 @@ def _turn(db, customer, conv, text, mem: Memory, lang, source):
         if bank_code is None:
             return lines.say(lang, "ask_bank"), None
         if amount is None:
-            # Say who it is, and remember the account for the next turn's amount.
             found = toolbox.find_account(customer, bank_code, mem.labels[label])
             mem.waiting_account = (label, bank_code)
             conv.waiting_payee_id = None
@@ -102,7 +89,7 @@ def _turn(db, customer, conv, text, mem: Memory, lang, source):
         payee = named or (waiting if amount is not None else None)
         if payee is None:
             if amount is None and _any(text, _BALANCE):
-                return toolbox.balance_line(customer), None  # "give me my balance"
+                return toolbox.balance_line(customer), None  # "give me my balance": "give" sends
             if not sending and not amount:
                 return lines.say(lang, "help"), None
             names = " or ".join(p.nickname for p in people[:2]) or "Mama"

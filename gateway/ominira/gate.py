@@ -1,28 +1,4 @@
-"""The confirm gate. Ordinary code, no model anywhere in it.
-
-POST /v1/drafts/{id}/confirm runs these checks in order; the first that fails decides the answer.
-
-  1. Real draft: this customer's, open, not expired.
-  2. Heard it: name enquiry again, rebuild the readback; its hash must equal the one sent. A draft
-     typed as an account number that belongs to a saved payee is treated as that payee.
-  3. Limits (transfers): Zenith per-transaction and daily, then the customer's own lower daily limit.
-  4. Scam pause (transfers): (new payee AND amount at or over the pause threshold AND a call is
-     active) OR the payee is flagged, unless the customer already answered a pause on this draft.
-  5. Pulse PIN: the block goes to Zenith; we learn only ok or tries left. Never stored or logged.
-  6. Co-approver (transfers): over the active approver's threshold, the draft waits for a yes.
-     The PIN is checked first, so an approver is never asked about something the customer could
-     not authorise, and an approved draft goes without a second PIN.
-  7. Execute with Zenith idempotency key "{draft_id}:{attempt}". The draft is marked processing
-     before the call, so nothing can send it twice. A timeout or "in progress" keeps the key and
-     the draft stays processing until Zenith gives a final answer for that key; only a definite
-     "not sent" (91, 96) moves the attempt on.
-  8. Audit (hash-chained) and answer with `say`.
-
-Locks (see locks.py): every change to a draft happens under that draft's lock, and for transfers
-the limit check and the transfer run under the customer's lock, so a double tap, a cancel, an
-approver's yes and a second draft can never interleave. On Postgres the draft row is also locked
-with SELECT ... FOR UPDATE.
-"""
+"""The confirm gate: plain code, no model. Check order is in docs/api.md."""
 
 import time
 from dataclasses import dataclass
@@ -65,7 +41,7 @@ def _key(draft: Draft) -> str:
 
 
 def _close(draft: Draft, status: str, say: str) -> None:
-    """Every way a draft ends. A full account number never outlives an open draft."""
+    """Every way a draft ends. Drops the full account number."""
     draft.status = status
     draft.last_say = say
     if "account_number" in draft.payload:
@@ -104,9 +80,7 @@ def _withdraw(db: Session, draft: Draft) -> int:
 
 
 def _expire_if_due(db: Session, draft: Draft, customer: Customer) -> bool:
-    """Drafts older than ten minutes expire. A co-approver who has not answered within the approval
-    lifetime lets the request expire, so a late yes can never send money on an old readback.
-    A processing draft never expires: its outcome is Zenith's to give."""
+    """A processing draft never expires: its outcome is Zenith's to give."""
     now = utcnow()
     if draft.status in ("awaiting_confirm", "paused") and now > draft.expires_at:
         _close(draft, "expired", lines.say(customer.lang, "draft_expired"))
@@ -161,7 +135,6 @@ def _check_heard(db: Session, customer: Customer, draft: Draft, client_hash: str
     changed = fresh != draft.readback_hash
     draft.readback, draft.readback_hash = rb, fresh  # also picks up a new warning line
     if changed:
-        # The world changed since the customer heard it: a name or an account changed at the bank.
         draft.last_say = lines.say(lang, "readback_mismatch")
         db.commit()
         audit_log.record("readback_changed", actor="system", customer_id=customer.id, draft_id=draft.id)
@@ -248,7 +221,7 @@ def _confirm(db: Session, caller: Caller, draft_id: str, client_hash: str, pin_b
                              amount_kobo=amount, new_payee=is_new, flagged=flagged, call_active=bool(call_active))
             raise Problem(409, "pause_required", "Scam pause", draft.last_say, draft_id=draft.id)
 
-        # 5. Pulse PIN.
+        # 5. Pulse PIN, before the approver is asked about anything.
         pin.require(customer, caller.token, pin_block, purpose="confirm", draft_id=draft.id)
 
         # 6. Co-approver.
@@ -272,7 +245,7 @@ def _confirm(db: Session, caller: Caller, draft_id: str, client_hash: str, pin_b
 # ---- steps 7 and 8 ------------------------------------------------------------------------------
 
 def _requery(key: str) -> MoveResult:
-    """Check a transfer by its key until it is no longer in progress, or the wait runs out."""
+    """Poll by key until not in progress, or REQUERY_WAIT_S runs out."""
     core = get_core()
     deadline = time.monotonic() + settings.requery_wait_s
     result = core.transfer_status(key)
@@ -283,7 +256,7 @@ def _requery(key: str) -> MoveResult:
 
 
 def _send(customer: Customer, draft: Draft) -> MoveResult | None:
-    """One call to the core under the draft's current key. None means no answer (a timeout)."""
+    """None means no answer (a timeout): the outcome is unknown."""
     core = get_core()
     key = _key(draft)
     try:
@@ -298,8 +271,7 @@ def _send(customer: Customer, draft: Draft) -> MoveResult | None:
 
 def _execute(db: Session, draft: Draft, customer: Customer, actor: str) -> Answer:
     key = _key(draft)
-    # Mark the intent first. A second request now sees "processing" and can never send this
-    # draft again, and after a crash GET /v1/drafts/{id} re-checks the same key.
+    # Mark processing before calling Zenith, so no second request can send it.
     draft.status = "processing"
     db.commit()
     audit_log.record("sending", actor=actor, customer_id=customer.id, draft_id=draft.id, key=key,
@@ -307,8 +279,7 @@ def _execute(db: Session, draft: Draft, customer: Customer, actor: str) -> Answe
 
     result = _send(customer, draft)
     if result is None:
-        # No answer: the request may still arrive. "No record" now means "not yet", never
-        # "nothing sent", so the draft stays processing and is re-checked by the same key.
+        # After a timeout "no record" means "not yet", never "not sent": keep the key.
         result = _requery(key) if draft.kind == "transfer" else None
         if result is None or result.code == base.NO_RECORD:
             return _still_processing(db, draft, customer, None, actor)
@@ -329,7 +300,6 @@ def _still_processing(db: Session, draft: Draft, customer: Customer, reference: 
 
 
 def _settle(db: Session, draft: Draft, customer: Customer, result: MoveResult, actor: str) -> Answer:
-    """Turn the core's final or in-progress answer into the draft's new state and the answer."""
     lang = customer.lang
     if result.done:
         return _finish(db, draft, customer, result, actor)
@@ -339,7 +309,7 @@ def _settle(db: Session, draft: Draft, customer: Customer, result: MoveResult, a
     key = _key(draft)
     bank = draft.readback.get("bank") or "The other bank"
     if result.code in base.NOT_SENT_RETRYABLE:
-        # Definitely not sent. The draft stays open; the next try uses a new key.
+        # 91/96: definitely not sent, so only here does the key move on.
         draft.attempt += 1
         draft.status = "awaiting_confirm"
         draft.last_say = lines.say(lang, "bank_unavailable", bank=bank)
@@ -365,7 +335,6 @@ def _settle(db: Session, draft: Draft, customer: Customer, result: MoveResult, a
 
 
 def _save_new_payee(db: Session, draft: Draft, customer: Customer) -> Payee:
-    """The first payment to a new account saves them, so next time they are a known payee."""
     ben_ref = get_core().save_beneficiary(customer.core_ref, draft.payload["enquiry_ref"])
     payee = db.scalars(select(Payee).where(Payee.customer_id == customer.id,
                                            Payee.beneficiary_ref == ben_ref)).first()
@@ -413,7 +382,7 @@ def _finish(db: Session, draft: Draft, customer: Customer, result: MoveResult, a
 # ---- re-checks and sweeps -----------------------------------------------------------------------
 
 def refresh(db: Session, caller: Caller, draft_id: str) -> Draft:
-    """GET /v1/drafts/{id}: expire what is stale, and re-check a transfer that is on its way."""
+    """GET /v1/drafts/{id}: expire if stale, re-check if processing."""
     with draft_lock(draft_id):
         customer = db.get(Customer, caller.customer.id, populate_existing=True)
         draft = _load(db, draft_id, customer.id, customer.lang)
@@ -424,9 +393,7 @@ def refresh(db: Session, caller: Caller, draft_id: str) -> Draft:
 
 
 def _recheck(db: Session, draft: Draft, customer: Customer) -> None:
-    """Ask Zenith about the draft's key. If Zenith has no record (a timeout, or a crash between
-    marking and sending), send it again under the same key: a late arrival and the resend are one
-    and the same transfer, so this can never pay twice."""
+    """No record at Zenith: resend under the same key, so a late arrival and it are one."""
     if draft.kind == "transfer":
         result = get_core().transfer_status(_key(draft))
         if result.code == base.NO_RECORD:
@@ -439,12 +406,10 @@ def _recheck(db: Session, draft: Draft, customer: Customer) -> None:
         try:
             _settle(db, draft, customer, result, actor="system")
         except Problem:
-            pass  # the draft now carries the outcome and its line
+            pass  # the draft already carries the outcome and its line
 
 
 def sweep_expired(db: Session) -> int:
-    """Close every draft and approval that has run out of time, so nothing waits on an old
-    readback and no full account number lingers. Runs at start and after each new draft."""
     now = utcnow()
     candidates = db.scalars(select(Draft.id).where(or_(
         Draft.status == "awaiting_approval",
@@ -460,7 +425,6 @@ def sweep_expired(db: Session) -> int:
 
 
 def sweep_approvals(db: Session, approver_id: str) -> None:
-    """Expire this approver's requests that waited too long, before listing them."""
     limit = utcnow() - timedelta(seconds=settings.approval_lifetime_s)
     stale = db.scalars(select(Approval).where(Approval.approver_id == approver_id, Approval.status == "pending",
                                               Approval.asked_at < limit)).all()
@@ -505,7 +469,6 @@ def answer_pause(db: Session, caller: Caller, draft_id: str, answer: str) -> Ans
 
 
 def _cancel_open_drafts_to(db: Session, customer: Customer, payee: Payee, except_id: str) -> None:
-    """After a "stop", every other open request to that person stops too, approvals included."""
     open_ids = db.scalars(select(Draft.id).where(Draft.customer_id == customer.id, Draft.kind == "transfer",
                                                  Draft.status.in_(drafting.OPEN_STATUSES),
                                                  Draft.id != except_id)).all()
@@ -541,7 +504,6 @@ def cancel(db: Session, caller: Caller, draft_id: str) -> Answer:
 
 
 def withdraw_for_approver(db: Session, approver_id: str) -> int:
-    """An approver removed or replaced: their open requests stop, and nothing is sent."""
     pending = db.scalars(select(Approval).where(Approval.approver_id == approver_id,
                                                 Approval.status == "pending")).all()
     count = 0
@@ -596,9 +558,7 @@ def decide(db: Session, caller: Caller, approval_id: str, decision: str) -> Answ
                          approval_id=approval.id)
 
         with customer_lock(customer.id):
-            # Time has passed while the approver thought about it. Check the person, the account
-            # and the limits again just before money moves. If anything changed, nothing moves
-            # and the customer hears it again.
+            # Time passed while the approver thought: re-check payee, account and limits.
             try:
                 _check_heard(db, customer, draft, draft.readback_hash)
                 payee = drafting.payee_of(db, draft)

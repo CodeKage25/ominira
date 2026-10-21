@@ -1,5 +1,4 @@
-"""RFC 9457 problem details. Every error carries `code` (clients switch on it) and, when the
-customer should hear something, `say`. Extra fields sit at the top level."""
+"""RFC 9457 problem details. Clients switch on `code`."""
 
 import logging
 

@@ -1,12 +1,4 @@
-"""The demo world, the same story the app's offline fake tells.
-
-Ronke Adeyemi banks with Zenith; her Pulse PIN is 2 0 7 5. She has paid Tolu and Mama before.
-Musa Ibrahim is saved but never paid, so a large transfer to him during a phone call triggers the
-scam pause. Funmi co-approves transfers above ₦50,000.
-
-Tokens: demo-customer (Ronke's phone), demo-approver (Funmi), demo-assistant (the assistant's
-read-and-draft identity).
-"""
+"""The demo world, the same story the app's offline fake tells (see README)."""
 
 from datetime import timedelta
 

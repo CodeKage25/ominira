@@ -1,15 +1,4 @@
-"""YarnGPT speech, behind the Gateway. The key lives here and nowhere else; the phone never sees it.
-
-Speaking: POST /api/v1/tts/prepare returns a short-lived ticket and a stream URL. The phone plays
-the audio straight from YarnGPT with that URL; the ticket inside it is the only credential.
-Listening: the Gateway uploads one recording to POST /api/v1/asr (multipart, with an
-Idempotency-Key) and polls GET /api/v1/asr/{job_id} until the transcript is ready.
-
-Two limits measured against the live API in October 2026:
-  - text under 20 characters is refused (INPUT_TOO_SHORT), so short lines get trailing dots;
-    spaced dots made it babble, tight dots are spoken cleanly;
-  - recordings under 2 seconds are refused, so short WAV recordings get trailing silence.
-"""
+"""YarnGPT speech. The key lives only here; the phone gets ticket URLs."""
 
 import io
 import logging
@@ -23,8 +12,8 @@ from ominira.settings import settings
 
 log = logging.getLogger("ominira.speech")
 
-MIN_TEXT_CHARS = 20
-MIN_AUDIO_S = 2.0
+MIN_TEXT_CHARS = 20  # YarnGPT refuses shorter text (INPUT_TOO_SHORT)
+MIN_AUDIO_S = 2.0  # and shorter recordings
 VOICES_TTL_S = 600
 
 _LANGUAGE_WORDS = {
@@ -107,8 +96,7 @@ def pinned_voices() -> dict[str, str]:
 
 
 def voice_for(lang: str) -> str | None:
-    """YARNGPT_VOICES wins; then the first catalogue voice that names the language; else None,
-    which means YarnGPT's default voice."""
+    """Pinned, else the first catalogue voice for the language, else None (default)."""
     pinned = pinned_voices()
     if lang in pinned:
         return pinned[lang]
@@ -128,7 +116,7 @@ def voice_for(lang: str) -> str | None:
 
 
 def pad_text(text: str) -> str:
-    """'Sent. Tolu has it.' becomes 'Sent. Tolu has it...' so YarnGPT accepts it."""
+    """Pad with tight dots: spaced dots made YarnGPT babble."""
     text = text.strip()
     if len(text) >= MIN_TEXT_CHARS:
         return text

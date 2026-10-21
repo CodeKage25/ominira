@@ -1,5 +1,4 @@
-"""What the assistant can do, as plain functions: read, look up, and draft. Nothing here can
-confirm, cancel, answer a pause or approve. Those need the customer's own token and PIN."""
+"""What the assistant can do: read, look up, draft. Nothing here moves money."""
 
 import re
 from datetime import datetime, timedelta
@@ -92,8 +91,7 @@ def find_account(customer: Customer, bank_code: str, number: str) -> dict:
 
 
 def drafted_line(db: Session, lang: str, draft: Draft) -> str:
-    """What the customer hears once a draft exists. Fixed wording, never a model's: the readback
-    that follows is what they confirm."""
+    """Fixed wording, never a model's: the readback after it is what they confirm."""
     if draft.kind == "card_block":
         return lines.say(lang, "drafted_card_block")
     payee = db.get(Payee, draft.payload["payee_id"]) if draft.payload.get("payee_id") else None
