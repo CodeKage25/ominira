@@ -43,7 +43,10 @@ def _account(caller: Caller, account_id: str):
 
 @router.get("/accounts")
 def accounts(caller: Caller = Depends(reader)):
+    # The full number only to the customer, to give to someone paying them; the assistant sees last4.
+    full = caller.role == "customer"
     return [{"id": a.id, "name": a.name, "last4": a.last4, "balance_kobo": a.balance_kobo}
+            | ({"number": a.number} if full else {})
             for a in get_core().accounts(caller.customer.core_ref)]
 
 

@@ -19,8 +19,14 @@ def test_onboarding_happy_path(client):
         "full_name": "Ronke Adeyemi", "nin_last4": "5521", "born_on": "1961-03-14"}
     bvn = client.post(f"/v1/onboarding/{sid}/bvn", json={"bvn": "22212345678"}).json()
     assert bvn == {"match": True, "say": "Your BVN matches your card and your face."}
-    done = client.post(f"/v1/onboarding/{sid}/complete")
-    assert done.json() == {"customer_id": "cus_ronke", "token": "demo-customer"}
+    done = client.post(f"/v1/onboarding/{sid}/complete").json()
+    # A customer of their own, not the demo customer.
+    assert done["customer_id"].startswith("cus_") and done["customer_id"] != "cus_ronke"
+    assert done["token"] != "demo-customer"
+    acct = client.get("/v1/accounts", headers={"Authorization": f"Bearer {done['token']}"}).json()[0]
+    assert acct["balance_kobo"] == 10_000_000 and len(acct["number"]) == 10
+    # Completing twice gives the same customer back.
+    assert client.post(f"/v1/onboarding/{sid}/complete").json() == done
 
 
 def test_selfie_without_digits_passes(client):
@@ -57,8 +63,8 @@ def test_unknown_onboarding_session(client):
 def test_bvn_is_never_in_the_audit_log(client):
     sid = client.post("/v1/onboarding/sessions").json()["id"]
     client.post(f"/v1/onboarding/{sid}/bvn", json={"bvn": "22212345678"})
-    client.post(f"/v1/onboarding/{sid}/complete")
-    log = str(client.get("/v1/audit", headers=CUSTOMER).json())
+    token = client.post(f"/v1/onboarding/{sid}/complete").json()["token"]
+    log = str(client.get("/v1/audit", headers={"Authorization": f"Bearer {token}"}).json())
     assert "account_opened" in log and "22212345678" not in log
 
 
@@ -132,7 +138,7 @@ def test_customers_own_pause_threshold(client):
 
 def test_accounts_balance_transactions(client):
     assert client.get("/v1/accounts", headers=CUSTOMER).json() == [
-        {"id": "ac_1", "name": "Current account", "last4": "4567", "balance_kobo": 84_230_000}]
+        {"id": "ac_1", "name": "Current account", "last4": "4567", "balance_kobo": 84_230_000, "number": "2081234567"}]
     bal = client.get("/v1/accounts/ac_1/balance", headers=CUSTOMER).json()
     assert bal == {"balance_kobo": 84_230_000,
                    "say": "You have eight hundred and forty-two thousand, three hundred naira in your current account."}
@@ -225,9 +231,9 @@ def test_onboarding_carries_the_picked_language(client):
     bvn = client.post(f"/v1/onboarding/{s['id']}/bvn", json={"bvn": "12345678901"}).json()
     assert bvn["say"] == "That BVN na another person own. Talk your eleven numbers again."
     client.post(f"/v1/onboarding/{s['id']}/bvn", json={"bvn": "22212345678"})
-    client.post(f"/v1/onboarding/{s['id']}/complete")
-    assert client.get("/v1/me/preferences", headers=CUSTOMER).json()["lang"] == "pcm"
-    assert client.post("/v1/auth/unlock", headers=CUSTOMER, json={"pin_block": PIN_BAD}).json()["say"].startswith(
+    mine = {"Authorization": f"Bearer {client.post(f'/v1/onboarding/{s['id']}/complete').json()['token']}"}
+    assert client.get("/v1/me/preferences", headers=mine).json()["lang"] == "pcm"
+    assert client.post("/v1/auth/unlock", headers=mine, json={"pin_block": PIN_BAD}).json()["say"].startswith(
         "That PIN no match.")
 
 

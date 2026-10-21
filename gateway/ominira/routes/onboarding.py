@@ -5,15 +5,15 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ominira import audit_log, lines
 from ominira.core import get_core
 from ominira.database import get_session
-from ominira.demo_world import CUSTOMER_ID, CUSTOMER_TOKEN
 from ominira.drafting import new_id
 from ominira.problems import Problem
-from ominira.tables import Customer, Onboarding
+from ominira.tables import Customer, Onboarding, Token
 
 router = APIRouter(prefix="/v1/onboarding")
 
@@ -32,6 +32,20 @@ class BvnIn(BaseModel):
 
 class PinIn(BaseModel):
     pin_block: str
+
+
+class IdIn(BaseModel):
+    """What the phone read off the card. Only the name is kept; the rest is echoed back."""
+    full_name: str = Field(min_length=2, max_length=120)
+    nin_last4: str = Field(pattern=r"^\d{4}$")
+    born_on: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _customer_of(db: Session, row: Onboarding) -> Customer:
+    customer = db.get(Customer, row.customer_id) if row.customer_id else None
+    if customer is None:
+        raise Problem(409, "onboarding_incomplete", "Open the account first")
+    return customer
 
 
 def _session(db: Session, sid: str) -> Onboarding:
@@ -60,8 +74,12 @@ def selfie(sid: str, body: SelfieIn | None = None, db: Session = Depends(get_ses
 
 
 @router.post("/{sid}/id-document")
-def id_document(sid: str, db: Session = Depends(get_session)):
-    _session(db, sid)
+def id_document(sid: str, body: IdIn | None = None, db: Session = Depends(get_session)):
+    row = _session(db, sid)
+    if body is not None:
+        row.full_name = body.full_name.strip()
+        db.commit()
+        return {"full_name": row.full_name, "nin_last4": body.nin_last4, "born_on": body.born_on}
     doc = get_core().read_id_document(sid)
     return {"full_name": doc.full_name, "nin_last4": doc.nin_last4, "born_on": doc.born_on}
 
@@ -81,8 +99,7 @@ def bvn_check(sid: str, db: Session = Depends(get_session)):
     """With the customer's consent: Zenith asks NIBSS for the BVN behind their NIN and phone."""
     row = _session(db, sid)
     core = get_core()
-    customer = db.get(Customer, CUSTOMER_ID)
-    result = core.look_up_bvn(core.read_id_document(sid), customer.phone if customer else None)
+    result = core.look_up_bvn(core.read_id_document(sid), None)
     row.bvn_matched = result.match
     db.commit()
     return {"match": result.match, "say": lines.say(row.lang or "en", "bvn_found" if result.match else "bvn_mismatch")}
@@ -95,10 +112,10 @@ def pin(sid: str, body: PinIn, db: Session = Depends(get_session)):
     if not row.completed:
         raise Problem(409, "onboarding_incomplete", "Open the account before setting its PIN")
     say_lang = row.lang or "en"
-    customer = db.get(Customer, CUSTOMER_ID)
-    if customer is None or not get_core().set_pin(customer.core_ref, body.pin_block):
+    customer = _customer_of(db, row)
+    if not get_core().set_pin(customer.core_ref, body.pin_block):
         raise Problem(422, "weak_pin", "Choose a PIN that is harder to guess", lines.say(say_lang, "pin_weak"))
-    audit_log.record("pin_set", actor="customer", customer_id=CUSTOMER_ID, onboarding_id=sid)
+    audit_log.record("pin_set", actor="customer", customer_id=customer.id, onboarding_id=sid)
     return {"ok": True, "say": lines.say(say_lang, "pin_set")}
 
 
@@ -108,11 +125,17 @@ def complete(sid: str, db: Session = Depends(get_session)):
     if not row.bvn_matched or row.live is False:
         raise Problem(409, "onboarding_incomplete", "Finish the selfie and the BVN check first")
     if not row.completed:
+        # Each sign-up is its own customer, named from the card the phone read.
+        name = row.full_name or get_core().read_id_document(sid).full_name
+        core_ref = get_core().open_customer(name)
+        customer = Customer(id=new_id("cus_"), core_ref=core_ref, phone="", lang=row.lang or "en")
+        db.add(customer)
+        db.flush()
+        db.add(Token(token=secrets.token_urlsafe(24), role="customer", customer_id=customer.id))
+        row.customer_id = customer.id
         row.completed = True
-        customer = db.get(Customer, CUSTOMER_ID)
-        if customer is not None and row.lang:
-            customer.lang = row.lang
         db.commit()
-        audit_log.record("account_opened", actor="customer", customer_id=CUSTOMER_ID, onboarding_id=sid)
-    # Hackathon: every new account is the demo customer.
-    return {"customer_id": CUSTOMER_ID, "token": CUSTOMER_TOKEN}
+        audit_log.record("account_opened", actor="customer", customer_id=customer.id, onboarding_id=sid)
+    customer = _customer_of(db, row)
+    token = db.scalars(select(Token).where(Token.customer_id == customer.id, Token.role == "customer")).first()
+    return {"customer_id": customer.id, "token": token.token}

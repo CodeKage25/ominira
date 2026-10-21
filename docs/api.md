@@ -142,10 +142,10 @@ canonical meaning sorted keys and `(",", ":")` separators. Clients never compute
 |---|---|---|
 | `POST /v1/onboarding/sessions` | `{"lang": "pcm"}` (optional: the language picked on the first screen) | `201 {"id": "ob_...", "liveness_digits": [4, 1, 9, 0]}`. Later `say` lines use that language, and `complete` saves it as the customer's `lang` |
 | `POST /v1/onboarding/{id}/selfie` | `{"spoken_digits": [4,1,9,0]}` (optional) | `{"live": true}`; `false` when the digits sent do not match |
-| `POST /v1/onboarding/{id}/id-document` | | `{"full_name": "Ronke Adeyemi", "nin_last4": "5521", "born_on": "1961-03-14"}` |
+| `POST /v1/onboarding/{id}/id-document` | `{"full_name", "nin_last4", "born_on"}` (optional: what the phone read off the card) | The same three keys. With a body, the name names the new account and only the name is kept; without one, the mock reads `{"full_name": "Ronke Adeyemi", "nin_last4": "5521", "born_on": "1961-03-14"}` |
 | `POST /v1/onboarding/{id}/bvn` | `{"bvn": "22212345678"}` | `{"match": true, "say": "..."}` (`match` false for `12345678901`; not 11 digits is `422 invalid_request`) |
 | `POST /v1/onboarding/{id}/bvn-check` | | With the customer's consent, Zenith finds the BVN with NIBSS from their NIN and phone, so nothing is said aloud. `{"match": true, "say": "..."}`, and the session counts as BVN matched |
-| `POST /v1/onboarding/{id}/complete` | | `{"customer_id": "cus_ronke", "token": "demo-customer"}`, or `409 onboarding_incomplete` until the BVN matched (and the selfie, if sent, was live) |
+| `POST /v1/onboarding/{id}/complete` | | `{"customer_id": "cus_...", "token": "..."}`: a new customer with their own Zenith account (₦100,000 in the mock), card and token, and no PIN until `pin`. Called again, the same customer. Or `409 onboarding_incomplete` until the BVN matched (and the selfie, if sent, was live) |
 | `POST /v1/onboarding/{id}/pin` | `{"pin_block": "demo-..."}` | The new account's own Pulse PIN, sealed on the phone. `{"ok": true, "say": "..."}`; `409 onboarding_incomplete` before `complete`; `422 weak_pin` for one digit four times, a run up or down, or a repeated pair |
 
 ### Sign in (customer)
@@ -161,7 +161,7 @@ The pilot replaces it with an ISO 9564 block encrypted on the device with Zenith
 
 | Call | Response |
 |---|---|
-| `GET /v1/accounts` | `[{"id": "ac_1", "name": "Current account", "last4": "4567", "balance_kobo": 84230000}]` |
+| `GET /v1/accounts` | `[{"id": "ac_1", "name": "Current account", "last4": "4567", "balance_kobo": 84230000, "number": "2081234567"}]`. `number` goes to the customer only, to give to someone paying them; the assistant gets `last4` |
 | `GET /v1/accounts/{id}/balance` | `{"balance_kobo": 84230000, "say": "You have eight hundred and forty-two thousand, three hundred naira in your current account."}` |
 | `GET /v1/accounts/{id}/transactions?limit=20&direction=in\|out` | `[{"id", "who", "amount_kobo", "incoming", "at", "reference"}]`, newest first |
 | `GET /v1/accounts/{id}/income-summary` | `{"say": "This week ₦... came in, from ..."}` |
@@ -283,6 +283,11 @@ first. `null` clears `next_transfer_code` and `next_transfer_timeout`.
 Mock account rules: ten identical digits → invalid (07); ending `0006`, or UBA `2109876543` → dormant (06);
 BVN `12345678901` belongs to someone else; any other 10-digit number at a listed bank → a consistent
 generated name.
+
+Each sign-up is a customer of the mock bank too: a Zenith (057) account number, ₦100,000 and a card,
+named from the card the phone read. Name enquiry on a Zenith number the mock bank holds gives its owner's
+name, and a transfer between two such accounts debits one and credits the other in the same database
+transaction, with an incoming line on the receiver's side. Transfers to other banks only leave.
 
 ## Demo scripts the two halves must agree on
 

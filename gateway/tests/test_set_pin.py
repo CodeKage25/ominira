@@ -1,18 +1,17 @@
 """A new account sets its own Pulse PIN; easy PINs are refused by the core."""
 
 from ominira.core.mock import weak_pin
-from tests.conftest import CUSTOMER
 
 
 def _seal(pin: str) -> str:
     return "demo-" + "".join(str(9 - int(d)) for d in pin)
 
 
-def _open_account(c) -> str:
+def _open_account(c) -> tuple[str, dict]:
     sid = c.post("/v1/onboarding/sessions").json()["id"]
     assert c.post(f"/v1/onboarding/{sid}/bvn-check").json()["match"] is True
-    assert c.post(f"/v1/onboarding/{sid}/complete").status_code == 200
-    return sid
+    token = c.post(f"/v1/onboarding/{sid}/complete").json()["token"]
+    return sid, {"Authorization": f"Bearer {token}"}
 
 
 def test_weak_pins():
@@ -28,10 +27,10 @@ def test_pin_waits_for_the_account(client):
     assert r.status_code == 409 and r.json()["code"] == "onboarding_incomplete"
 
 
-def test_new_pin_signs_in_and_the_old_one_does_not(client):
-    sid = _open_account(client)
+def test_the_new_customer_signs_in_with_their_own_pin(client):
+    sid, mine = _open_account(client)
+    # No PIN until they choose one: not even the demo PIN opens it.
+    assert client.post("/v1/auth/unlock", headers=mine, json={"pin_block": _seal("2075")}).json().get("ok") is not True
     assert client.post(f"/v1/onboarding/{sid}/pin", json={"pin_block": _seal("1234")}).json()["code"] == "weak_pin"
     assert client.post(f"/v1/onboarding/{sid}/pin", json={"pin_block": _seal("4826")}).json()["ok"] is True
-    assert client.post("/v1/auth/unlock", headers=CUSTOMER, json={"pin_block": _seal("4826")}).json()["ok"] is True
-    wrong = client.post("/v1/auth/unlock", headers=CUSTOMER, json={"pin_block": _seal("2075")})
-    assert wrong.json().get("ok") is not True
+    assert client.post("/v1/auth/unlock", headers=mine, json={"pin_block": _seal("4826")}).json()["ok"] is True

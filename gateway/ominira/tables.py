@@ -135,6 +135,9 @@ class Onboarding(Base):
     live: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     bvn_matched: Mapped[bool] = mapped_column(Boolean, default=False)
     completed: Mapped[bool] = mapped_column(Boolean, default=False)
+    # The name the phone read off the card; names the new account. No NIN or birth date is kept.
+    full_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    customer_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 

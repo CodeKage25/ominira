@@ -35,6 +35,8 @@ BANKS = (
     Bank("50211", "Kuda Microfinance Bank", "Kuda"),
 )
 _BY_CODE = {b.code: b for b in BANKS}
+ZENITH = "057"
+NEW_ACCOUNT_KOBO = 10_000_000  # ₦100,000, so a new customer can send in the demo
 
 _GIVEN = ("Chinedu", "Aisha", "Oluwaseun", "Ngozi", "Ibrahim", "Funmilayo", "Emeka", "Halima",
           "Babatunde", "Chiamaka", "Yusuf", "Temitope", "Obinna", "Zainab", "Adewale", "Amaka")
@@ -157,7 +159,7 @@ class MockZenith(ZenithCore):
         self._pause("read")
         with self._sessions() as db:
             rows = db.scalars(select(MockAccount).where(MockAccount.customer_ref == customer_ref).order_by(MockAccount.id))
-            return [Account(a.id, a.name, a.number[-4:], a.balance_kobo) for a in rows]
+            return [Account(a.id, a.name, a.number[-4:], a.balance_kobo, a.number) for a in rows]
 
     def transactions(self, customer_ref: str, limit: int = 20) -> list[Txn]:
         self._pause("read")
@@ -198,7 +200,8 @@ class MockZenith(ZenithCore):
             ).first()
             if (known is not None and known.status != "active") or (known is None and number.endswith("0006")):
                 raise CoreError(base.DORMANT, "account is dormant")
-            name = known.name if known else generated_name(bank_code, number)
+            own = self._zenith_owner(db, bank_code, number)
+            name = own or (known.name if known else generated_name(bank_code, number))
             enquiry = MockEnquiry(ref="NE" + secrets.token_hex(8), bank_code=bank_code, number=number, name=name)
             db.add(enquiry)
             db.commit()
@@ -310,6 +313,14 @@ class MockZenith(ZenithCore):
                     db.add(MockTxn(id="tx_" + secrets.token_hex(5), account_id=acct.id,
                                    who=" ".join(p.capitalize() for p in enquiry.name.split()),
                                    amount_kobo=amount_kobo, incoming=False, reference=move.reference))
+                    # Zenith to Zenith: the money lands in the same database transaction it leaves in.
+                    dest = None
+                    if enquiry.bank_code == ZENITH:
+                        dest = db.scalars(select(MockAccount).where(MockAccount.number == enquiry.number)).first()
+                    if dest is not None and dest.id != acct.id:
+                        dest.balance_kobo += amount_kobo
+                        db.add(MockTxn(id="tx_" + secrets.token_hex(5), account_id=dest.id, who=c.full_name,
+                                       amount_kobo=amount_kobo, incoming=True, reference=move.reference))
                 db.add(move)
                 db.commit()
                 result = MoveResult(move.code, move.reference)
@@ -363,6 +374,30 @@ class MockZenith(ZenithCore):
         """Any 11 digits match, except 12345678901, which belongs to someone else."""
         self._pause("enquiry")
         return BvnCheck(len(bvn) == 11 and bvn.isdigit() and bvn != "12345678901")
+
+    @staticmethod
+    def _zenith_owner(db: Session, bank_code: str, number: str) -> str | None:
+        """A Zenith account the mock bank holds: its owner's name, as name enquiry gives it."""
+        if bank_code != ZENITH:
+            return None
+        acct = db.scalars(select(MockAccount).where(MockAccount.number == number)).first()
+        owner = db.get(MockCustomer, acct.customer_ref) if acct else None
+        return owner.full_name.upper() if owner else None
+
+    def open_customer(self, full_name: str) -> str:
+        with self._money_lock, self._sessions() as db:
+            ref = "ZC-" + self._reference("", 10)
+            number = self._reference("20", 8)
+            while db.scalars(select(MockAccount).where(MockAccount.number == number)).first() is not None:
+                number = self._reference("20", 8)
+            db.add(MockCustomer(ref=ref, full_name=full_name, first_name=full_name.split()[0], bvn="", pin="",
+                                pin_tries_left=3, per_transaction_kobo=100_000_000, daily_kobo=500_000_000))
+            db.flush()
+            db.add(MockAccount(id="ac_" + secrets.token_hex(4), customer_ref=ref, number=number, name="Current account",
+                               balance_kobo=NEW_ACCOUNT_KOBO))
+            db.add(MockCard(id="cd_" + secrets.token_hex(4), customer_ref=ref, last4=self._reference("", 4), holder=full_name))
+            db.commit()
+            return ref
 
     def look_up_bvn(self, document: IdDocument, phone: str | None) -> BvnCheck:
         """NIBSS always finds the demo customer's BVN."""

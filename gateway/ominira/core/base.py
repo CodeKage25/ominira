@@ -84,6 +84,7 @@ class Account:
     name: str
     last4: str
     balance_kobo: int
+    number: str = ""  # the customer's own, to give to someone paying them; never to the assistant
 
 
 @dataclass(frozen=True)
@@ -181,6 +182,10 @@ class ZenithCore(ABC):
 
     @abstractmethod
     def check_bvn(self, bvn: str, document: IdDocument) -> BvnCheck: ...
+
+    # A new customer: their own account, card and an empty PIN until they choose one. Returns the core ref.
+    @abstractmethod
+    def open_customer(self, full_name: str) -> str: ...
 
     # The customer allows Zenith to find their BVN with NIBSS from their NIN and phone: nothing to say aloud.
     @abstractmethod
