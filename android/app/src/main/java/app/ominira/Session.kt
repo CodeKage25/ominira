@@ -95,6 +95,8 @@ class Session(app: Application) : AndroidViewModel(app) {
 
     var micAsked = false
 
+    var cameraAsked = false
+
     val customerName = "Ronke"
 
     val roomy: Boolean get() = Mode.Plain in modes || Mode.Switch in modes

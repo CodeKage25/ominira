@@ -47,6 +47,10 @@ import app.ominira.ui.kit.Kicker
 import app.ominira.ui.kit.Notice
 import app.ominira.ui.kit.Page
 import app.ominira.ui.kit.Tone
+import app.ominira.ui.camera.CameraFeed
+import app.ominira.ui.camera.Lens
+import app.ominira.ui.camera.rememberAiming
+import app.ominira.ui.camera.rememberCameraAccess
 import app.ominira.ui.kit.rememberReduceMotion
 import app.ominira.ui.theme.Corners
 import app.ominira.ui.theme.Glyphs
@@ -80,16 +84,17 @@ fun SonarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
     var misses by remember { mutableIntStateOf(0) }
     val w = session.words
     val s = session.spoken
+    val camera = rememberCameraAccess()
+    val aiming = rememberAiming(session, Lens.Face)
+    // The real camera when it may be used; the simulated sonar otherwise.
+    var useCamera by remember { mutableStateOf(false) }
     val now = sonarSteps[phase]
     val offCentre by animateFloatAsState(now.offCentre, if (still) snap<Float>() else tween<Float>(600), label = "face")
     val toneLevel by animateFloatAsState(now.tone, if (still) snap<Float>() else tween<Float>(600), label = "tone")
 
     fun next() = leave.run(onNext)
 
-    fun start() {
-        if (started) return
-        started = true
-        problem = null
+    fun selfie() {
         scope.launch {
             // New session each time, so the liveness digits are always fresh.
             val fresh = runCatching { session.api.startOnboarding(session.lang) }.getOrNull()
@@ -102,11 +107,19 @@ fun SonarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
             session.onboardingId = fresh.id
             digits = fresh.livenessDigits
             val id = fresh.id
-            for (n in 1..4) {
-                delay(1_300)
-                phase = n
-                session.say(s.sonarSteps[n])
-                Tones.play(sonarSteps[n].hz, if (n == 4) 400 else 160)
+            if (useCamera) {
+                phase = 1
+                // Timed out: carry on, so a face the detector misses never strands the customer.
+                aiming.run()
+                phase = 4
+                Tones.play(sonarSteps[4].hz, 400)
+            } else {
+                for (n in 1..4) {
+                    delay(1_300)
+                    phase = n
+                    session.say(s.sonarSteps[n])
+                    Tones.play(sonarSteps[n].hz, if (n == 4) 400 else 160)
+                }
             }
             session.haptics.lock()
             session.say(s.sayTheseNumbers, digits.joinToString(", "))
@@ -126,6 +139,16 @@ fun SonarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
                 session.speaker.awaitQuiet()
                 next()
             }
+        }
+    }
+
+    fun start() {
+        if (started) return
+        started = true
+        problem = null
+        camera.ask(session) { ok ->
+            useCamera = ok
+            selfie()
         }
     }
 
@@ -189,6 +212,7 @@ fun SonarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
             val locked = phase >= 4
             val sun = Om.color.sun
             val mint = Om.color.mint
+            if (useCamera && phase < 5) CameraFeed(Lens.Face, aiming::onSight, Modifier.fillMaxSize())
             Canvas(
                 Modifier
                     .fillMaxSize()
@@ -198,11 +222,14 @@ fun SonarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
                 val cy = size.height * 0.42f
                 val ow = size.width * 0.58f
                 val oh = size.height * 0.5f
-                drawOval(
-                    brush = Brush.verticalGradient(listOf(Color(0xFF5B4636), Color(0xFF3D2E23))),
-                    topLeft = Offset(cx - ow * 0.4f + offCentre * size.width, cy - oh * 0.42f),
-                    size = Size(ow * 0.8f, oh * 0.84f),
-                )
+                // The painted face is only for the simulation; the camera shows the real one.
+                if (!useCamera) {
+                    drawOval(
+                        brush = Brush.verticalGradient(listOf(Color(0xFF5B4636), Color(0xFF3D2E23))),
+                        topLeft = Offset(cx - ow * 0.4f + offCentre * size.width, cy - oh * 0.42f),
+                        size = Size(ow * 0.8f, oh * 0.84f),
+                    )
+                }
                 drawOval(
                     color = if (locked) mint else sun,
                     topLeft = Offset(cx - ow / 2f, cy - oh / 2f),
@@ -237,7 +264,8 @@ fun SonarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
                     .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(w.sonarSteps[phase], style = Om.type.bodyStrong, color = Om.color.bandText)
+                val line = aiming.aim?.takeIf { aiming.active }?.let { w.aim(it, card = false) } ?: w.sonarSteps[phase]
+                Text(line, style = Om.type.bodyStrong, color = Om.color.bandText)
                 Box(
                     Modifier
                         .fillMaxWidth()
@@ -248,7 +276,7 @@ fun SonarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
                 ) {
                     Box(
                         Modifier
-                            .fillMaxWidth(toneLevel.coerceIn(0.001f, 1f))
+                            .fillMaxWidth((if (aiming.active) aiming.closeness else toneLevel).coerceIn(0.001f, 1f))
                             .height(10.dp)
                             .clip(Corners.pill)
                             .background(Brush.horizontalGradient(listOf(Om.color.sun, Om.color.mint))),

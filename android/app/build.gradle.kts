@@ -27,6 +27,9 @@ android {
         versionCode = 2
         versionName = "0.2.0-zecathon"
 
+        // ML Kit's on-phone models are native: phones only, no emulator x86 (42 MB saved).
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
+
         buildConfigField("Boolean", "USE_FAKE_API", useFakeApi.toString())
         buildConfigField("String", "GATEWAY_URL", literal(gatewayUrl))
         buildConfigField("String", "GATEWAY_TOKEN", literal(gatewayToken))

@@ -51,6 +51,9 @@ private class Hold {
     }
 }
 
+// The permission box's yes button, as the phone labels it.
+fun allowButton(): String = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) "While using the app" else "Allow"
+
 @Composable
 fun rememberEars(
     session: Session,
@@ -196,8 +199,7 @@ fun rememberEars(
             askForMic && !session.micAsked -> {
                 session.micAsked = true
                 // The permission box is silent and easy to miss without sight.
-                val allow = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) "While using the app" else "Allow"
-                session.say(session.spoken.tapAllow(allow))
+                session.say(session.spoken.tapAllow(allowButton()))
                 askMic.launch(Manifest.permission.RECORD_AUDIO)
             }
             else -> systemBox()

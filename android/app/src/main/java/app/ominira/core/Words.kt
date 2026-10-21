@@ -727,6 +727,44 @@ class Words private constructor(val lang: Lang) {
         "Biko, ekwula PIN gị n'olu ọ bụla. Edebeghị m ya. A na-etinye Pulse PIN gị site na mmetụta, na ihuenyo.",
     )
 
+    // Camera directions: one at a time, always about the phone
+    fun aim(a: Aim, card: Boolean): String = when (a) {
+        Aim.Search -> if (card) {
+            t(
+                "I cannot see the card yet. Hold it flat, about a hand away from the back camera.",
+                "I never see the card. Hold am flat, like one hand away from the back camera.",
+                "Mi ò tíì rí káàdì náà. Ẹ di í mú pẹrẹsẹ, nǹkan bí ìbú ọwọ́ kan sí kámẹ́rà ẹ̀yìn.",
+                "Ban ga katin ba tukuna. Ku riƙe shi a kwance, kusan tafin hannu ɗaya daga kyamarar baya.",
+                "Ahụbeghị m kaadị ahụ. Jide ya n'ala, ihe dị ka obosara aka site na igwe foto azụ.",
+            )
+        } else {
+            t(
+                "I cannot see your face yet. Hold the phone at arm's length, screen towards you.",
+                "I never see your face. Hold the phone far reach your hand, screen facing you.",
+                "Mi ò tíì rí ojú yín. Ẹ na ọwọ́ di fóònù mú, kí ojú rẹ̀ kọjú sí yín.",
+                "Ban ga fuskarku ba tukuna. Ku miƙa hannu ku riƙe wayar, allon yana fuskantarku.",
+                "Ahụbeghị m ihu gị. Setịa aka jide ekwentị, ihuenyo chere gị ihu.",
+            )
+        }
+        Aim.Dark -> t("It is too dark. Move to more light.", "E too dark. Go where light dey.", "Ó ṣókùnkùn jù. Ẹ lọ síbi tí ìmọ́lẹ̀ wà.", "Ya yi duhu sosai. Ku koma inda akwai haske.", "Ọ gbara ọchịchịrị nke ukwuu. Gaa ebe ìhè dị.")
+        Aim.Closer -> t("Bring the phone a little closer.", "Bring the phone come near small.", "Ẹ mú fóònù sún mọ́ díẹ̀.", "Ku kawo wayar kusa kaɗan.", "Bịaruo ekwentị nso ntakịrị.")
+        Aim.Farther -> t("Move the phone a little further away.", "Shift the phone go back small.", "Ẹ gbé fóònù jìnnà díẹ̀.", "Ku nisanta wayar kaɗan.", "Wezuga ekwentị ntakịrị.")
+        Aim.Left -> t("Move the phone a little to the left.", "Move the phone go left small.", "Ẹ gbé fóònù sí apá òsì díẹ̀.", "Ku matsar da wayar hagu kaɗan.", "Bugharịa ekwentị gaa n'aka ekpe ntakịrị.")
+        Aim.Right -> t("Move the phone a little to the right.", "Move the phone go right small.", "Ẹ gbé fóònù sí apá ọ̀tún díẹ̀.", "Ku matsar da wayar dama kaɗan.", "Bugharịa ekwentị gaa n'aka nri ntakịrị.")
+        Aim.Up -> t("Move the phone up a little.", "Raise the phone small.", "Ẹ gbé fóònù sókè díẹ̀.", "Ku ɗaga wayar kaɗan.", "Bulie ekwentị elu ntakịrị.")
+        Aim.Down -> t("Move the phone down a little.", "Bring the phone down small.", "Ẹ sọ fóònù sílẹ̀ díẹ̀.", "Ku saukar da wayar kaɗan.", "Wedata ekwentị ntakịrị.")
+        Aim.Straight -> t("Look straight at the phone.", "Look the phone straight.", "Ẹ wo fóònù tààrà.", "Ku kalli wayar kai tsaye.", "Lee ekwentị anya ozugbo.")
+        Aim.Hold -> t("Keep still.", "No move.", "Ẹ má mì.", "Ku tsaya cak.", "Kwụrụ jụụ.")
+    }
+    // allow is the phone's own button label, in the phone's language.
+    fun cameraAllow(allow: String) = t(
+        "To use the camera, tap $allow, near the bottom of the screen.",
+        "To use the camera, touch $allow, for the bottom of the screen.",
+        "Láti lo kámẹ́rà, ẹ tẹ $allow, nítòsí ìsàlẹ̀ ojú fóònù.",
+        "Don amfani da kyamara, ku taɓa $allow, kusa da ƙasan allon.",
+        "Iji igwe foto, pịa $allow, n'akụkụ ala ihuenyo.",
+    )
+
     // Touch answers, when nothing can understand the customer's language
     val touchYesNo get() = t(
         "Tap anywhere for yes. Touch and hold for no.",

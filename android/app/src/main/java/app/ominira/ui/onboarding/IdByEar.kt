@@ -43,6 +43,7 @@ import app.ominira.Session
 import app.ominira.core.Answers
 import app.ominira.core.Days
 import app.ominira.core.DraftKind
+import app.ominira.core.IdCardText
 import app.ominira.core.IdDetails
 import app.ominira.core.Readback
 import app.ominira.core.Words
@@ -55,6 +56,10 @@ import app.ominira.ui.kit.Notice
 import app.ominira.ui.kit.Page
 import app.ominira.ui.kit.ReadbackPanel
 import app.ominira.ui.kit.Tone
+import app.ominira.ui.camera.CameraFeed
+import app.ominira.ui.camera.Lens
+import app.ominira.ui.camera.rememberAiming
+import app.ominira.ui.camera.rememberCameraAccess
 import app.ominira.ui.kit.rememberReduceMotion
 import app.ominira.ui.kit.touchAnswer
 import app.ominira.ui.theme.Corners
@@ -89,6 +94,9 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
     val w = session.words
     val s = session.spoken
     val touch = session.answersByTouch
+    val camera = rememberCameraAccess()
+    val aiming = rememberAiming(session, Lens.Card)
+    var useCamera by remember { mutableStateOf(false) }
     val confirmLine = if (touch) s.touchId else s.confirmId
     val startLines = arrayOf(s.nowIdCard, s.holdNin, if (touch) s.tapToStart else s.sayStartOrTap)
 
@@ -124,16 +132,20 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
         }
     }
 
-    fun begin() {
-        if (started) return
-        started = true
-        problem = null
-        prompt.cancel()
+    fun readCard() {
         scope.launch {
-            for (n in 1..3) {
-                delay(1_600)
-                phase = n
-                session.say(s.cardSteps[n])
+            var fromCard: IdDetails? = null
+            if (useCamera) {
+                phase = 1
+                // Locks only once the name, NIN and date of birth are all read; times out to the bank's copy.
+                aiming.run(timeoutMs = 30_000) { sight -> IdCardText.read(sight.text)?.also { fromCard = it } != null }
+                phase = 3
+            } else {
+                for (n in 1..3) {
+                    delay(1_600)
+                    phase = n
+                    session.say(s.cardSteps[n])
+                }
             }
             session.haptics.lock()
             val read = runCatching { session.api.readIdDocument(session.onboardingSession()) }.getOrNull()
@@ -144,9 +156,22 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
                 started = false
                 return@launch
             }
-            details = read
+            // What the camera read wins over the bank's placeholder; only the NIN's last four digits exist.
+            val id = fromCard ?: read
+            details = id
             misses = 0
-            if (session.talksFirst) prompt.ask(*idLines(s, read), confirmLine) else session.say(*idLines(s, read))
+            if (session.talksFirst) prompt.ask(*idLines(s, id), confirmLine) else session.say(*idLines(s, id))
+        }
+    }
+
+    fun begin() {
+        if (started) return
+        started = true
+        problem = null
+        prompt.cancel()
+        camera.ask(session) { ok ->
+            useCamera = ok
+            readCard()
         }
     }
 
@@ -212,6 +237,7 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
             val locked = phase == 3
             val sun = Om.color.sun
             val mint = Om.color.mint
+            if (useCamera && details == null) CameraFeed(Lens.Card, aiming::onSight, Modifier.fillMaxSize())
             Canvas(
                 Modifier
                     .fillMaxSize()
@@ -221,7 +247,7 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
                 val fh = size.height * 0.62f
                 val fx = (size.width - fw) / 2f
                 val fy = size.height * 0.1f
-                rotate(tilt, pivot = Offset(size.width / 2f, fy + fh / 2f)) {
+                if (!useCamera) rotate(tilt, pivot = Offset(size.width / 2f, fy + fh / 2f)) {
                     drawRoundRect(
                         brush = Brush.linearGradient(listOf(Color(0xFF2E7A58), Color(0xFF1D5A40))),
                         topLeft = Offset(fx + fw * 0.05f, fy + fh * 0.08f),
@@ -244,7 +270,7 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
                 )
             }
             Text(
-                w.cardSteps[phase],
+                aiming.aim?.takeIf { aiming.active }?.let { w.aim(it, card = true) } ?: w.cardSteps[phase],
                 style = Om.type.bodyStrong,
                 color = Om.color.bandText,
                 textAlign = TextAlign.Center,
