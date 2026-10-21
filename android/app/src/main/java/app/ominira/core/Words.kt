@@ -184,13 +184,6 @@ class Words private constructor(val lang: Lang) {
     val idKicker get() = t("ID by ear", "ID by ear", "Ìdánimọ̀ pẹ̀lú etí", "Shaida ta kunne", "Njirimara site na ntị")
 
     // BVN
-    fun bvnLength(n: Int) = t(
-        "That is $n digit${if (n == 1) "" else "s"}. A BVN has 11.",
-        "Na $n number. BVN get 11.",
-        "Nọ́ńbà $n ni. BVN ní nọ́ńbà 11.",
-        "Lambobi $n ne. BVN yana da 11.",
-        "Ọ bụ nọmba $n. BVN nwere 11.",
-    )
     val bvnFailed get() = t(
         "I could not check your BVN. Check the connection and try again.",
         "I no fit check your BVN. Check your network and try again.",
@@ -200,80 +193,90 @@ class Words private constructor(val lang: Lang) {
     )
     val accountOpen get() = t("Your account is open.", "Your account don open.", "A ti ṣí àkáǹtì yín.", "An buɗe asusunku.", "Emepere akaụntụ gị.")
     val nextPulse get() = t("Next, your Pulse PIN.", "Next na your Pulse PIN.", "Èyí tó kàn ni Pulse PIN yín.", "Na gaba, Pulse PIN ɗinku.", "Nke ọzọ, Pulse PIN gị.")
-    val checkBvn get() = t("Check my BVN", "Check my BVN", "Yẹ BVN mi wò", "Duba BVN ɗina", "Lelee BVN m")
-    val canTypeBvn get() = t(
-        "You can also type your BVN, then tap $checkBvn.",
-        "You fit also type your BVN, then touch $checkBvn.",
-        "Ẹ tún lè tẹ BVN yín, lẹ́yìn náà ẹ tẹ $checkBvn.",
-        "Kuna iya rubuta BVN ɗinku, sannan ku taɓa $checkBvn.",
-        "Ị nwekwara ike ịpịnye BVN gị, mgbe ahụ pịa $checkBvn.",
-    )
-    val sayBvnAgain get() = t(
-        "Okay. Please say your BVN again, one digit at a time.",
-        "Okay. Abeg talk your BVN again, one number at a time.",
-        "Ó dáa. Ẹ jọ̀ọ́ ẹ tún sọ BVN yín, nọ́ńbà kan lẹ́ẹ̀kan.",
-        "To. Don Allah ku sake faɗin BVN ɗinku, lamba ɗaya bayan ɗaya.",
-        "Ọ dị mma. Biko kwuo BVN gị ọzọ, otu nọmba n'otu oge.",
-    )
-    fun iHeard(said: String) = t("I heard: $said.", "I hear: $said.", "Ohun tí mo gbọ́ ni: $said.", "Abin da na ji: $said.", "Ihe m nụrụ bụ: $said.")
-    val isThatRight get() = t("Is that right? Say yes or no.", "Na so? Talk yes or no.", "Ṣé bẹ́ẹ̀ ni? Ẹ sọ bẹ́ẹ̀ni tàbí rárá.", "Haka ne? Ku ce eh ko a'a.", "Ọ bụ eziokwu? Kwuo ee ma ọ bụ mba.")
-    val yesOrSayAgain get() = t(
-        "Say yes if that is right, or no to say it again.",
-        "Talk yes if na so, or no make you talk am again.",
-        "Ẹ sọ bẹ́ẹ̀ni tí ó bá tọ̀nà, tàbí rárá láti tún un sọ.",
-        "Ku ce eh idan daidai ne, ko a'a don ku sake faɗa.",
-        "Kwuo ee ma ọ ziri ezi, ma ọ bụ mba ka ị kwuo ya ọzọ.",
-    )
-    val useKeypad get() = t(
-        "Let's use the keypad instead. Type your BVN, then tap $checkBvn.",
-        "Make we use the keypad. Type your BVN, then touch $checkBvn.",
-        "Ẹ jẹ́ ká lo bọ́tìnnì nọ́ńbà dípò. Ẹ tẹ BVN yín, lẹ́yìn náà ẹ tẹ $checkBvn.",
-        "Mu yi amfani da faifan lambobi. Ku rubuta BVN ɗinku, sannan ku taɓa $checkBvn.",
-        "Ka anyị jiri bọtịnụ nọmba. Pịnye BVN gị, mgbe ahụ pịa $checkBvn.",
-    )
-    val sayElevenDigits get() = t(
-        "Please say the eleven digits of your BVN.",
-        "Abeg talk the eleven numbers of your BVN.",
-        "Ẹ jọ̀ọ́ ẹ sọ nọ́ńbà mọ́kànlá BVN yín.",
-        "Don Allah ku faɗi lambobi goma sha ɗaya na BVN ɗinku.",
-        "Biko kwuo nọmba iri na otu nke BVN gị.",
-    )
-    fun heardDigitCount(n: Int) = t(
-        "I heard $n digits. A BVN has eleven. Please say it again.",
-        "I hear $n numbers. BVN get eleven. Abeg talk am again.",
-        "Mo gbọ́ nọ́ńbà $n. BVN ní mọ́kànlá. Ẹ jọ̀ọ́ ẹ tún un sọ.",
-        "Na ji lambobi $n. BVN yana da goma sha ɗaya. Don Allah ku sake faɗa.",
-        "Anụrụ m nọmba $n. BVN nwere iri na otu. Biko kwuo ya ọzọ.",
-    )
-    val bvnIntro get() = t(
-        "Last step. Please say your BVN, all eleven digits.",
-        "Last step. Abeg talk your BVN, all the eleven numbers.",
-        "Ìgbésẹ̀ tó kẹ́yìn. Ẹ jọ̀ọ́ ẹ sọ BVN yín, gbogbo nọ́ńbà mọ́kànlá.",
-        "Mataki na ƙarshe. Don Allah ku faɗi BVN ɗinku, duka lambobi goma sha ɗaya.",
-        "Nzọụkwụ ikpeazụ. Biko kwuo BVN gị, nọmba iri na otu niile.",
-    )
-    val bvnDial get() = t(
-        "If you do not know it, dial star five six five star zero hash from this phone.",
-        "If you no know am, dial star five six five star zero hash from this phone.",
-        "Tí ẹ kò bá mọ̀ ọ́n, ẹ tẹ *565*0# láti orí fóònù yìí.",
-        "Idan ba ku san shi ba, ku danna *565*0# daga wannan wayar.",
-        "Ọ bụrụ na ị maghị ya, kpọọ *565*0# site na ekwentị a.",
-    )
     val nextPulseButton get() = t("Next: your Pulse PIN", "Next: your Pulse PIN", "Èyí tó kàn: Pulse PIN yín", "Na gaba: Pulse PIN ɗinku", "Nke ọzọ: Pulse PIN gị")
     val lastCheck get() = t("Last check", "Last check", "Àyẹ̀wò tó kẹ́yìn", "Bincike na ƙarshe", "Nlele ikpeazụ")
-    val whatIsBvn get() = t("What is your BVN?", "Wetin be your BVN?", "Kí ni BVN yín?", "Menene BVN ɗinku?", "Gịnị bụ BVN gị?")
     val selfie get() = t("Selfie", "Selfie", "Fọ́tò ojú", "Hoton fuska", "Foto ihu")
     val idCard get() = t("ID card", "ID card", "Káàdì ìdánimọ̀", "Katin shaida", "Kaadị njirimara")
-    val yourBvn get() = t("Your BVN", "Your BVN", "BVN yín", "BVN ɗinku", "BVN gị")
-    val bvnHint get() = t(
-        "It is 11 digits. Dial *565*0# from your phone to hear it.",
-        "E get 11 numbers. Dial *565*0# from your phone make you hear am.",
-        "Nọ́ńbà 11 ni. Ẹ tẹ *565*0# láti orí fóònù yín láti gbọ́ ọ.",
-        "Lambobi 11 ne. Ku danna *565*0# daga wayarku don ku ji shi.",
-        "Ọ bụ nọmba 11. Kpọọ *565*0# site na ekwentị gị ka ị nụ ya.",
+    // BVN by consent: Zenith asks NIBSS, so the customer never says the 11 digits
+    val bvnConsentHeading get() = t("Confirm your BVN", "Confirm your BVN", "Ẹ jẹ́rìí BVN yín", "Tabbatar da BVN ɗinku", "Kwado BVN gị")
+    val bvnConsent get() = t(
+        "Zenith will confirm your BVN with NIBSS, using your NIN and this phone number. You do not need to say it.",
+        "Zenith go confirm your BVN with NIBSS, with your NIN and this phone number. You no need talk am.",
+        "Zenith yóò jẹ́rìí BVN yín lọ́dọ̀ NIBSS, pẹ̀lú NIN yín àti nọ́ńbà fóònù yìí. Ẹ kò nílò láti sọ ọ́.",
+        "Zenith za ta tabbatar da BVN ɗinku a NIBSS, ta amfani da NIN ɗinku da lambar wannan wayar. Ba sai kun faɗa ba.",
+        "Zenith ga-akwado BVN gị na NIBSS, site na NIN gị na nọmba ekwentị a. Ịchọghị ikwu ya.",
     )
-    val sayItInstead get() = t("Say it instead", "Talk am instead", "Ẹ sọ ọ́ dípò", "Ku faɗa maimakon haka", "Kwuo ya kama")
-    val sayBvnDigits get() = t("Say your BVN, one digit at a time.", "Talk your BVN, one number at a time.", "Ẹ sọ BVN yín, nọ́ńbà kan lẹ́ẹ̀kan.", "Ku faɗi BVN ɗinku, lamba ɗaya bayan ɗaya.", "Kwuo BVN gị, otu nọmba n'otu oge.")
+    val allowYesOrTap get() = t(
+        "Say yes, or tap anywhere, to allow it.",
+        "Talk yes, or touch anywhere, make you allow am.",
+        "Ẹ sọ bẹ́ẹ̀ni, tàbí ẹ tẹ ibikíbi, láti gbà á láàyè.",
+        "Ku ce eh, ko ku taɓa ko'ina, don ku ba da izini.",
+        "Kwuo ee, ma ọ bụ pịa ebe ọ bụla, ka ịkwado ya.",
+    )
+    val allowTap get() = t(
+        "Tap anywhere to allow it. Touch and hold for not now.",
+        "Tap anywhere make you allow am. Press am down small for not now.",
+        "Ẹ tẹ ibikíbi láti gbà á láàyè. Ẹ tẹ̀ ẹ́ mọ́lẹ̀ díẹ̀ fún kì í ṣe báyìí.",
+        "Ku taɓa ko'ina don ku ba da izini. Ku danna ku riƙe don ba yanzu ba.",
+        "Pịa ebe ọ bụla ka ịkwado ya. Pịa ma jide maka ọ bụghị ugbu a.",
+    )
+    val allowCheck get() = t("Allow Zenith to check", "Make Zenith check am", "Gba Zenith láàyè láti yẹ̀ ẹ́ wò", "Bari Zenith ta duba", "Kwe ka Zenith lelee ya")
+    val checkingBvn get() = t("Checking your BVN with NIBSS…", "I dey check your BVN with NIBSS…", "Mo ń yẹ BVN yín wò lọ́dọ̀ NIBSS…", "Ina duba BVN ɗinku a NIBSS…", "Ana m elele BVN gị na NIBSS…")
+    val bvnDeclined get() = t(
+        "Without it, Zenith cannot open your account. Tap anywhere when you are ready to allow it.",
+        "Without am, Zenith no fit open your account. Touch anywhere when you ready to allow am.",
+        "Láìsí rẹ̀, Zenith kò lè ṣí àkáǹtì yín. Ẹ tẹ ibikíbi nígbà tí ẹ bá ṣetán láti gbà á láàyè.",
+        "Ba tare da shi ba, Zenith ba za ta iya buɗe asusunku ba. Ku taɓa ko'ina idan kun shirya ba da izini.",
+        "Na-enweghị ya, Zenith enweghị ike imepe akaụntụ gị. Pịa ebe ọ bụla mgbe ị dị njikere ịkwado ya.",
+    )
+    val bvnFound get() = t(
+        "Zenith found your BVN with NIBSS. It matches your card and your face.",
+        "Zenith don find your BVN for NIBSS. E match your card and your face.",
+        "Zenith ti rí BVN yín lọ́dọ̀ NIBSS. Ó bá káàdì àti ojú yín mu.",
+        "Zenith ta sami BVN ɗinku a NIBSS. Ya dace da katinku da fuskarku.",
+        "Zenith achọtala BVN gị na NIBSS. Ọ kwekọrọ na kaadị gị na ihu gị.",
+    )
+
+    // Choosing the Pulse PIN
+    val choosePinTitle get() = t("Choose your Pulse PIN", "Choose your Pulse PIN", "Ẹ yan Pulse PIN yín", "Zaɓi Pulse PIN ɗinku", "Họrọ Pulse PIN gị")
+    val choosePinIntro get() = t(
+        "Now choose your Pulse PIN: four digits only you know. Practise first if you like.",
+        "Now choose your Pulse PIN: four numbers wey only you sabi. Practise first if you like.",
+        "Báyìí, ẹ yan Pulse PIN yín: nọ́ńbà mẹ́rin tí ẹ̀yin nìkan mọ̀. Ẹ lè kọ́kọ́ dánrawò tí ẹ bá fẹ́.",
+        "Yanzu ku zaɓi Pulse PIN ɗinku: lambobi huɗu da ku kaɗai kuka sani. Ku gwada tukuna idan kuna so.",
+        "Ugbu a họrọ Pulse PIN gị: nọmba anọ naanị gị maara. Mee omume mbụ ma ọ masị gị.",
+    )
+    val confirmPinTitle get() = t("Pulse it again to check", "Pulse am again make we check", "Ẹ tún pulse rẹ̀ láti yẹ̀ ẹ́ wò", "Ku sake yin pulse don dubawa", "Pulse ya ọzọ ka e lelee")
+    val confirmPinSay get() = t("Now pulse the same PIN again.", "Now pulse the same PIN again.", "Báyìí, ẹ tún pulse PIN kan náà.", "Yanzu ku sake yin pulse na PIN ɗin.", "Ugbu a, pulse otu PIN ahụ ọzọ.")
+    val pinTooEasy get() = t(
+        "That PIN is too easy to guess. Choose another.",
+        "That PIN too easy to guess. Choose another one.",
+        "PIN yẹn rọrùn jù láti mọ̀. Ẹ yan òmíràn.",
+        "Wannan PIN yana da sauƙin ganewa. Ku zaɓi wani.",
+        "PIN ahụ dị mfe ịkọ. Họrọ ọzọ.",
+    )
+    val pinIsBirthday get() = t(
+        "That PIN is your birthday, from your ID. Choose another.",
+        "That PIN na your birthday, from your ID. Choose another one.",
+        "PIN yẹn ni ọjọ́ ìbí yín, láti inú káàdì ìdánimọ̀ yín. Ẹ yan òmíràn.",
+        "Wannan PIN ranar haihuwarku ce, daga katin shaidarku. Ku zaɓi wani.",
+        "PIN ahụ bụ ụbọchị ọmụmụ gị, site na kaadị njirimara gị. Họrọ ọzọ.",
+    )
+    val pinMismatch get() = t("Those were different. Let's start again.", "Dem no be the same. Make we start again.", "Wọ́n yàtọ̀ síra. Ẹ jẹ́ ká tún bẹ̀rẹ̀.", "Sun bambanta. Mu sake farawa.", "Ha dị iche. Ka anyị malite ọzọ.")
+    val pinSet get() = t(
+        "Your Pulse PIN is set. Nobody saw it, not even me.",
+        "Your Pulse PIN don set. Nobody see am, even me.",
+        "A ti ṣètò Pulse PIN yín. Kò sí ẹni tó rí i, àní èmi pàápàá.",
+        "An saita Pulse PIN ɗinku. Babu wanda ya gan shi, har ni ma.",
+        "Edozila Pulse PIN gị. Ọ dịghị onye hụrụ ya, ọbụna m.",
+    )
+    val pinSetFailed get() = t(
+        "I could not save your PIN just now. Please try again.",
+        "I no fit save your PIN now. Abeg try again.",
+        "Mi ò lè fi PIN yín pamọ́ báyìí. Ẹ jọ̀ọ́ ẹ tún gbìyànjú.",
+        "Ban iya ajiye PIN ɗinku yanzu ba. Don Allah ku sake gwadawa.",
+        "Enweghị m ike ichekwa PIN gị ugbu a. Biko nwaa ọzọ.",
+    )
     val bvnMatches get() = t("Your BVN matches your card and your face.", "Your BVN match your card and your face.", "BVN yín bá káàdì àti ojú yín mu.", "BVN ɗinku ya dace da katinku da fuskarku.", "BVN gị kwekọrọ na kaadị gị na ihu gị.")
     val bvnNoMatch get() = t(
         "That BVN does not match your card. Please check it and try again.",

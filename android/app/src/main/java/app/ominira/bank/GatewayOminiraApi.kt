@@ -165,6 +165,27 @@ class GatewayOminiraApi(
         }
     }
 
+    override suspend fun confirmBvn(sessionId: String): BvnCheck = orOffline({ fallback.confirmBvn(sessionId) }) {
+        val r = call("POST", "/onboarding/$sessionId/bvn-check", auth = false)
+        if (r.ok) {
+            val match = r.obj.optBoolean("match", false)
+            BvnCheck(match, r.say(if (match) "Zenith found your BVN with NIBSS." else "Zenith could not find your BVN with NIBSS."))
+        } else if (r.status in 400..499) {
+            BvnCheck(false, r.say("Zenith could not find your BVN with NIBSS."))
+        } else {
+            throw GatewayTrouble("HTTP ${r.status}")
+        }
+    }
+
+    override suspend fun setPin(sessionId: String, pinBlock: String): Boolean = orOffline({ fallback.setPin(sessionId, pinBlock) }) {
+        val r = call("POST", "/onboarding/$sessionId/pin", JSONObject().put("pin_block", pinBlock), auth = false)
+        when {
+            r.ok -> true
+            r.status in 400..499 -> false
+            else -> throw GatewayTrouble("HTTP ${r.status}")
+        }
+    }
+
     override suspend fun completeOnboarding(sessionId: String): Boolean = orOffline({ fallback.completeOnboarding(sessionId) }) {
         val r = call("POST", "/onboarding/$sessionId/complete", auth = false)
         when {

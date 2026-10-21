@@ -16,6 +16,7 @@ import app.ominira.core.OnboardingSession
 import app.ominira.core.Outcome
 import app.ominira.core.Payee
 import app.ominira.core.PinBlock
+import app.ominira.core.PinRules
 import app.ominira.core.PreferencePatch
 import app.ominira.core.Readback
 import app.ominira.core.ReadbackHash
@@ -36,7 +37,8 @@ class FakeOminiraApi(
     lang: Lang = Lang.En,
 ) : OminiraApi {
 
-    private val pin = listOf(2, 0, 7, 5)
+    // The demo PIN until the customer sets their own.
+    private var pin = listOf(2, 0, 7, 5)
     private var triesLeft = 3
     private var balanceKobo = 84_230_000L
     private var sentTodayKobo = 0L
@@ -120,6 +122,21 @@ class FakeOminiraApi(
         val match = bvn.length == 11 && bvn.all { it in '0'..'9' } && bvn != "12345678901"
         signups.getOrPut(sessionId) { Signup() }.bvnOk = match
         return if (match) BvnCheck(true, w.bvnMatches) else BvnCheck(false, w.bvnNoMatch)
+    }
+
+    override suspend fun confirmBvn(sessionId: String): BvnCheck {
+        pause(700)
+        signups.getOrPut(sessionId) { Signup() }.bvnOk = true
+        return BvnCheck(true, w.bvnFound)
+    }
+
+    override suspend fun setPin(sessionId: String, pinBlock: String): Boolean {
+        pause(300)
+        val digits = PinBlock.open(pinBlock) ?: return false
+        if (PinRules.check(digits, null) != null) return false
+        pin = digits
+        triesLeft = 3
+        return true
     }
 
     override suspend fun completeOnboarding(sessionId: String): Boolean {

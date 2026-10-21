@@ -68,6 +68,8 @@ fun PulseStep(
     doneLine: String? = null,
     doneAction: String? = null,
     onDoneAction: () -> Unit = {},
+    // Said on arrival instead of the Pulse PIN explanation.
+    arrival: List<String>? = null,
 ) {
     val c = Om.color
     val w = session.words
@@ -77,7 +79,7 @@ fun PulseStep(
 
     LaunchedEffect(Unit) {
         // Once a visit: turning the phone rebuilds the screen but is not a new visit.
-        if (!introduced && session.talksFirst) session.sayOnArrival(session.pulseIntro())
+        if (!introduced && session.talksFirst) session.sayOnArrival(*(arrival ?: listOf(session.pulseIntro())).toTypedArray())
         introduced = true
     }
 

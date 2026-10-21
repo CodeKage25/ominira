@@ -23,7 +23,11 @@ interface OminiraApi {
     suspend fun sendSelfie(sessionId: String, spokenDigits: List<Int>?): Boolean
     suspend fun readIdDocument(sessionId: String): IdDetails
     suspend fun checkBvn(sessionId: String, bvn: String): BvnCheck
+    // With the customer's consent, Zenith finds the BVN with NIBSS: nothing to say aloud.
+    suspend fun confirmBvn(sessionId: String): BvnCheck
     suspend fun completeOnboarding(sessionId: String): Boolean
+    // After completeOnboarding: the new account's own PIN, sealed. False when the bank refuses it.
+    suspend fun setPin(sessionId: String, pinBlock: String): Boolean
 
     suspend fun unlock(pinBlock: String): Unlock
 

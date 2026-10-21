@@ -16,10 +16,8 @@ import app.ominira.Session
 import app.ominira.core.Answers
 import app.ominira.ui.kit.ActionButton
 import app.ominira.ui.kit.Badge
-import app.ominira.ui.kit.DigitField
-import app.ominira.ui.kit.Emphasis
-import app.ominira.ui.kit.Grouping
 import app.ominira.ui.kit.Heading
+import app.ominira.ui.kit.Hint
 import app.ominira.ui.kit.Kicker
 import app.ominira.ui.kit.Notice
 import app.ominira.ui.kit.Page
@@ -29,134 +27,98 @@ import app.ominira.ui.theme.Glyphs
 import app.ominira.voice.rememberPrompt
 import kotlinx.coroutines.launch
 
+// The customer allows Zenith to find their BVN with NIBSS; they never say the 11 digits.
 @Composable
 fun BvnScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
     val scope = rememberCoroutineScope()
     val leave = remember { Once() }
-    var bvn by remember { mutableStateOf("") }
-    var tried by remember { mutableStateOf(false) }
     var checking by remember { mutableStateOf(false) }
     var open by remember { mutableStateOf(false) }
-    var refusal by remember { mutableStateOf<String?>(null) }
-    var heardBvn by remember { mutableStateOf<String?>(null) }
+    var problem by remember { mutableStateOf<String?>(null) }
     var misses by remember { mutableIntStateOf(0) }
-    var checkAsked by remember { mutableStateOf(false) }
     val w = session.words
     val s = session.spoken
     val touch = session.answersByTouch
-
-    val error = when {
-        tried && bvn.length != 11 -> w.bvnLength(bvn.length)
-        else -> refusal
-    }
+    val askLine = if (touch) s.allowTap else s.allowYesOrTap
 
     fun next() = leave.run(onNext)
 
-    fun check() {
-        if (bvn.length != 11) {
-            tried = true
-            return
-        }
-        if (checking) return
+    fun allow() {
+        if (checking || open) return
         checking = true
-        refusal = null
+        problem = null
         scope.launch {
             val result = runCatching {
                 val id = session.onboardingSession()
-                val answer = session.api.checkBvn(id, bvn)
+                val answer = session.api.confirmBvn(id)
                 if (answer.match && session.api.completeOnboarding(id)) session.syncAll()
                 answer
             }.getOrNull()
             checking = false
             when {
                 result == null -> {
-                    refusal = w.bvnFailed
+                    problem = w.bvnFailed
                     session.say(s.bvnFailed)
                 }
                 result.match -> {
                     open = true
                     session.haptics.done()
-                    session.say(s.accountOpen, s.nextPulse)
+                    session.say(result.say, s.accountOpen, s.nextPulse)
                     if (session.talksFirst) {
                         session.speaker.awaitQuiet()
                         next()
                     }
                 }
                 else -> {
-                    refusal = result.say
+                    problem = result.say
                     session.say(result.say)
                 }
             }
         }
     }
 
-    // Longer quiet, so a BVN said slowly is not cut off at the first gap.
-    val prompt = rememberPrompt(session, quietMs = 2_000) { heard ->
-        val pending = heardBvn
-        when {
-            heard == null -> session.say(s.canTypeBvn)
-            pending != null && Answers.isYes(heard) -> {
-                heardBvn = null
-                bvn = pending
-                tried = false
-                checkAsked = true
-            }
-            pending != null && Answers.isNo(heard) -> {
-                heardBvn = null
-                ask(s.sayBvnAgain, listen = session.talksFirst)
-            }
-            else -> {
-                val d = Answers.digits(heard)
-                when {
-                    d.length == 11 -> {
-                        heardBvn = d
-                        ask(s.iHeard(s.digits(d)), if (touch) s.touchYesNo else s.isThatRight)
-                    }
-                    pending != null -> ask(s.yesOrSayAgain)
-                    misses >= 3 -> session.say(s.useKeypad)
-                    d.isEmpty() -> {
-                        misses += 1
-                        ask(s.sayElevenDigits, listen = session.talksFirst)
-                    }
-                    else -> {
-                        misses += 1
-                        ask(s.heardDigitCount(d.length), listen = session.talksFirst)
-                    }
-                }
-            }
-        }
+    fun notNow() {
+        problem = w.bvnDeclined
+        session.say(s.bvnDeclined)
     }
 
-    LaunchedEffect(checkAsked) {
-        if (checkAsked) {
-            checkAsked = false
-            check()
+    val prompt = rememberPrompt(session) { heard ->
+        when {
+            heard == null -> session.say(askLine)
+            Answers.isNo(heard) -> notNow()
+            Answers.isYes(heard) || Answers.isStart(heard) -> allow()
+            misses < 2 -> {
+                misses += 1
+                ask(askLine)
+            }
+            else -> session.say(s.useButtons)
         }
     }
 
     LaunchedEffect(Unit) {
-        if (session.talksFirst) {
-            prompt.ask(s.bvnIntro, s.bvnDial, listen = session.talksFirst)
-        }
+        if (session.talksFirst) prompt.ask(s.bvnConsent, askLine)
     }
 
+    val waiting = !open && !checking
     Page(
-        // The digits are heard in en-NG; only the yes or no that follows is a touch.
-        modifier = Modifier.touchAnswer(
-            touch && heardBvn != null,
-            onTap = {
-                val pending = heardBvn ?: return@touchAnswer
+        modifier = if (touch) {
+            Modifier.touchAnswer(
+                waiting,
+                onTap = {
+                    prompt.cancel()
+                    allow()
+                },
+                onHold = {
+                    prompt.cancel()
+                    notNow()
+                },
+            )
+        } else {
+            Modifier.tapAnywhere(waiting, w.allowCheck) {
                 prompt.cancel()
-                heardBvn = null
-                bvn = pending
-                tried = false
-                checkAsked = true
-            },
-            onHold = {
-                heardBvn = null
-                prompt.ask(s.sayBvnAgain, listen = session.talksFirst)
-            },
-        ),
+                allow()
+            }
+        },
         top = { StepBar(4, onBack) },
         bottom = {
             if (open) {
@@ -165,44 +127,23 @@ fun BvnScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
                     next()
                 }, icon = Glyphs.Pulse)
             } else {
-                ActionButton(w.checkBvn, busy = checking, onClick = {
+                ActionButton(w.allowCheck, busy = checking, onClick = {
                     prompt.cancel()
-                    check()
+                    allow()
                 })
             }
         },
     ) {
         Kicker(w.lastCheck)
-        Heading(w.whatIsBvn)
+        Heading(w.bvnConsentHeading)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Badge(Tone.Ok, w.selfie)
             Badge(Tone.Ok, w.idCard)
             Badge(if (open) Tone.Ok else Tone.Caution, "BVN")
         }
-        DigitField(
-            label = w.yourBvn,
-            hint = w.bvnHint,
-            value = bvn,
-            onValueChange = {
-                bvn = it
-                tried = false
-                refusal = null
-                open = false
-            },
-            error = error,
-            maxDigits = 11,
-            grouping = Grouping.Fours,
-        )
-        ActionButton(
-            w.sayItInstead,
-            onClick = {
-                heardBvn = null
-                prompt.ask(session.spoken.sayBvnDigits, listen = true)
-            },
-            style = Emphasis.Quiet,
-            icon = Glyphs.Mic,
-            wide = false,
-        )
-        if (open) Notice(Tone.Ok, w.accountOpen, body = w.bvnMatches)
+        Hint(w.bvnConsent)
+        if (checking) Hint(w.checkingBvn)
+        problem?.let { Notice(Tone.Caution, it) }
+        if (open) Notice(Tone.Ok, w.accountOpen, body = w.bvnFound)
     }
 }

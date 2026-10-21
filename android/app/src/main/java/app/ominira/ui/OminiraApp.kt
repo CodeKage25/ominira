@@ -19,6 +19,7 @@ import app.ominira.ui.money.SendMoneyScreen
 import app.ominira.ui.onboarding.BvnScreen
 import app.ominira.ui.onboarding.IdByEarScreen
 import app.ominira.ui.onboarding.LanguageScreen
+import app.ominira.ui.onboarding.SetPinScreen
 import app.ominira.ui.onboarding.SonarScreen
 import app.ominira.ui.onboarding.UnlockScreen
 import app.ominira.ui.onboarding.WaysInScreen
@@ -33,6 +34,7 @@ object Route {
     const val ID = "id"
     const val BVN = "bvn"
     const val UNLOCK = "unlock"
+    const val SET_PIN = "set-pin"
     const val VOICE_HOME = "home/voice"
     const val PLAIN_HOME = "home/plain"
     const val SWITCH_HOME = "home/switch"
@@ -77,7 +79,9 @@ fun OminiraApp(session: Session) {
             composable(Route.WAYS_IN) { WaysInScreen(session, onNext = { nav.navigate(Route.SONAR) }) }
             composable(Route.SONAR) { SonarScreen(session, onBack = { back() }, onNext = { nav.navigate(Route.ID) }) }
             composable(Route.ID) { IdByEarScreen(session, onBack = { back() }, onNext = { nav.navigate(Route.BVN) }) }
-            composable(Route.BVN) { BvnScreen(session, onBack = { back() }, onNext = { nav.navigate(Route.UNLOCK) }) }
+            composable(Route.BVN) { BvnScreen(session, onBack = { back() }, onNext = { nav.navigate(Route.SET_PIN) }) }
+            // A new customer chooses their own PIN, so they go home from here, not through sign in.
+            composable(Route.SET_PIN) { SetPinScreen(session, onDone = { nav.goHome(session) }) }
             composable(Route.UNLOCK) { UnlockScreen(session, onUnlocked = { nav.goHome(session) }) }
             composable(Route.VOICE_HOME) { VoiceHomeScreen(session, actions) }
             composable(Route.PLAIN_HOME) { PlainHomeScreen(session, actions) }

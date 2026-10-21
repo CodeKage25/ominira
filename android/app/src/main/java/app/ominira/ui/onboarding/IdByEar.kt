@@ -83,7 +83,10 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
     val confirmLine = if (touch) s.touchId else s.confirmId
     val startLines = arrayOf(s.nowIdCard, s.holdNin, if (touch) s.tapToStart else s.sayStartOrTap)
 
-    fun next() = leave.run(onNext)
+    fun next() {
+        session.idOnFile = details
+        leave.run(onNext)
+    }
 
     fun retake(prompt: Prompt) {
         details = null

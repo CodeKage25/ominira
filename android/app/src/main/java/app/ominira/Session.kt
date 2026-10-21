@@ -10,6 +10,7 @@ import app.ominira.bank.FakeOminiraApi
 import app.ominira.bank.GatewayOminiraApi
 import app.ominira.bank.OminiraApi
 import app.ominira.core.Account
+import app.ominira.core.IdDetails
 import app.ominira.core.Lang
 import app.ominira.core.Lines
 import app.ominira.core.Mode
@@ -92,6 +93,9 @@ class Session(app: Application) : AndroidViewModel(app) {
     var pendingTurn by mutableStateOf<Turn?>(null)
 
     var onboardingId: String? = null
+
+    // The ID the customer confirmed, for the PIN's birthday check. Memory only, never stored.
+    var idOnFile: IdDetails? = null
 
     var micAsked = false
 
@@ -199,6 +203,7 @@ class Session(app: Application) : AndroidViewModel(app) {
         demoCallActive = false
         pendingTurn = null
         onboardingId = null
+        idOnFile = null
     }
 
     fun screenReaderOn(): Boolean = Signals.screenReaderOn(context)
