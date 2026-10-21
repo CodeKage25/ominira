@@ -49,16 +49,19 @@ class Aiming internal constructor(private val session: Session, private val lens
     private var hintAt = 0L
     private var gate: CompletableDeferred<Sight>? = null
     private var ready: (Sight) -> Boolean = { true }
+    private var unready: (Sight) -> String? = { null }
     private val minSize = if (lens == Lens.Face) 0.28f else 0.5f
     private val maxSize = if (lens == Lens.Face) 0.7f else 0.95f
 
-    // The frame that held still and passed ready. Guides for as long as it takes.
-    suspend fun run(ready: (Sight) -> Boolean = { true }): Sight {
+    // The frame that held still and passed ready. Guides for as long as it takes. unready says why a
+    // held frame failed, or null for the general line.
+    suspend fun run(unready: (Sight) -> String? = { null }, ready: (Sight) -> Boolean = { true }): Sight {
         steady.reset()
         unreadySince = null
         aim = null
         closeness = 0f
         this.ready = ready
+        this.unready = unready
         val waiting = CompletableDeferred<Sight>()
         gate = waiting
         active = true
@@ -86,7 +89,7 @@ class Aiming internal constructor(private val session: Session, private val lens
             val since = unreadySince ?: now.also { unreadySince = it }
             if (now - since >= 2_500 && now - hintAt >= 6_000) {
                 hintAt = now
-                session.say(session.spoken.cardUnreadable)
+                session.say(unready(sight) ?: session.spoken.cardUnreadable)
             }
             return
         }

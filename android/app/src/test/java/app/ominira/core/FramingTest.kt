@@ -71,7 +71,7 @@ class FramingTest {
             CardLine("SURNAME/NOM", 200, 100, 330, 115),
             CardLine("GIVEN NAMES/PRENOMS", 200, 150, 400, 165),
             // Comes next in the list, as the camera's blocks often do, but sits off to the right.
-            CardLine("SONGA", 620, 158, 700, 175),
+            CardLine("MANAGEMENT", 620, 158, 760, 175),
             CardLine("PROUD, NIGERIAN", 200, 170, 380, 190),
             CardLine("CITIZEN", 200, 120, 300, 140),
             CardLine("DATE OF BIRTH SEX/SEXE", 200, 200, 420, 215),
@@ -85,6 +85,44 @@ class FramingTest {
         assertEquals("8910", id.ninLast4)
         // The earliest date is the birth date, not the issue date.
         assertEquals("1960-10-01", id.bornOn)
+    }
+
+    // The printed slips' tables: each value in the cell to the right of its label, middle name included.
+    @Test
+    fun readsATableSlipWithValuesToTheRight() {
+        val slip = listOf(
+            CardLine("National Identity Management System", 400, 60, 1300, 110),
+            CardLine("Surname:", 690, 340, 800, 370),
+            CardLine("OKAFOR", 880, 335, 1100, 372),
+            CardLine("First Name:", 690, 425, 830, 455),
+            CardLine("CHINEDU", 880, 420, 1080, 458),
+            CardLine("Middlename:", 690, 505, 840, 535),
+            CardLine("EMEKA", 880, 500, 1050, 538),
+            CardLine("NIN: 12345678901", 120, 640, 560, 670),
+            CardLine("Date of Birth: 14/03/1990", 120, 690, 560, 720),
+        )
+        val id = IdCardText.read(slip)!!
+        assertEquals("Chinedu Emeka Okafor", id.fullName)
+        assertEquals("8901", id.ninLast4)
+        assertEquals("1990-03-14", id.bornOn)
+    }
+
+    // NIMC's enrolment transaction slip: no NIN and no date of birth, so it is named, never read back.
+    @Test
+    fun anEnrolmentSlipIsRecognisedNotRead() {
+        val slip = listOf(
+            CardLine("National Identity Management System", 400, 60, 1300, 110),
+            CardLine("(Enrollment Transaction Slip)", 700, 230, 1150, 270),
+            CardLine("Tracking ID:", 110, 380, 260, 410),
+            CardLine("Surname:", 690, 340, 800, 370),
+            CardLine("OKAFOR", 880, 335, 1100, 372),
+            CardLine("First Name:", 690, 425, 830, 455),
+            CardLine("CHINEDU", 880, 420, 1080, 458),
+            CardLine("Registration Date:", 110, 545, 330, 575),
+        )
+        assertNull(IdCardText.read(slip))
+        assertTrue(IdCardText.isEnrolmentSlip(slip))
+        assertFalse(IdCardText.isEnrolmentSlip(slip + CardLine("NIN: 12345678901", 120, 640, 560, 670)))
     }
 
     @Test

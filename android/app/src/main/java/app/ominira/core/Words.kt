@@ -766,6 +766,13 @@ class Words private constructor(val lang: Lang) {
         "Wannan mataki yana buƙatar kyamara. Ku taɓa ko'ina don ku ba da izini. Idan babu akwati da ya bayyana, ku ba Òmìnira izinin kyamara a cikin Saitunan wayarku.",
         "Nzọụkwụ a chọrọ igwe foto. Pịa ebe ọ bụla ka ịkwado ya. Ọ bụrụ na igbe apụtaghị, kwado igwe foto maka Òmìnira na Ntọala ekwentị gị.",
     )
+    val enrolmentSlip get() = t(
+        "This is an enrolment slip. It has no NIN on it. Please hold up your NIN slip or your ID card instead.",
+        "This na enrolment slip. NIN no dey inside. Abeg hold your NIN slip or your ID card instead.",
+        "Ìwé ìforúkọsílẹ̀ nìyí. Kò sí NIN lórí rẹ̀. Ẹ jọ̀ọ́ ẹ di ìwé NIN tàbí káàdì ìdánimọ̀ yín mú dípò.",
+        "Wannan takardar rajista ce. Babu NIN a kanta. Don Allah ku riƙe takardar NIN ko katin shaidarku maimakon haka.",
+        "Nke a bụ akwụkwọ ndebanye aha. Enweghị NIN n'ime ya. Biko jide akwụkwọ NIN gị ma ọ bụ kaadị njirimara gị kama.",
+    )
     val cardUnreadable get() = t(
         "I can see the card but cannot read it yet. Hold it flat and still, in good light.",
         "I dey see the card but I never fit read am. Hold am flat, no shake am, where light dey.",
