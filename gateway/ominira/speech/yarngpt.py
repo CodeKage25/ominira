@@ -150,6 +150,35 @@ def download(audio_url: str, timeout: float = 60.0) -> bytes:
     return response.content
 
 
+def render(text: str, voice: str | None, key: str, output_format: str = "mp3", wait_s: float = 90.0) -> bytes:
+    """Batch speech through the job route: billed in credits, outside prepare's 120 calls a day.
+
+    `key` is the Idempotency-Key: the same key and text return the first job, never a second bill."""
+    body = {"text": text.strip(), "output_format": output_format}
+    if voice:
+        body["voice"] = voice
+    started = time.monotonic()
+
+    def run(client: httpx.Client) -> str:
+        job = _json(client.post("/api/v1/tts", json=body, headers={"Idempotency-Key": key}))
+        job_id = job.get("job_id") if isinstance(job, dict) else None
+        if not job_id:
+            raise SpeechUnavailable("bad_response", "no job_id")
+        pause = 0.5
+        while time.monotonic() - started < wait_s:
+            time.sleep(pause)
+            state = _json(client.get(f"/api/v1/status/{job_id}"))
+            status = state.get("status")
+            if status == "completed" and state.get("audio_url"):
+                return state["audio_url"]
+            if status == "failed":
+                raise SpeechUnavailable(state.get("error_code") or "tts_failed", state.get("error_message") or "")
+            pause = min(pause * 1.5, 2.0)
+        raise SpeechUnavailable("timeout", f"no audio after {wait_s:.0f} s")
+
+    return download(_call(20.0, run))
+
+
 def pad_wav(audio: bytes, min_s: float = MIN_AUDIO_S + 0.2) -> bytes:
     """Add silence to the end of a short PCM WAV. Anything else comes back unchanged."""
     try:

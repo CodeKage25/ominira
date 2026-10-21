@@ -19,9 +19,9 @@ line gets a new clip, an unchanged one is never made twice, and clips no line us
 With ffmpeg on the PATH, each clip is re-encoded to 32 kbps mono, and a line too short for YarnGPT
 is said a few times over and cut at its first pause.
 
-YarnGPT allows 120 calls a day, shared with the Gateway's live voice. Each run makes at most
---max-clips (default 100, leaving some for the live voice) and stops cleanly at the daily limit;
-run it again the next day and it carries on where it stopped.
+Clips go through YarnGPT's job route, billed in credits (about 1 per 1,000 characters), so they
+never use the 120 prepare calls a day the Gateway's live voice needs. --max-clips caps a run, and
+the run stops cleanly if YarnGPT rate-limits it; run it again and it carries on where it stopped.
 """
 
 import argparse
@@ -114,7 +114,7 @@ def squeeze(audio: bytes) -> bytes:
     return small if len(small) < len(audio) else audio
 
 
-# YarnGPT bills at least 20 characters and does not count padding dots.
+# Below YarnGPT's 20 billable characters (padding dots do not count), a line is said a few times.
 SHORT = 24
 
 
@@ -138,16 +138,19 @@ def cut(audio: bytes, seconds: float) -> bytes:
 
 
 def fetch(text: str, lang: str, voice: str | None) -> bytes:
-    ticket = yarngpt.prepare(text, lang, output_format="mp3", voice=voice)
-    audio = yarngpt.download(ticket["audio_url"])
+    # Same line, same key: a retry gets the first job back and is not billed again.
+    audio = yarngpt.render(text, voice, key=f"ominira-clip-{lang}-{clip_key(text)}")
     if not audio:
         raise yarngpt.SpeechUnavailable("empty_audio", "YarnGPT returned no audio")
     return audio
 
 
 def make(text: str, lang: str, voice: str | None) -> bytes:
-    if len(text) >= SHORT:
+    try:
         return squeeze(fetch(text, lang, voice))
+    except yarngpt.SpeechUnavailable as err:
+        if err.code != "INPUT_TOO_SHORT":
+            raise
     if not shutil.which("ffmpeg"):
         raise yarngpt.SpeechUnavailable("too_short", "needs ffmpeg to cut a repeated short line")
     said = " ".join([text.rstrip(".") + "."] * max(2, -(-SHORT // len(text)) + 1))
@@ -165,7 +168,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--only", nargs="*", default=["yo", "ha", "ig"], choices=LANGS)
     ap.add_argument("--lines", type=Path, help="JSON from ClipLinesTest, instead of running it")
     ap.add_argument("--voice", action="append", default=[], help="pin a voice for this run, e.g. yo=idera")
-    ap.add_argument("--max-clips", type=int, default=100, help="most clips this run makes (default 100 of 120 a day)")
+    ap.add_argument("--max-clips", type=int, default=1000, help="most clips this run makes (default 1000)")
     ap.add_argument("--dry-run", action="store_true", help="count what would be made, spend nothing")
     args = ap.parse_args(argv)
 
