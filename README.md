@@ -4,6 +4,20 @@
 
 Òmìnira means self-sufficiency. It is for anyone a normal banking app leaves out: blind and low-vision customers, deaf customers, older people, people with motor impairments, and people who don't bank in English. You talk to it in English, Pidgin, Yorùbá, Hausa or Igbo, and it talks back in the same language.
 
+## Why
+
+A 2026 survey of 185 visually impaired adults in Oyo State (Abilu and Adio, 2026) found:
+
+- **Voice banking is the least used and among the most wanted.** Voice-enabled services scored 1.89 out of 4 for use, the lowest of any channel, yet 92% want them.
+- **The top problem is having no audio or voice guidance** (84% agree), level with poor network.
+- **Bank apps don't work well with screen readers** (76% agree), and respondents rejected the statement that banking apps are designed for them.
+- **People cope by depending on others.** Asking bank staff is the most common strategy, and many rely on friends or family. The study notes that this dependence exposes customers to fraud and loss of privacy.
+- **Everyone asked for training** (100% agree), along with accessible ATMs and voice-enabled banking.
+
+Òmìnira answers the first four directly: guidance spoken in the customer's own language, an app that does not depend on the bank's screen labels, and a co-approver who can approve or decline but never sees the PIN or touches the money. The study's sample is purposive and covers one state, so we read it as strong local evidence, not a national figure.
+
+> Abilu, R. A., & Adio, J. A. (2026). Challenges and Prospects of E-banking System for Persons with Visual Impairment in Oyo State, Nigeria. *Asian Journal of Economics, Business and Accounting*, 26(9), 15–26. https://doi.org/10.9734/ajeba/2026/v26i92364
+
 ## What it does
 
 - **Asks your language first.** The app speaks as soon as it opens, one line per language in that language's own voice. Answer by voice or by tapping your language.
