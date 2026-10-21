@@ -30,6 +30,10 @@ class BvnIn(BaseModel):
     bvn: str = Field(pattern=r"^\d{11}$")
 
 
+class PinIn(BaseModel):
+    pin_block: str
+
+
 def _session(db: Session, sid: str) -> Onboarding:
     row = db.get(Onboarding, sid)
     if row is None:
@@ -70,6 +74,32 @@ def bvn(sid: str, body: BvnIn, db: Session = Depends(get_session)):
     row.bvn_matched = result.match
     db.commit()
     return {"match": result.match, "say": lines.say(row.lang or "en", "bvn_ok" if result.match else "bvn_mismatch")}
+
+
+@router.post("/{sid}/bvn-check")
+def bvn_check(sid: str, db: Session = Depends(get_session)):
+    """With the customer's consent: Zenith asks NIBSS for the BVN behind their NIN and phone."""
+    row = _session(db, sid)
+    core = get_core()
+    customer = db.get(Customer, CUSTOMER_ID)
+    result = core.look_up_bvn(core.read_id_document(sid), customer.phone if customer else None)
+    row.bvn_matched = result.match
+    db.commit()
+    return {"match": result.match, "say": lines.say(row.lang or "en", "bvn_found" if result.match else "bvn_mismatch")}
+
+
+@router.post("/{sid}/pin")
+def pin(sid: str, body: PinIn, db: Session = Depends(get_session)):
+    """The new account's own Pulse PIN. The sealed block goes straight to the core, which refuses easy ones."""
+    row = _session(db, sid)
+    if not row.completed:
+        raise Problem(409, "onboarding_incomplete", "Open the account before setting its PIN")
+    say_lang = row.lang or "en"
+    customer = db.get(Customer, CUSTOMER_ID)
+    if customer is None or not get_core().set_pin(customer.core_ref, body.pin_block):
+        raise Problem(422, "weak_pin", "Choose a PIN that is harder to guess", lines.say(say_lang, "pin_weak"))
+    audit_log.record("pin_set", actor="customer", customer_id=CUSTOMER_ID, onboarding_id=sid)
+    return {"ok": True, "say": lines.say(say_lang, "pin_set")}
 
 
 @router.post("/{sid}/complete")

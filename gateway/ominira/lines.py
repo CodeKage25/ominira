@@ -111,6 +111,9 @@ _COPY: dict[str, dict[str, str]] = {
     "balance": {"en": "You have {amount} in your current account.", "pcm": "You get {amount} for your current account."},
     # Onboarding
     "bvn_ok": {"en": "Your BVN matches your card and your face.", "pcm": "Your BVN match your card and your face."},
+    "bvn_found": {"en": "Zenith found your BVN with NIBSS. It matches your card and your face."},
+    "pin_set": {"en": "Your Pulse PIN is set. Nobody saw it, not even me."},
+    "pin_weak": {"en": "That PIN is too easy to guess. Choose another."},
     "bvn_mismatch": {"en": "That BVN belongs to someone else. Say your eleven digits again.", "pcm": "That BVN na another person own. Talk your eleven numbers again."},
     # Speech
     "speech_unavailable": {

@@ -182,5 +182,14 @@ class ZenithCore(ABC):
     @abstractmethod
     def check_bvn(self, bvn: str, document: IdDocument) -> BvnCheck: ...
 
+    # The customer allows Zenith to find their BVN with NIBSS from their NIN and phone: nothing to say aloud.
+    @abstractmethod
+    def look_up_bvn(self, document: IdDocument, phone: str | None) -> BvnCheck: ...
+
+    # The new customer's own PIN, sealed on the phone. False when it is too easy to guess.
+    # A real core keeps only an offset, in an HSM.
+    @abstractmethod
+    def set_pin(self, customer_ref: str, pin_block: str) -> bool: ...
+
     def bank(self, code: str) -> Bank | None:
         return next((b for b in self.banks() if b.code == code), None)

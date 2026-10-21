@@ -74,6 +74,10 @@ def test_walk_every_endpoint(client, yarn):
     _keys(_call(c, "POST", "/v1/onboarding/{}/id-document", s["id"], expect=200).json(), {"full_name", "nin_last4", "born_on"})
     _keys(_call(c, "POST", "/v1/onboarding/{}/bvn", s["id"], expect=200, json={"bvn": "22212345678"}).json(), {"match", "say"})
     _keys(_call(c, "POST", "/v1/onboarding/{}/complete", s["id"], expect=200).json(), {"customer_id", "token"})
+    # The same PIN again, so the walk below still signs in with 2 0 7 5.
+    _keys(_call(c, "POST", "/v1/onboarding/{}/pin", s["id"], expect=200, json={"pin_block": PIN_OK}).json(), {"ok", "say"})
+    s2 = _call(c, "POST", "/v1/onboarding/sessions", expect=201).json()
+    _keys(_call(c, "POST", "/v1/onboarding/{}/bvn-check", s2["id"], expect=200).json(), {"match", "say"})
 
     # Sign in
     _keys(_call(c, "POST", "/v1/auth/unlock", expect=200, headers=C, json={"pin_block": PIN_OK}).json(), {"ok", "say"})

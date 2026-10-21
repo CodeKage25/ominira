@@ -85,6 +85,12 @@ def unseal_pin_block(pin_block: str) -> str | None:
     return "".join(str(9 - int(c)) for c in sealed)
 
 
+def weak_pin(pin: str) -> bool:
+    """One digit four times, a run up or down, or a pair repeated."""
+    steps = {int(b) - int(a) for a, b in zip(pin, pin[1:])}
+    return len(set(pin)) == 1 or steps in ({1}, {-1}) or (pin[0] == pin[2] and pin[1] == pin[3])
+
+
 def generated_name(bank_code: str, number: str) -> str:
     """The same account always gets the same name, NIP style: SURNAME FIRSTNAME."""
     h = int.from_bytes(hashlib.sha256(f"{bank_code}/{number}".encode()).digest()[:8], "big")
@@ -357,6 +363,22 @@ class MockZenith(ZenithCore):
         """Any 11 digits match, except 12345678901, which belongs to someone else."""
         self._pause("enquiry")
         return BvnCheck(len(bvn) == 11 and bvn.isdigit() and bvn != "12345678901")
+
+    def look_up_bvn(self, document: IdDocument, phone: str | None) -> BvnCheck:
+        """NIBSS always finds the demo customer's BVN."""
+        self._pause("enquiry")
+        return BvnCheck(True)
+
+    def set_pin(self, customer_ref: str, pin_block: str) -> bool:
+        pin = unseal_pin_block(pin_block)
+        if pin is None or weak_pin(pin):
+            return False
+        with self._sessions() as db:
+            c = self._customer(db, customer_ref)
+            c.pin = pin
+            c.pin_tries_left = 3
+            db.commit()
+        return True
 
     # ---- rehearsal helpers (not part of ZenithCore) ------------------------------------------
 

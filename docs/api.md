@@ -60,6 +60,7 @@ whenever the body has `retry_after`.
 | 410 | `approval_expired` | `draft_id` | approver did not answer within 15 minutes |
 | 413 / 415 / 422 | `audio_too_long` / `audio_expected` / `audio_too_short` | | speech uploads |
 | 422 | `invalid_request` | `errors` | validation |
+| 422 | `weak_pin` | | PIN too easy to guess |
 | 422 | `idempotency_key_reused` | | same Idempotency-Key, different body |
 | 422 | `invalid_amount`, `invalid_account`, `account_dormant`, `unknown_bank` | | |
 | 422 | `limit_exceeded` | `limit` (`per_transaction` or `daily`), `max_kobo` or `remaining_today_kobo` | |
@@ -143,7 +144,9 @@ canonical meaning sorted keys and `(",", ":")` separators. Clients never compute
 | `POST /v1/onboarding/{id}/selfie` | `{"spoken_digits": [4,1,9,0]}` (optional) | `{"live": true}`; `false` when the digits sent do not match |
 | `POST /v1/onboarding/{id}/id-document` | | `{"full_name": "Ronke Adeyemi", "nin_last4": "5521", "born_on": "1961-03-14"}` |
 | `POST /v1/onboarding/{id}/bvn` | `{"bvn": "22212345678"}` | `{"match": true, "say": "..."}` (`match` false for `12345678901`; not 11 digits is `422 invalid_request`) |
+| `POST /v1/onboarding/{id}/bvn-check` | | With the customer's consent, Zenith finds the BVN with NIBSS from their NIN and phone, so nothing is said aloud. `{"match": true, "say": "..."}`, and the session counts as BVN matched |
 | `POST /v1/onboarding/{id}/complete` | | `{"customer_id": "cus_ronke", "token": "demo-customer"}`, or `409 onboarding_incomplete` until the BVN matched (and the selfie, if sent, was live) |
+| `POST /v1/onboarding/{id}/pin` | `{"pin_block": "demo-..."}` | The new account's own Pulse PIN, sealed on the phone. `{"ok": true, "say": "..."}`; `409 onboarding_incomplete` before `complete`; `422 weak_pin` for one digit four times, a run up or down, or a repeated pair |
 
 ### Sign in (customer)
 
