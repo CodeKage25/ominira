@@ -756,6 +756,20 @@ class Words private constructor(val lang: Lang) {
         Aim.Straight -> t("Look straight at the phone.", "Look the phone straight.", "Ẹ wo fóònù tààrà.", "Ku kalli wayar kai tsaye.", "Lee ekwentị anya ozugbo.")
         Aim.Hold -> t("Keep still.", "No move.", "Ẹ má mì.", "Ku tsaya cak.", "Kwụrụ jụụ.")
     }
+    val cameraNeeded get() = t(
+        "This step needs the camera. Tap anywhere to allow it. If no box appears, allow the camera for Òmìnira in your phone's Settings.",
+        "This step need the camera. Touch anywhere make you allow am. If no box show, allow camera for Òmìnira inside your phone Settings.",
+        "Ìgbésẹ̀ yìí nílò kámẹ́rà. Ẹ tẹ ibikíbi láti gbà á láàyè. Tí àpótí kankan kò bá yọ, ẹ gba kámẹ́rà láàyè fún Òmìnira nínú Ètò fóònù yín.",
+        "Wannan mataki yana buƙatar kyamara. Ku taɓa ko'ina don ku ba da izini. Idan babu akwati da ya bayyana, ku ba Òmìnira izinin kyamara a cikin Saitunan wayarku.",
+        "Nzọụkwụ a chọrọ igwe foto. Pịa ebe ọ bụla ka ịkwado ya. Ọ bụrụ na igbe apụtaghị, kwado igwe foto maka Òmìnira na Ntọala ekwentị gị.",
+    )
+    val cardUnreadable get() = t(
+        "I can see the card but cannot read it yet. Hold it flat and still, in good light.",
+        "I dey see the card but I never fit read am. Hold am flat, no shake am, where light dey.",
+        "Mo rí káàdì náà ṣùgbọ́n mi ò tíì lè kà á. Ẹ di í mú pẹrẹsẹ láìmì, níbi tí ìmọ́lẹ̀ dáa wà.",
+        "Ina ganin katin amma ban iya karanta shi ba tukuna. Ku riƙe shi a kwance cak, a wuri mai haske.",
+        "Ahụrụ m kaadị ahụ mana enweghị m ike ịgụ ya. Jide ya n'ala jụụ, ebe ìhè dị mma.",
+    )
     // allow is the phone's own button label, in the phone's language.
     fun cameraAllow(allow: String) = t(
         "To use the camera, tap $allow, near the bottom of the screen.",

@@ -22,12 +22,12 @@ import app.ominira.ui.theme.Look
 import app.ominira.voice.CloudVoice
 import app.ominira.voice.Hearing
 import app.ominira.voice.Speaker
+import java.util.Calendar
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import java.util.Calendar
 
 class Session(app: Application) : AndroidViewModel(app) {
 
@@ -94,8 +94,6 @@ class Session(app: Application) : AndroidViewModel(app) {
     var onboardingId: String? = null
 
     var micAsked = false
-
-    var cameraAsked = false
 
     val customerName = "Ronke"
 

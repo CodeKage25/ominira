@@ -157,14 +157,12 @@ class CameraAccess internal constructor(private val context: Context) {
 
     private val hasCamera: Boolean get() = context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)
 
-    // then(true) once the camera may be used; then(false) to carry on without it, asked once a session.
+    // then(true) once the camera may be used, then(false) when it was refused: asked every time it is needed.
     fun ask(session: Session, then: (Boolean) -> Unit) {
         when {
             !hasCamera -> then(false)
             granted -> then(true)
-            session.cameraAsked -> then(false)
             else -> {
-                session.cameraAsked = true
                 // The permission box is silent and easy to miss without sight.
                 session.say(session.spoken.cameraAllow(allowButton()))
                 this.then = then

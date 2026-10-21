@@ -1,8 +1,5 @@
 package app.ominira.ui.onboarding
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.snap
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -11,8 +8,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -27,17 +22,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.ominira.Session
 import app.ominira.core.Answers
@@ -47,6 +36,11 @@ import app.ominira.core.IdCardText
 import app.ominira.core.IdDetails
 import app.ominira.core.Readback
 import app.ominira.core.Words
+import app.ominira.ui.camera.AimPanel
+import app.ominira.ui.camera.CameraFeed
+import app.ominira.ui.camera.Lens
+import app.ominira.ui.camera.rememberAiming
+import app.ominira.ui.camera.rememberCameraAccess
 import app.ominira.ui.kit.ActionButton
 import app.ominira.ui.kit.Heading
 import app.ominira.ui.kit.Hint
@@ -56,21 +50,13 @@ import app.ominira.ui.kit.Notice
 import app.ominira.ui.kit.Page
 import app.ominira.ui.kit.ReadbackPanel
 import app.ominira.ui.kit.Tone
-import app.ominira.ui.camera.CameraFeed
-import app.ominira.ui.camera.Lens
-import app.ominira.ui.camera.rememberAiming
-import app.ominira.ui.camera.rememberCameraAccess
-import app.ominira.ui.kit.rememberReduceMotion
 import app.ominira.ui.kit.touchAnswer
 import app.ominira.ui.theme.Corners
 import app.ominira.ui.theme.Glyphs
 import app.ominira.ui.theme.Om
 import app.ominira.voice.Prompt
 import app.ominira.voice.rememberPrompt
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-
-private val cardTilt = listOf(-14f, -14f, -5f, 0f)
 
 private fun idLines(w: Words, id: IdDetails): Array<String> = arrayOf(
     w.isThisYou,
@@ -83,20 +69,17 @@ private fun idLines(w: Words, id: IdDetails): Array<String> = arrayOf(
 fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
     val scope = rememberCoroutineScope()
     val leave = remember { Once() }
-    val still = rememberReduceMotion()
     var phase by remember { mutableIntStateOf(0) }
     var details by remember { mutableStateOf<IdDetails?>(null) }
     var started by remember { mutableStateOf(false) }
     var misses by remember { mutableIntStateOf(0) }
     var problem by remember { mutableStateOf<String?>(null) }
     var startAsked by remember { mutableStateOf(false) }
-    val tilt by animateFloatAsState(cardTilt[phase], if (still) snap<Float>() else tween<Float>(600), label = "tilt")
     val w = session.words
     val s = session.spoken
     val touch = session.answersByTouch
     val camera = rememberCameraAccess()
     val aiming = rememberAiming(session, Lens.Card)
-    var useCamera by remember { mutableStateOf(false) }
     val confirmLine = if (touch) s.touchId else s.confirmId
     val startLines = arrayOf(s.nowIdCard, s.holdNin, if (touch) s.tapToStart else s.sayStartOrTap)
 
@@ -135,29 +118,21 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
     fun readCard() {
         scope.launch {
             var fromCard: IdDetails? = null
-            if (useCamera) {
-                phase = 1
-                // Locks only once the name, NIN and date of birth are all read; times out to the bank's copy.
-                aiming.run(timeoutMs = 30_000) { sight -> IdCardText.read(sight.text)?.also { fromCard = it } != null }
-                phase = 3
-            } else {
-                for (n in 1..3) {
-                    delay(1_600)
-                    phase = n
-                    session.say(s.cardSteps[n])
-                }
-            }
+            phase = 1
+            // Locks only once the name, NIN and date of birth are all read off the card itself.
+            aiming.run { sight -> IdCardText.read(sight.text)?.also { fromCard = it } != null }
+            phase = 3
             session.haptics.lock()
-            val read = runCatching { session.api.readIdDocument(session.onboardingSession()) }.getOrNull()
-            if (read == null) {
+            // The bank still records the step; what is read back is what the camera read.
+            val recorded = runCatching { session.api.readIdDocument(session.onboardingSession()) }.getOrNull()
+            val id = fromCard
+            if (recorded == null || id == null) {
                 problem = w.cardFailed
                 session.say(s.cardFailed)
                 phase = 0
                 started = false
                 return@launch
             }
-            // What the camera read wins over the bank's placeholder; only the NIN's last four digits exist.
-            val id = fromCard ?: read
             details = id
             misses = 0
             if (session.talksFirst) prompt.ask(*idLines(s, id), confirmLine) else session.say(*idLines(s, id))
@@ -170,8 +145,13 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
         problem = null
         prompt.cancel()
         camera.ask(session) { ok ->
-            useCamera = ok
-            readCard()
+            if (ok) {
+                readCard()
+            } else {
+                started = false
+                problem = w.cameraNeeded
+                session.say(s.cameraNeeded)
+            }
         }
     }
 
@@ -229,7 +209,7 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(240.dp)
+                .height(300.dp)
                 .clip(Corners.xl)
                 .background(Color(0xFF0A1712)),
             contentAlignment = Alignment.Center,
@@ -237,7 +217,7 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
             val locked = phase == 3
             val sun = Om.color.sun
             val mint = Om.color.mint
-            if (useCamera && details == null) CameraFeed(Lens.Card, aiming::onSight, Modifier.fillMaxSize())
+            if (started && details == null) CameraFeed(Lens.Card, aiming::onSight, Modifier.fillMaxSize())
             Canvas(
                 Modifier
                     .fillMaxSize()
@@ -247,20 +227,6 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
                 val fh = size.height * 0.62f
                 val fx = (size.width - fw) / 2f
                 val fy = size.height * 0.1f
-                if (!useCamera) rotate(tilt, pivot = Offset(size.width / 2f, fy + fh / 2f)) {
-                    drawRoundRect(
-                        brush = Brush.linearGradient(listOf(Color(0xFF2E7A58), Color(0xFF1D5A40))),
-                        topLeft = Offset(fx + fw * 0.05f, fy + fh * 0.08f),
-                        size = Size(fw * 0.9f, fh * 0.84f),
-                        cornerRadius = CornerRadius(14.dp.toPx()),
-                    )
-                    drawRoundRect(
-                        color = Color(0x8CF7F2E7),
-                        topLeft = Offset(fx + fw * 0.12f, fy + fh * 0.25f),
-                        size = Size(fw * 0.22f, fh * 0.5f),
-                        cornerRadius = CornerRadius(8.dp.toPx()),
-                    )
-                }
                 drawRoundRect(
                     color = if (locked) mint else sun,
                     topLeft = Offset(fx, fy),
@@ -269,15 +235,10 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
                     style = Stroke(4.dp.toPx(), pathEffect = if (locked) null else PathEffect.dashPathEffect(floatArrayOf(18f, 12f))),
                 )
             }
-            Text(
+            AimPanel(
                 aiming.aim?.takeIf { aiming.active }?.let { w.aim(it, card = true) } ?: w.cardSteps[phase],
-                style = Om.type.bodyStrong,
-                color = Om.color.bandText,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(16.dp)
-                    .semantics { liveRegion = LiveRegionMode.Polite },
+                if (aiming.active) aiming.closeness else if (phase == 3) 1f else 0f,
+                Modifier.align(Alignment.BottomCenter),
             )
         }
         val id = details

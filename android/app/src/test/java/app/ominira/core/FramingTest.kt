@@ -36,12 +36,13 @@ class FramingTest {
         assertNull(steady.feed(Aim.Left, 0))
         assertNull(steady.feed(Aim.Left, 500))
         assertEquals(Aim.Left, steady.feed(Aim.Left, 950))
-        // Said once, not again while it stays the same.
+        // Said once, not again while it stays the same, until it has been quiet a while.
         assertNull(steady.feed(Aim.Left, 2_000))
-        assertNull(steady.feed(Aim.Hold, 2_100))
-        assertFalse(steady.locked(2_500))
-        assertEquals(Aim.Hold, steady.feed(Aim.Hold, 3_100))
-        assertTrue(steady.locked(3_400))
+        assertEquals(Aim.Left, steady.feed(Aim.Left, 7_000))
+        assertNull(steady.feed(Aim.Hold, 7_050))
+        assertFalse(steady.locked(7_500))
+        assertEquals(Aim.Hold, steady.feed(Aim.Hold, 8_000))
+        assertTrue(steady.locked(8_300))
     }
 
     @Test
