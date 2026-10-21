@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from ominira import audit_log, lines
-from ominira.assistant import claude, guard, rules
+from ominira.assistant import claude, guard, memory, rules
 from ominira.settings import settings
 from ominira.tables import Conversation, Customer, Draft, Turn
 
@@ -24,11 +24,14 @@ class TurnResult:
 
 def run_turn(db: Session, customer: Customer, conv: Conversation, text: str, source: str = "assistant") -> TurnResult:
     started = time.monotonic()
-    masked, accounts = guard.mask(text)
+    mem = memory.get(conv.id)
+    masked, accounts = guard.mask(text, mem.labels)
+    mem.labels = accounts  # this conversation's labels, so ACCOUNT_1 means the same number every turn
 
     if guard.spoken_pin(text):
         # Never act on a turn that carried a PIN, whatever else it asked for. No model sees it.
         conv.waiting_payee_id = None
+        mem.waiting_account = None
         reply, draft, engine = lines.say(customer.lang, "pin_spoken"), None, "rules"
         audit_log.record("pin_spoken_blocked", actor="system", customer_id=customer.id)
     elif settings.claude_enabled:
@@ -37,10 +40,10 @@ def run_turn(db: Session, customer: Customer, conv: Conversation, text: str, sou
             engine = "claude"
         except claude.ClaudeUnavailable as exc:
             log.warning("Claude unavailable, the rules answer: %s", exc)
-            reply, draft = rules.turn(db, customer, conv, masked, accounts, source)
+            reply, draft = rules.turn(db, customer, conv, masked, mem, source)
             engine = "rules"
     else:
-        reply, draft = rules.turn(db, customer, conv, masked, accounts, source)
+        reply, draft = rules.turn(db, customer, conv, masked, mem, source)
         engine = "rules"
 
     db.add(Turn(conversation_id=conv.id, heard=masked, reply=reply, engine=engine,

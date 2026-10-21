@@ -36,7 +36,7 @@ You never move money. draft_transfer and draft_card_block only prepare a request
 
 Prepare at most one request per turn. Never guess an amount or a person. If the customer has not given both, ask for what is missing. A saved person counts as named when the customer uses their nickname or name.
 
-Account numbers reach you as labels like ACCOUNT_1. Pass the label as account_ref. Never ask for a PIN, BVN or card number. If the customer starts to say one, tell them never to say it aloud.
+Account numbers reach you as labels like ACCOUNT_1. A label keeps its meaning for the whole conversation. Pass the label as account_ref; never make one up. Never ask for a PIN, BVN or card number. If the customer starts to say one, tell them never to say it aloud.
 
 If the customer asks to send all or most of their money, ask for the exact amount first. Scammers push people to empty their accounts.
 
@@ -134,8 +134,11 @@ class _ToolRunner:
             self.draft = drafting.new_transfer(self.db, self.customer, amount_kobo=kobo, payee_id=str(args["payee_id"]),
                                                source=self.source, actor="assistant")
         else:
-            number = self.accounts.get(str(args.get("account_ref", "")))
+            ref = str(args.get("account_ref", ""))
+            number = self.accounts.get(ref)
             code = toolbox.bank_code_for(str(args.get("bank", "")))
+            if ref and number is None:
+                return json.dumps({"error": f"Unknown account label {ref}. Ask the customer to say the account number."})
             if number is None or code is None:
                 return json.dumps({"error": "Give a saved payee_id, or a known bank and an ACCOUNT_n label."})
             self.draft = drafting.new_transfer(self.db, self.customer, amount_kobo=kobo, bank_code=code,
@@ -186,7 +189,8 @@ def turn(db: Session, customer: Customer, conv: Conversation, masked: str, accou
             results = []
             for use in uses:
                 try:
-                    output, failed = runner.run(use.name, dict(use.input or {})), False
+                    output = runner.run(use.name, dict(use.input or {}))
+                    failed = output.startswith('{"error"')
                 except Problem as p:
                     output, failed = json.dumps({"error": p.say or p.title}), True
                 results.append({"type": "tool_result", "tool_use_id": use.id, "content": output, "is_error": failed})

@@ -87,7 +87,7 @@ def bank_in_text(text: str) -> str | None:
 
 
 def find_account(customer: Customer, bank_code: str, number: str) -> dict:
-    enquiry = enquire_account(customer.lang, bank_code, number)
+    enquiry = enquire_account(customer.lang, bank_code, number, limit_for=customer.id)
     return {"name": readback.nip_name(enquiry.account_name), "bank": enquiry.bank.short, "last4": enquiry.last4}
 
 

@@ -4,7 +4,7 @@ switched off, has no key, or cannot be reached, so the demo survives bad venue W
 It understands:
   send <amount> to <payee>        "send twenty thousand to Tolu", "abeg send 20k give Mama"
   send money to <payee>, then <amount> on the next turn
-  send <amount> to ACCOUNT_n at <bank>
+  send <amount> to <account number> at <bank>, or the number and bank first, then the amount
   balance                          "what's my balance", "how much I get", "how much dey my account"
   what came in                     "what came in this week", "wetin enter my account", "who send me money"
   block my card                    "block my card", "my card don lost"
@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from ominira import amounts, drafting, lines
 from ominira.assistant import toolbox
+from ominira.assistant.memory import Memory
 from ominira.problems import Problem
 from ominira.tables import Conversation, Customer, Draft, Payee
 
@@ -46,18 +47,18 @@ def _named_payee(text: str, people: list[Payee]) -> Payee | None:
     return None
 
 
-def turn(db: Session, customer: Customer, conv: Conversation, masked: str, accounts: dict[str, str],
+def turn(db: Session, customer: Customer, conv: Conversation, masked: str, mem: Memory,
          source: str = "assistant") -> tuple[str, Draft | None]:
     lang = customer.lang
     text = masked.lower()
     try:
-        return _turn(db, customer, conv, text, accounts, lang, source)
+        return _turn(db, customer, conv, text, mem, lang, source)
     except Problem as p:
         # A refusal from a lookup or a draft (unknown account, bank down): say it, draft nothing.
         return p.say or lines.say(lang, "failed"), None
 
 
-def _turn(db, customer, conv, text, accounts, lang, source):
+def _turn(db, customer, conv, text, mem: Memory, lang, source):
     people = toolbox.payees(db, customer)
 
     if _any(text, r"\b(pulse|pin)\b") and _any(text, _EXPLAIN):
@@ -68,7 +69,7 @@ def _turn(db, customer, conv, text, accounts, lang, source):
         if not cards:
             return lines.say(lang, "no_card"), None
         draft = drafting.new_card_block(db, customer, card_id=cards[0]["card_id"], source=source, actor="assistant")
-        _forget(db, conv)
+        _forget(db, conv, mem)
         return toolbox.drafted_line(db, lang, draft), draft
 
     if _any(text, _CAME_IN):
@@ -76,19 +77,28 @@ def _turn(db, customer, conv, text, accounts, lang, source):
 
     amount = amounts.parse_kobo(text)
     named = _named_payee(text, people)
-    label = next((k for k in accounts if k.lower() in text), None)
+    label = next((m.upper() for m in re.findall(r"\baccount_\d+\b", text) if m.upper() in mem.labels), None)
     bank_code = toolbox.bank_in_text(text) if label else None
     waiting = next((p for p in people if p.id == conv.waiting_payee_id), None)
     sending = _any(text, _SEND)
 
-    if sending or named or label or (waiting and amount):
-        if label and bank_code:
-            if amount is None:
-                return lines.say(lang, "ask_amount_and_account"), None
-            draft = drafting.new_transfer(db, customer, amount_kobo=amount, bank_code=bank_code,
-                                          account_number=accounts[label], source=source, actor="assistant")
-            _forget(db, conv)
-            return toolbox.drafted_line(db, lang, draft), draft
+    if label and not named:
+        if bank_code is None:
+            return lines.say(lang, "ask_bank"), None
+        if amount is None:
+            # Say who it is, and remember the account for the next turn's amount.
+            found = toolbox.find_account(customer, bank_code, mem.labels[label])
+            mem.waiting_account = (label, bank_code)
+            conv.waiting_payee_id = None
+            db.commit()
+            return lines.say(lang, "ask_amount", nick=found["name"]), None
+        return _draft_to_account(db, customer, conv, mem, amount, label, bank_code, lang, source)
+
+    if amount is not None and not named and mem.waiting_account and mem.waiting_account[0] in mem.labels:
+        label, bank_code = mem.waiting_account
+        return _draft_to_account(db, customer, conv, mem, amount, label, bank_code, lang, source)
+
+    if sending or named or (waiting and amount):
         payee = named or (waiting if amount is not None else None)
         if payee is None:
             if amount is None and _any(text, _BALANCE):
@@ -99,11 +109,12 @@ def _turn(db, customer, conv, text, accounts, lang, source):
             return lines.say(lang, "ask_who", names=names), None
         if amount is None:
             conv.waiting_payee_id = payee.id
+            mem.waiting_account = None
             db.commit()
             return lines.say(lang, "ask_amount", nick=payee.nickname), None
         draft = drafting.new_transfer(db, customer, amount_kobo=amount, payee_id=payee.id, source=source,
                                       actor="assistant")
-        _forget(db, conv)
+        _forget(db, conv, mem)
         return toolbox.drafted_line(db, lang, draft), draft
 
     if _any(text, _BALANCE):
@@ -112,7 +123,15 @@ def _turn(db, customer, conv, text, accounts, lang, source):
     return lines.say(lang, "help"), None
 
 
-def _forget(db: Session, conv: Conversation) -> None:
+def _draft_to_account(db, customer, conv, mem, amount, label, bank_code, lang, source):
+    draft = drafting.new_transfer(db, customer, amount_kobo=amount, bank_code=bank_code,
+                                  account_number=mem.labels[label], source=source, actor="assistant")
+    _forget(db, conv, mem)
+    return toolbox.drafted_line(db, lang, draft), draft
+
+
+def _forget(db: Session, conv: Conversation, mem: Memory) -> None:
+    mem.waiting_account = None
     if conv.waiting_payee_id is not None:
         conv.waiting_payee_id = None
         db.commit()
