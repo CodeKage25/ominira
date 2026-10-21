@@ -1,0 +1,25 @@
+[project]
+name = "ominira-gateway"
+version = "0.2.0"
+description = "The Gateway between Ominira's channels and Zenith's core banking."
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic>=1.17.0",
+    "fastapi>=0.156.8",
+    "httpx>=0.28.1",
+    "psycopg[binary]>=3.3.6",
+    "pydantic>=2.14.1",
+    "sqlalchemy>=2.1.5",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=9.1.1"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
