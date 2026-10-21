@@ -21,7 +21,8 @@ interface OminiraApi {
 
     suspend fun startOnboarding(lang: Lang): OnboardingSession
     suspend fun sendSelfie(sessionId: String, spokenDigits: List<Int>?): Boolean
-    suspend fun readIdDocument(sessionId: String): IdDetails
+    // read: what the phone's camera read off the card; it names the new account.
+    suspend fun readIdDocument(sessionId: String, read: IdDetails? = null): IdDetails
     suspend fun checkBvn(sessionId: String, bvn: String): BvnCheck
     // With the customer's consent, Zenith finds the BVN with NIBSS: nothing to say aloud.
     suspend fun confirmBvn(sessionId: String): BvnCheck
@@ -37,6 +38,8 @@ interface OminiraApi {
     suspend fun transactions(accountId: String, limit: Int, direction: String?): List<Txn>
     suspend fun incomeSummary(accountId: String): String
     suspend fun payees(): List<Payee>
+    // Someone new: the bank looks up the name behind the number and reads it back in the draft.
+    suspend fun draftTransferToAccount(bankCode: String, accountNumber: String, amountKobo: Long): Drafted
     suspend fun cards(): List<Card>
 
     suspend fun savePreferences(patch: PreferencePatch)

@@ -52,7 +52,10 @@ class FakeOminiraApi(
     private val perTransferLimitKobo = 100_000_000L
     private val dailyLimitKobo = 500_000_000L
 
-    private val account = Account("ac_1", "Current account", "4567", 0)
+    private val account = Account("ac_1", "Current account", "4567", 0, "2081234567")
+
+    // Full numbers of the saved people, so "someone new" by number finds them offline too.
+    private val numbers = mapOf("2044714471" to "py_tolu", "0123450213" to "py_mama", "8031447710" to "py_musa")
 
     private val people = listOf(
         Payee("py_tolu", "Tolu", "Adebayo Tolulope", "Zenith Bank", "4471", isNew = false, flagged = false),
@@ -111,10 +114,10 @@ class FakeOminiraApi(
         return s.selfie
     }
 
-    override suspend fun readIdDocument(sessionId: String): IdDetails {
+    override suspend fun readIdDocument(sessionId: String, read: IdDetails?): IdDetails {
         pause(500)
         signups.getOrPut(sessionId) { Signup() }.idRead = true
-        return IdDetails("Ronke Adeyemi", "5521", "1961-03-14")
+        return read ?: IdDetails("Ronke Adeyemi", "5521", "1961-03-14")
     }
 
     override suspend fun checkBvn(sessionId: String, bvn: String): BvnCheck {
@@ -282,6 +285,12 @@ class FakeOminiraApi(
             spoken = listOf(w.moneySentence(amountKobo) + ".", w.rbTo(p.name), w.rbBank(p.bank, p.last4), w.rbPulseSend),
         )
         return Drafted.Made(open(readback, p, null))
+    }
+
+    override suspend fun draftTransferToAccount(bankCode: String, accountNumber: String, amountKobo: Long): Drafted {
+        val payeeId = numbers[accountNumber.trim()]
+            ?: return Drafted.Refused("invalid_account", w.accountNotFound)
+        return draftTransfer(payeeId, amountKobo)
     }
 
     override suspend fun draftCardBlock(cardId: String): Drafted {

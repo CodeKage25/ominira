@@ -536,6 +536,34 @@ class Words private constructor(val lang: Lang) {
     val pickUpMyself get() = t("I will pick it up myself", "I go carry am by myself", "Màá lọ gbà á fúnra mi", "Zan karɓa da kaina", "M ga-aga were ya n'onwe m")
     val checkBeforeBlock get() = t("Check before you block", "Check am before you block", "Ẹ yẹ̀ ẹ́ wò kí ẹ tó dí i", "Ku duba kafin ku toshe", "Lelee ya tupu i gbochie ya")
 
+    // Person to person
+    fun moneyIn(amount: String, who: String) = t(
+        "$amount just came in from $who.",
+        "$amount just enter from $who.",
+        "$amount ṣẹ̀ṣẹ̀ wọlé láti ọ̀dọ̀ $who.",
+        "$amount ya shigo yanzu daga $who.",
+        "$amount batara ugbu a site n'aka $who.",
+    )
+    val accountNumber get() = t("Account number", "Account number", "Nọ́ńbà àkáǹtì", "Lambar asusu", "Nọmba akaụntụ")
+    fun accountNumberIs(digits: String) = t(
+        "Your account number is $digits.",
+        "Your account number na $digits.",
+        "Nọ́ńbà àkáǹtì yín ni $digits.",
+        "Lambar asusunku ita ce $digits.",
+        "Nọmba akaụntụ gị bụ $digits.",
+    )
+    val readAccountNumber get() = t("Read my account number", "Read my account number", "Ka nọ́ńbà àkáǹtì mi", "Karanta lambar asusuna", "Gụọ nọmba akaụntụ m")
+    val someoneNew get() = t("Someone new, by account number", "Somebody new, with account number", "Ẹnìkan tuntun, pẹ̀lú nọ́ńbà àkáǹtì", "Sabon mutum, da lambar asusu", "Onye ọhụrụ, site na nọmba akaụntụ")
+    val theirAccountNumber get() = t("Their Zenith account number", "Their Zenith account number", "Nọ́ńbà àkáǹtì Zenith wọn", "Lambar asusunsu na Zenith", "Nọmba akaụntụ Zenith ha")
+    val howMuchNaira get() = t("How much, in naira?", "How much, for naira?", "Èló, ní náírà?", "Nawa, a naira?", "Ego ole, na naịra?")
+    val accountNotFound get() = t(
+        "I could not find that account. Check the number. Nothing was sent.",
+        "I no see that account. Check the number. Nothing comot.",
+        "Mi ò rí àkáǹtì yẹn. Ẹ yẹ nọ́ńbà náà wò. Kò sí owó tó lọ.",
+        "Ban sami wannan asusun ba. Ku duba lambar. Ba a aika komai ba.",
+        "Achọtaghị m akaụntụ ahụ. Lelee nọmba ahụ. Ọ dịghị ihe e zigara.",
+    )
+
     // Balance
     val accountUnreachable get() = t("I could not reach your account.", "I no fit reach your account.", "Mi ò lè dé àkáǹtì yín.", "Ban iya isa ga asusunku ba.", "Enweghị m ike iru akaụntụ gị.")
     val tryInAMinute get() = t("Please try again in a minute.", "Abeg try again after one minute.", "Ẹ jọ̀ọ́ ẹ tún gbìyànjú ní ìṣẹ́jú kan sí i.", "Don Allah ku sake gwadawa bayan minti ɗaya.", "Biko nwaa ọzọ n'otu nkeji.")

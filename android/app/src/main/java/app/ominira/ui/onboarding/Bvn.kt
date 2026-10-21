@@ -51,7 +51,11 @@ fun BvnScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
             val result = runCatching {
                 val id = session.onboardingSession()
                 val answer = session.api.confirmBvn(id)
-                if (answer.match && session.api.completeOnboarding(id)) session.syncAll()
+                if (answer.match && session.api.completeOnboarding(id)) {
+                    session.syncAll()
+                    session.signedIn = true
+                    session.watchIncoming()
+                }
                 answer
             }.getOrNull()
             checking = false

@@ -129,7 +129,7 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
             phase = 3
             session.haptics.lock()
             // The bank still records the step; what is read back is what the camera read.
-            val recorded = runCatching { session.api.readIdDocument(session.onboardingSession()) }.getOrNull()
+            val recorded = runCatching { session.api.readIdDocument(session.onboardingSession(), fromCard) }.getOrNull()
             val id = fromCard
             if (recorded == null || id == null) {
                 problem = w.cardFailed

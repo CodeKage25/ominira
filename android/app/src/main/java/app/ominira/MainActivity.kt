@@ -31,6 +31,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        session.watchIncoming()
+    }
+
+    override fun onPause() {
+        session.stopWatching()
+        super.onPause()
+    }
+
     override fun onDestroy() {
         // Session outlives the activity; drop the old window.
         session.announcer = null

@@ -25,6 +25,8 @@ import app.ominira.voice.Hearing
 import app.ominira.voice.Speaker
 import java.util.Calendar
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -50,7 +52,15 @@ class Session(app: Application) : AndroidViewModel(app) {
     fun activeCloudVoice(): CloudVoice? = if (api is GatewayOminiraApi && !gatewayLost) cloudVoice else null
 
     private fun newApi(): OminiraApi =
-        if (useGateway && BuildConfig.GATEWAY_URL.isNotBlank()) GatewayOminiraApi(BuildConfig.GATEWAY_URL, BuildConfig.GATEWAY_TOKEN, BuildConfig.MOCK_ADMIN_TOKEN)
+        if (useGateway && BuildConfig.GATEWAY_URL.isNotBlank()) {
+            // The phone's own customer once it has signed up; the demo customer before that.
+            GatewayOminiraApi(
+                BuildConfig.GATEWAY_URL,
+                store.getString(K_TOKEN, null) ?: BuildConfig.GATEWAY_TOKEN,
+                BuildConfig.MOCK_ADMIN_TOKEN,
+                onToken = { store.edit().putString(K_TOKEN, it).apply() },
+            )
+        }
         else FakeOminiraApi(lang = Lang.fromCode(store.getString(K_LANG, null)) ?: Lang.En)
 
     val speaker = Speaker(app) { activeCloudVoice() }
@@ -93,6 +103,40 @@ class Session(app: Application) : AndroidViewModel(app) {
     var pendingTurn by mutableStateOf<Turn?>(null)
 
     var onboardingId: String? = null
+
+    // Signed in this session: onboarding finished, or the Pulse PIN opened the app.
+    var signedIn = false
+
+    private var watcher: Job? = null
+
+    // While the app is open, money that lands is announced in the customer's language. Gateway only:
+    // the bank inside the app has no one else to send money.
+    fun watchIncoming() {
+        if (!signedIn || api !is GatewayOminiraApi || watcher?.isActive == true) return
+        watcher = background.launch {
+            var seen: Set<String>? = null
+            while (true) {
+                val came = mainAccount()?.let { a -> runCatching { api.transactions(a.id, 10, "in") }.getOrNull() }
+                if (came != null) {
+                    val before = seen
+                    // The first look only learns what is already there.
+                    if (before != null) {
+                        for (t in came.filter { it.id !in before }) {
+                            haptics.done()
+                            say(spoken.moneyIn(spoken.money(t.amountKobo), t.who))
+                        }
+                    }
+                    seen = (before ?: emptySet()) + came.map { it.id }
+                }
+                delay(10_000)
+            }
+        }
+    }
+
+    fun stopWatching() {
+        watcher?.cancel()
+        watcher = null
+    }
 
     // The ID the customer confirmed, for the PIN's birthday check. Memory only, never stored.
     var idOnFile: IdDetails? = null
@@ -197,8 +241,14 @@ class Session(app: Application) : AndroidViewModel(app) {
 
     fun restart() {
         speaker.stop()
+        // With its own customer, the phone just signs up again: resetting the shared mock bank would wipe
+        // the other phone's customer in a two-phone demo. Only the demo customer resets it.
+        val ownCustomer = store.contains(K_TOKEN)
+        store.edit().remove(K_TOKEN).apply()
+        stopWatching()
+        signedIn = false
         val fresh = newApi()
-        if (fresh is GatewayOminiraApi) background.launch { fresh.resetMock() }
+        if (fresh is GatewayOminiraApi && !ownCustomer) background.launch { fresh.resetMock() }
         api = fresh
         demoCallActive = false
         pendingTurn = null
@@ -259,6 +309,7 @@ class Session(app: Application) : AndroidViewModel(app) {
 
     private companion object {
         const val K_GATEWAY = "gateway"
+        const val K_TOKEN = "customerToken"
         const val K_LOOK = "look"
         const val K_LANG = "lang"
         const val K_MODES = "modes"

@@ -38,6 +38,8 @@ class GatewayOminiraApi(
     token: String,
     private val mockAdminToken: String,
     private val fallback: OminiraApi = FakeOminiraApi(),
+    // The new customer's own token, once onboarding gives it: the phone keeps it.
+    private val onToken: (String) -> Unit = {},
 ) : OminiraApi {
 
     private val base = baseUrl.trim().trimEnd('/')
@@ -148,8 +150,9 @@ class GatewayOminiraApi(
             call("POST", "/onboarding/$sessionId/selfie", body, auth = false).orTrouble().obj.optBoolean("live", true)
         }
 
-    override suspend fun readIdDocument(sessionId: String): IdDetails = orOffline({ fallback.readIdDocument(sessionId) }) {
-        val o = call("POST", "/onboarding/$sessionId/id-document", auth = false).orTrouble().obj
+    override suspend fun readIdDocument(sessionId: String, read: IdDetails?): IdDetails = orOffline({ fallback.readIdDocument(sessionId, read) }) {
+        val body = read?.let { JSONObject().put("full_name", it.fullName).put("nin_last4", it.ninLast4).put("born_on", it.bornOn) }
+        val o = call("POST", "/onboarding/$sessionId/id-document", body, auth = false).orTrouble().obj
         IdDetails(o.getString("full_name"), o.text("nin_last4"), o.text("born_on"))
     }
 
@@ -190,7 +193,10 @@ class GatewayOminiraApi(
         val r = call("POST", "/onboarding/$sessionId/complete", auth = false)
         when {
             r.ok -> {
-                r.obj.text("token").takeIf { it.isNotBlank() }?.let { bearer = it }
+                r.obj.text("token").takeIf { it.isNotBlank() }?.let {
+                    bearer = it
+                    onToken(it)
+                }
                 true
             }
             r.code == "onboarding_incomplete" -> false
@@ -211,7 +217,7 @@ class GatewayOminiraApi(
         val a = call("GET", "/accounts").orTrouble().list
         List(a.length()) { i ->
             val o = a.getJSONObject(i)
-            Account(o.getString("id"), o.text("name").ifBlank { "Current account" }, o.text("last4"), o.getLong("balance_kobo"))
+            Account(o.getString("id"), o.text("name").ifBlank { "Current account" }, o.text("last4"), o.getLong("balance_kobo"), o.text("number"))
         }.also { list -> list.firstOrNull()?.let { accountId = it.id } }
     }
 
@@ -323,6 +329,13 @@ class GatewayOminiraApi(
     override suspend fun draftTransfer(payeeId: String, amountKobo: Long): Drafted =
         orOffline({ fallback.draftTransfer(payeeId, amountKobo) }) {
             val body = JSONObject().put("kind", "transfer").put("amount_kobo", amountKobo).put("payee_id", payeeId).put("source", "app")
+            made(call("POST", "/drafts", body), "I could not prepare that transfer. Nothing was sent.")
+        }
+
+    override suspend fun draftTransferToAccount(bankCode: String, accountNumber: String, amountKobo: Long): Drafted =
+        orOffline({ fallback.draftTransferToAccount(bankCode, accountNumber, amountKobo) }) {
+            val body = JSONObject().put("kind", "transfer").put("amount_kobo", amountKobo)
+                .put("bank_code", bankCode).put("account_number", accountNumber).put("source", "app")
             made(call("POST", "/drafts", body), "I could not prepare that transfer. Nothing was sent.")
         }
 

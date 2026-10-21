@@ -74,6 +74,17 @@ fun BalanceScreen(session: Session, onHome: () -> Unit) {
                 session.say(balanceSay.ifBlank { session.spoken.youHave(a.balanceKobo) })
             })
         }
+        account?.number?.takeIf { it.isNotBlank() }?.let { number ->
+            // Spaced, so it is easy to read out to someone paying in.
+            Hint(w.accountNumber + ": " + number.chunked(3).joinToString(" "))
+            ActionButton(
+                w.readAccountNumber,
+                onClick = { session.say(session.spoken.accountNumberIs(session.spoken.digits(number))) },
+                style = Emphasis.Quiet,
+                icon = Glyphs.Speaker,
+                wide = false,
+            )
+        }
         if (cameIn.isNotBlank()) ChatLine(false, cameIn)
         if (txns.isNotEmpty()) {
             Hint(w.latestInOut)

@@ -24,6 +24,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.ominira.Session
 import app.ominira.core.Account
+import app.ominira.core.Answers
 import app.ominira.core.DraftKind
 import app.ominira.core.Turn
 import app.ominira.ui.kit.BalancePanel
@@ -94,6 +95,16 @@ fun VoiceHomeScreen(session: Session, actions: HomeActions) {
         heard = text
         orb = OrbState.Thinking
         scope.launch {
+            // The full number never goes to the assistant: the phone answers this one itself.
+            if (Answers.asksAccountNumber(text)) {
+                val number = session.mainAccount()?.number.orEmpty()
+                if (number.isNotBlank()) {
+                    reply = w.accountNumberIs(number.chunked(3).joinToString(" "))
+                    orb = OrbState.Idle
+                    ask(s.accountNumberIs(s.digits(number)), s.anythingElse)
+                    return@launch
+                }
+            }
             val turn = runCatching { session.api.turn(text, session.lang) }.getOrNull()
             if (turn == null) {
                 reply = w.couldNotDo

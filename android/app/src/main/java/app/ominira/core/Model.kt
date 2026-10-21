@@ -16,7 +16,8 @@ enum class Lang(val code: String, val nativeName: String, val tag: String) {
 
 enum class Mode(val wire: String) { Voice("voice"), Sign("sign"), Switch("switch"), Plain("plain") }
 
-data class Account(val id: String, val name: String, val last4: String, val balanceKobo: Long)
+// number: the customer's own full account number, to give to someone paying them.
+data class Account(val id: String, val name: String, val last4: String, val balanceKobo: Long, val number: String = "")
 
 data class Balance(val balanceKobo: Long, val say: String)
 

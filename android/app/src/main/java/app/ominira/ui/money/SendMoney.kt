@@ -69,6 +69,9 @@ import kotlinx.coroutines.launch
 
 private enum class Step { Ask, Readback, Pulse, Paused, Approval, Done, Stopped, Unsure }
 
+// Someone new is at Zenith: person to person inside the bank.
+private const val ZENITH = "057"
+
 
 @Composable
 fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit, onSign: () -> Unit) {
@@ -92,6 +95,9 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
     var waiting by remember { mutableStateOf<Job?>(null) }
     var people by remember { mutableStateOf<List<Payee>>(emptyList()) }
     var picked by remember { mutableStateOf<Payee?>(null) }
+    // Someone new, by their Zenith account number.
+    var someoneNew by remember { mutableStateOf(false) }
+    var numberText by remember { mutableStateOf("") }
     var amountText by remember { mutableStateOf("") }
     var misses by remember { mutableIntStateOf(0) }
     val voice = session.talksFirst
@@ -108,6 +114,8 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
         heard = null
         reply = null
         picked = null
+        someoneNew = false
+        numberText = ""
         amountText = ""
         problem = null
         askLead = lead
@@ -203,13 +211,11 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
         }
     }
 
-    fun checkTyped(who: Payee) {
-        val kobo = amountText.toLongOrNull()?.times(100) ?: return
+    fun drafted(make: suspend () -> Drafted) {
         busy = true
         problem = null
-        heard = w.sendTo(Naira.format(kobo), who.nickname)
         scope.launch {
-            val made = runCatching { session.api.draftTransfer(who.id, kobo) }.getOrNull()
+            val made = runCatching { make() }.getOrNull()
             busy = false
             when (made) {
                 is Drafted.Made -> {
@@ -226,6 +232,19 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
                 }
             }
         }
+    }
+
+    fun checkTyped(who: Payee) {
+        val kobo = amountText.toLongOrNull()?.times(100) ?: return
+        heard = w.sendTo(Naira.format(kobo), who.nickname)
+        drafted { session.api.draftTransfer(who.id, kobo) }
+    }
+
+    fun checkNew() {
+        val kobo = amountText.toLongOrNull()?.times(100) ?: return
+        if (numberText.length != 10) return
+        heard = w.sendTo(Naira.format(kobo), numberText)
+        drafted { session.api.draftTransferToAccount(ZENITH, numberText, kobo) }
     }
 
     fun cancelDraft() {
@@ -466,7 +485,40 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
                             onClick = {
                                 prompt.cancel()
                                 picked = p
+                                someoneNew = false
                             },
+                        )
+                    }
+                    ChoiceRow(
+                        title = w.someoneNew,
+                        selected = someoneNew,
+                        minHeight = 64.dp,
+                        onClick = {
+                            prompt.cancel()
+                            picked = null
+                            someoneNew = true
+                        },
+                    )
+                    if (someoneNew) {
+                        DigitField(
+                            label = w.theirAccountNumber,
+                            value = numberText,
+                            onValueChange = { numberText = it },
+                            maxDigits = 10,
+                            grouping = Grouping.None,
+                        )
+                        DigitField(
+                            label = w.howMuchNaira,
+                            value = amountText,
+                            onValueChange = { amountText = it },
+                            maxDigits = 9,
+                            grouping = Grouping.Thousands,
+                        )
+                        ActionButton(
+                            w.checkBeforeSending,
+                            onClick = { checkNew() },
+                            enabled = numberText.length == 10 && (amountText.toLongOrNull() ?: 0L) > 0L,
+                            busy = busy,
                         )
                     }
                     val who = picked

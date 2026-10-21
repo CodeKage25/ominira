@@ -64,6 +64,8 @@ fun UnlockScreen(session: Session, onUnlocked: () -> Unit) {
                 when (answer) {
                     is Unlock.Open -> {
                         unlocked = true
+                        session.signedIn = true
+                        session.watchIncoming()
                         session.haptics.done()
                         session.say(s.unlocked)
                         Tones.done()

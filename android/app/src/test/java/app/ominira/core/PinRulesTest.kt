@@ -39,4 +39,20 @@ class PinRulesTest {
         assertTrue(bank.unlock(PinBlock.seal(pin("4826"))) is Unlock.Open)
         assertTrue(bank.unlock(PinBlock.seal(pin("2075"))) is Unlock.Wrong)
     }
+
+    @Test
+    fun theAccountNumberIsAskedForInAnyLanguage() {
+        assertTrue(Answers.asksAccountNumber("What is my account number?"))
+        assertTrue(Answers.asksAccountNumber("Kí ni nọ́ńbà àkáǹtì mi?"))
+        assertTrue(Answers.asksAccountNumber("Menene lambar asusu na?"))
+        assertFalse(Answers.asksAccountNumber("Send twenty thousand to Tolu"))
+    }
+
+    @Test
+    fun someoneNewByNumberIsLookedUp() = runTest {
+        val bank = FakeOminiraApi(latency = 0)
+        val made = bank.draftTransferToAccount("057", "2044714471", 500_000) as Drafted.Made
+        assertEquals("Adebayo Tolulope", made.draft.readback.name)
+        assertTrue(bank.draftTransferToAccount("057", "9999999990", 500_000) is Drafted.Refused)
+    }
 }

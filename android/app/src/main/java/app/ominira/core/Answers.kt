@@ -130,5 +130,9 @@ object Answers {
         return out.toString()
     }
 
+    // Answered on the phone, never sent to the assistant, which only ever sees an account's last four digits.
+    fun asksAccountNumber(text: String): Boolean =
+        hasPhrase(text, listOf("account number", "my number", "nonba akanti", "nomba akanti", "lambar asusu", "nomba akauntu"))
+
     fun soundsLikePin(text: String): Boolean = mentions(text, "pin", "password") && digits(text).length >= 4
 }
