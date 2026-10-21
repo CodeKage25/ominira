@@ -67,7 +67,7 @@ Every push builds the debug APK on GitHub Actions. Download it from **Actions > 
 
 ## Try it
 
-Demo customer Ronke, Pulse PIN **2 0 7 5**.
+Demo customer Ronke. Sign up and choose your own Pulse PIN, or use the demo PIN **2 0 7 5**.
 
 1. "Send twenty thousand to Tolu", say yes, pulse the PIN: "Sent. Tolu has it."
 2. Settings > Pretend I am on a phone call, then send ₦150,000 to Musa: the scam pause, then Funmi's approval at `/approve?token=demo-approver` on a second phone.
@@ -77,7 +77,7 @@ The full demo path is in [`android/README.md`](android/README.md) and the script
 
 ## What is simulated
 
-There is no live banking at the hackathon. The Zenith core is a mock that behaves like the real rails (NIP response codes, delays, in-progress transfers, failures on demand) and is swapped for the Zenith sandbox in one place. The camera steps in onboarding, the sign-language video call and device passkeys are placeholders. The full list is in each README.
+There is no live banking at the hackathon. The Zenith core is a mock that behaves like the real rails (NIP response codes, delays, in-progress transfers, failures on demand) and is swapped for the Zenith sandbox in one place. The selfie and the ID card use the phone's real cameras, read on the phone with ML Kit; the liveness and document checks behind them, the NIBSS BVN lookup, the sign-language video call and device passkeys are placeholders. The full list is in each README, and what does not work yet is in [`docs/known-issues.md`](docs/known-issues.md).
 
 ## Credits
 

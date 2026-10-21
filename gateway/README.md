@@ -62,7 +62,7 @@ they need no network. `TEST_DATABASE_URL=postgresql+psycopg://...` runs the same
 | Limits | ₦1,000,000 per transfer, ₦5,000,000 a day |
 | Tokens | `demo-customer` (Ronke's phone), `demo-approver` (Funmi), `demo-assistant` (the assistant's read-and-draft identity) |
 
-The app's placeholder PIN block for 2 0 7 5 is `demo-7924` (each digit becomes 9 minus the digit).
+The app's placeholder PIN block for 2 0 7 5 is `demo-7924` (each digit becomes 9 minus the digit). A new sign-up chooses its own PIN with `POST /v1/onboarding/{id}/pin`; the mock core refuses one digit four times, a run up or down, and a repeated pair. `POST /v1/onboarding/{id}/bvn-check` stands in for the NIBSS lookup the customer consents to, and always matches.
 
 Accounts with special behaviour on the mock rails: ten identical digits (07, invalid); any number
 ending `0006`, or UBA `2109876543` (06, dormant); BVN `12345678901` (someone else's). Any other
