@@ -7,8 +7,10 @@ this file disagree, fix one of them in the same change.
 - Money is **kobo as integers** everywhere on the wire (`amount_kobo`, `balance_kobo`). ₦1 = 100 kobo.
 - Auth: `Authorization: Bearer <token>`. Hackathon tokens stand in for device-bound passkeys.
 - Every state-changing call may send `Idempotency-Key: <uuid>`. The Gateway stores the response for
-  24 h per token and replays it for the same key and body; the same key with a different body is
-  `422 idempotency_key_reused`.
+  24 h per token, method and path, and replays it for the same key and body with the header
+  `Idempotent-Replayed: true`; the same key with a different body is `422 idempotency_key_reused`.
+  5xx and 429 answers are not stored, so retrying them with the same key really retries. Use a new
+  key for each new attempt the customer makes (a new PIN entry is a new attempt).
 - Anything a customer hears carries `say`: one line, already in the customer's language.
 - Languages: `en`, `pcm` (Pidgin), `yo`, `ha`, `ig`.
 
@@ -42,7 +44,7 @@ whenever the body has `retry_after`.
 |---|---|---|---|
 | 401 | `unauthorized` | | missing or unknown token |
 | 401 | `pin_incorrect` | `tries_left` (0 means locked) | Pulse PIN did not match |
-| 403 | `forbidden` | | wrong role for this call |
+| 403 | `forbidden` | `say` | wrong role for this call |
 | 404 | `not_found`, `payee_not_found`, `card_not_found` | | |
 | 409 | `pause_required` | `draft_id` | scam pause; answer with pause-answer |
 | 409 | `readback_mismatch` | `readback`, `readback_hash` | read the new readback to the customer, then confirm with the new hash |
@@ -55,11 +57,12 @@ whenever the body has `retry_after`.
 | 410 | `approval_expired` | `draft_id` | approver did not answer within 15 minutes |
 | 413 / 415 / 422 | `audio_too_long` / `audio_expected` / `audio_too_short` | | speech uploads |
 | 422 | `invalid_request` | `errors` | validation |
+| 422 | `idempotency_key_reused` | | same Idempotency-Key, different body |
 | 422 | `invalid_amount`, `invalid_account`, `account_dormant`, `unknown_bank` | | |
 | 422 | `limit_exceeded` | `limit` (`per_transaction` or `daily`), `max_kobo` or `remaining_today_kobo` | |
 | 422 | `insufficient_funds`, `failed` | `zenith_code` on `failed` | definite "not sent" |
 | 429 | `rate_limited` | `retry_after` | |
-| 503 | `bank_unavailable` | `retry_after`, `zenith_code` | definite "not sent"; the draft stays open and can be confirmed again |
+| 503 | `bank_unavailable` | `retry_after`, `zenith_code` | definite "not sent"; the draft stays open and can be confirmed again. `zenith_code` is the NIP code, or `"timeout"` when the request never reached Zenith |
 | 503 | `speech_unavailable` | `provider_code` | use the phone's own voice |
 
 ## Drafts and the confirm gate
@@ -108,7 +111,7 @@ canonical meaning sorted keys and `(",", ":")` separators. Clients never compute
 ```
 
 `kind` is `transfer` or `card_block`. For `card_block`, `name` is `"Card ending 8830"`, `bank` is
-`"Zenith Bank"`, `amount_kobo` is null. `source` is `app`, `assistant`, `voice` or `ussd`.
+`"Zenith Bank"`, `account_last4` is the card's last four, and `amount_kobo` and `amount_text` are null. `source` is `app`, `assistant`, `voice` or `ussd`.
 `say` holds the latest outcome line once there is one.
 
 ## Endpoints
@@ -124,11 +127,11 @@ canonical meaning sorted keys and `(",", ":")` separators. Clients never compute
 
 | Call | Body | 2xx response |
 |---|---|---|
-| `POST /v1/onboarding/sessions` | | `201 {"id": "ob_...", "liveness_digits": [4, 1, 9, 0]}` |
-| `POST /v1/onboarding/{id}/selfie` | `{"spoken_digits": [4,1,9,0]}` (optional) | `{"live": true}` |
+| `POST /v1/onboarding/sessions` | `{"lang": "pcm"}` (optional: the language picked on the first screen) | `201 {"id": "ob_...", "liveness_digits": [4, 1, 9, 0]}`. Later `say` lines use that language, and `complete` saves it as the customer's `lang` |
+| `POST /v1/onboarding/{id}/selfie` | `{"spoken_digits": [4,1,9,0]}` (optional) | `{"live": true}`; `false` when the digits sent do not match |
 | `POST /v1/onboarding/{id}/id-document` | | `{"full_name": "Ronke Adeyemi", "nin_last4": "5521", "born_on": "1961-03-14"}` |
-| `POST /v1/onboarding/{id}/bvn` | `{"bvn": "22212345678"}` | `{"match": true, "say": "..."}` (`match` false for `12345678901`) |
-| `POST /v1/onboarding/{id}/complete` | | `{"customer_id": "cus_ronke", "token": "demo-customer"}` or `409 onboarding_incomplete` |
+| `POST /v1/onboarding/{id}/bvn` | `{"bvn": "22212345678"}` | `{"match": true, "say": "..."}` (`match` false for `12345678901`; not 11 digits is `422 invalid_request`) |
+| `POST /v1/onboarding/{id}/complete` | | `{"customer_id": "cus_ronke", "token": "demo-customer"}`, or `409 onboarding_incomplete` until the BVN matched (and the selfie, if sent, was live) |
 
 ### Sign in (customer)
 
@@ -142,7 +145,7 @@ The pilot replaces it with an ISO 9564 block encrypted on the device with Zenith
 | Call | Response |
 |---|---|
 | `GET /v1/accounts` | `[{"id": "ac_1", "name": "Current account", "last4": "4567", "balance_kobo": 84230000}]` |
-| `GET /v1/accounts/{id}/balance` | `{"balance_kobo": 84230000, "say": "You have eight hundred and forty-two thousand, three hundred naira."}` |
+| `GET /v1/accounts/{id}/balance` | `{"balance_kobo": 84230000, "say": "You have eight hundred and forty-two thousand, three hundred naira in your current account."}` |
 | `GET /v1/accounts/{id}/transactions?limit=20&direction=in\|out` | `[{"id", "who", "amount_kobo", "incoming", "at", "reference"}]`, newest first |
 | `GET /v1/accounts/{id}/income-summary` | `{"say": "This week ₦... came in, from ..."}` |
 | `GET /v1/banks` | `[{"code": "057", "name": "Zenith Bank Plc", "short": "Zenith Bank"}]` |
@@ -155,7 +158,7 @@ The pilot replaces it with an ISO 9564 block encrypted on the device with Zenith
 | Call | Who | Body | Response |
 |---|---|---|---|
 | `POST /v1/drafts` | customer, assistant | `{"kind": "transfer", "amount_kobo", "payee_id"}` or `{"kind": "transfer", "amount_kobo", "bank_code", "account_number"}` or `{"kind": "card_block", "card_id"}`; optional `"source"` | `201` draft |
-| `GET /v1/drafts/{id}` | customer | | draft (re-checks `processing`, expires stale approvals) |
+| `GET /v1/drafts/{id}` | customer | | draft (re-checks `processing`, expires drafts older than 10 minutes and stale approvals) |
 | `POST /v1/drafts/{id}/confirm` | customer | `{"readback_hash", "pin_block", "call_active": false}` | see below |
 | `POST /v1/drafts/{id}/pause-answer` | customer | `{"answer": "stop"\|"chose_myself"}` | `{"status": "cancelled"\|"awaiting_confirm", "say"}` |
 | `POST /v1/drafts/{id}/cancel` | customer | | `{"status": "cancelled", "say"}` |
@@ -180,6 +183,12 @@ While `awaiting_approval`, the client polls `GET /v1/drafts/{id}` every 2 s unti
 | `GET /v1/approvals` | approver | `[{"id", "status", "customer", "amount_kobo", "amount_text", "to", "bank", "account_last4", "asked_at", "draft_status"}]`, newest first, never the balance |
 | `POST /v1/approvals/{id}/decision` `{"decision": "approve"\|"decline"}` | approver | `{"approval": "approved"\|"declined", "status", "say", "reference"?, "code"?}` |
 
+Just before an approved transfer moves, the Gateway runs the name enquiry and the limits again. If
+either changed, nothing moves: the answer is `{"approval": "approved", "status": "awaiting_confirm"
+or "failed", "say", "code": "readback_mismatch" | "bank_unavailable" | "limit_exceeded"}`, and the
+customer confirms again (a new readback, a new PIN, and a new approval) if they still want it.
+A decision on a request that waited more than 15 minutes is `410 approval_expired`.
+
 ### Preferences (customer)
 
 `GET /v1/me/preferences`, `PUT /v1/me/preferences` (partial):
@@ -195,30 +204,40 @@ Changing `lang` changes the language of every later `say`.
 | `POST /v1/conversations/{id}/turns` | `{"text": "send twenty thousand to Tolu"}` | `{"heard", "reply", "say", "engine": "claude"\|"rules", "draft": draft\|null}` |
 | `POST /v1/conversations/{id}/voice-turns` | raw `audio/wav` body | as above plus `"reply_audio_url"` (nullable) and `"timings"` |
 
-`heard` is the text with account numbers and BVNs masked. A turn that contains a spoken PIN
+`heard` is the text with account numbers and BVNs masked (`ACCOUNT_1`, `[BVN]`, `[PIN]`).
+`engine` is `rules` for a turn stopped by the PIN guard and for a voice turn where nothing was heard. A turn that contains a spoken PIN
 ("my PIN is 2075") is caught in code before any model call: no draft, and `say` tells the customer
 never to say it aloud. "Send money to Tolu" then "twenty thousand" works across two turns.
 
 ### Speech (YarnGPT behind the Gateway; the phone never holds the key)
 
-| Call | Response |
-|---|---|
-| `GET /v1/speech/status` | `{"enabled": bool, "provider": "yarngpt"\|null}` |
-| `POST /v1/speech/say` `{"text", "lang"?}` | `{"audio_url", "expires_in": 300, "lang", "voice"}` |
-| `POST /v1/speech/listen` raw `audio/wav` | `{"text", "seconds", "say"}`, or `{"text": "", "pin_spoken": true, "say"}` |
+| Call | Who | Response |
+|---|---|---|
+| `GET /v1/speech/status` | any token | `{"enabled": bool, "provider": "yarngpt"\|null}` |
+| `POST /v1/speech/say` `{"text", "lang"?}` | customer | `{"audio_url", "expires_in": 300, "lang", "voice"}` (`voice` may be null: YarnGPT's default) |
+| `POST /v1/speech/listen` raw `audio/wav` | customer | `{"text", "seconds", "say"}`, or `{"text": "", "pin_spoken": true, "seconds", "say"}` |
+
+Recordings: 1 KB to 4 MB, any `audio/*` type. `say` is limited to 90 a minute and listening
+(including voice turns) to 30 a minute per customer.
 
 ### Audit
 
-`GET /v1/audit` (customer: own entries), `GET /v1/audit/verify` → `{"ok": true, "entries": n}` or
-`{"ok": false, "broken_at": seq}`.
+`GET /v1/audit?limit=50` (customer: own entries, newest first) →
+`[{"seq", "at", "actor", "action", "draft_id", "detail", "entry_hash"}]`.
+`GET /v1/audit/verify` (any token) → `{"ok": true, "entries": n}` or `{"ok": false, "broken_at": seq, "entries": n}`.
 
 ### Mock admin (rehearsals only; off when `MOCK_ADMIN=false`; needs `X-Mock-Admin` when `MOCK_ADMIN_TOKEN` is set)
 
 | Call | |
 |---|---|
-| `GET /_mock/state` | balances, cards, controls |
-| `POST /_mock/reset` | back to the demo world |
-| `POST /_mock/controls` `{"profile": "realistic"\|"fast"\|"flaky", "banks_down": ["999992"], "next_transfer_code": "09"}` | steer the mock core |
+| `GET /_mock/state` | `{"controls", "balances": [{"account_id", "last4", "balance_kobo"}], "cards": [{"id", "last4", "status"}], "pin_tries_left": {ref: n}}` |
+| `POST /_mock/reset` | back to the demo world, and the controls back to `ZENITH_PROFILE`; answers as `state` |
+| `POST /_mock/controls` `{"profile": "realistic"\|"fast"\|"flaky", "banks_down": ["999992"], "next_transfer_code": "09"}` | steer the mock core; answers as `state` |
+
+Optional control fields: `next_transfer_timeout` (`"after_send"`: the next transfer goes through but
+its answer is lost; `"before_send"`: it never arrives), `settle_after_s` (how long a `09` transfer
+stays in progress), `pending_rate` and `failure_rate` (0 to 1). A `profile` brings its own defaults
+first. `null` clears `next_transfer_code` and `next_transfer_timeout`.
 
 ## The demo world
 
