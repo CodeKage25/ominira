@@ -1,0 +1,161 @@
+"""Idempotency-Key for state-changing calls.
+
+The first response to a key is kept for 24 hours, scoped to the caller's token, method and path,
+and replayed for a repeat with the same body. The same key with a different body is
+422 idempotency_key_reused. Two requests with the same key at once are serialised, so the second
+gets the replay instead of running again.
+
+5xx and 429 answers are not kept: a retry after "bank unavailable" or "slow down" really retries.
+
+This protects the client's view of a call. Money is protected one level down as well: the gate
+sends Zenith the key "{draft_id}:{attempt}", so even two different client keys for one draft can
+never pay twice.
+"""
+
+import asyncio
+import hashlib
+from datetime import timedelta
+
+from sqlalchemy import delete
+from starlette.concurrency import run_in_threadpool
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+from ominira.database import SessionFactory, utcnow
+from ominira.problems import Problem
+from ominira.tables import StoredResponse
+
+TTL = timedelta(hours=24)
+METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+_SKIP_HEADERS = {b"content-length", b"date", b"server"}
+
+
+def _load(scope_key: str) -> StoredResponse | None:
+    with SessionFactory() as db:
+        row = db.get(StoredResponse, scope_key)
+        if row is not None and utcnow() - row.created_at > TTL:
+            db.execute(delete(StoredResponse).where(StoredResponse.scope_key == scope_key))
+            db.commit()
+            return None
+        return row
+
+
+def _save(row: StoredResponse) -> None:
+    with SessionFactory() as db:
+        if db.get(StoredResponse, row.scope_key) is None:
+            db.add(row)
+            db.commit()
+
+
+class _KeyLocks:
+    """One asyncio lock per key in flight, dropped when nobody holds or waits for it."""
+
+    def __init__(self) -> None:
+        self._locks: dict[str, tuple[asyncio.Lock, int]] = {}
+
+    def get(self, key: str) -> asyncio.Lock:
+        lock, users = self._locks.get(key, (None, 0))
+        if lock is None:
+            lock = asyncio.Lock()
+        self._locks[key] = (lock, users + 1)
+        return lock
+
+    def release(self, key: str) -> None:
+        lock, users = self._locks[key]
+        if users <= 1:
+            del self._locks[key]
+        else:
+            self._locks[key] = (lock, users - 1)
+
+
+async def _send_problem(send: Send, problem: Problem) -> None:
+    response = problem.response()
+    await send({"type": "http.response.start", "status": response.status_code, "headers": response.raw_headers})
+    await send({"type": "http.response.body", "body": response.body})
+
+
+class IdempotencyMiddleware:
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+        self.locks = _KeyLocks()
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or scope["method"] not in METHODS:
+            await self.app(scope, receive, send)
+            return
+        headers = dict(scope["headers"])
+        client_key = headers.get(b"idempotency-key", b"").decode("latin-1").strip()
+        if not client_key:
+            await self.app(scope, receive, send)
+            return
+        if len(client_key) > 200:
+            await _send_problem(send, Problem(422, "invalid_request", "Idempotency-Key is too long"))
+            return
+
+        body = bytearray()
+        while True:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                return
+            body += message.get("body", b"")
+            if not message.get("more_body"):
+                break
+        body = bytes(body)
+
+        auth = headers.get(b"authorization", b"")
+        scope_key = hashlib.sha256(b"\n".join([
+            auth, scope["method"].encode(), scope["path"].encode(), client_key.encode(),
+        ])).hexdigest()
+        request_hash = hashlib.sha256(body).hexdigest()
+
+        lock = self.locks.get(scope_key)
+        try:
+            async with lock:
+                await self._handle(scope, send, body, scope_key, request_hash)
+        finally:
+            self.locks.release(scope_key)
+
+    async def _handle(self, scope: Scope, send: Send, body: bytes, scope_key: str, request_hash: str) -> None:
+        stored = await run_in_threadpool(_load, scope_key)
+        if stored is not None:
+            if stored.request_hash != request_hash:
+                await _send_problem(send, Problem(422, "idempotency_key_reused",
+                                                  "This Idempotency-Key was used for a different request"))
+                return
+            replay_headers = [(k.encode("latin-1"), v.encode("latin-1")) for k, v in stored.headers.items()]
+            replay_headers += [(b"idempotent-replayed", b"true"),
+                               (b"content-length", str(len(stored.body)).encode())]
+            await send({"type": "http.response.start", "status": stored.status_code, "headers": replay_headers})
+            await send({"type": "http.response.body", "body": stored.body})
+            return
+
+        sent_body = False
+
+        async def replay_receive() -> Message:
+            nonlocal sent_body
+            if not sent_body:
+                sent_body = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            return {"type": "http.disconnect"}
+
+        status = 500
+        kept_headers: dict[str, str] = {}
+        chunks: list[bytes] = []
+
+        async def capture(message: Message) -> None:
+            nonlocal status
+            if message["type"] == "http.response.start":
+                status = message["status"]
+                for k, v in message.get("headers", []):
+                    if k.lower() not in _SKIP_HEADERS:
+                        kept_headers[k.decode("latin-1").lower()] = v.decode("latin-1")
+            elif message["type"] == "http.response.body":
+                chunks.append(message.get("body", b""))
+            await send(message)
+
+        await self.app(scope, replay_receive, capture)
+
+        if status < 500 and status != 429:
+            await run_in_threadpool(_save, StoredResponse(
+                scope_key=scope_key, request_hash=request_hash, status_code=status,
+                headers=kept_headers, body=b"".join(chunks),
+            ))
