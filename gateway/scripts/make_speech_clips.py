@@ -16,7 +16,12 @@ kept: the names it reads from `s.`, `spoken.` and the bank inside the app.
 Writes android/app/src/main/assets/audio/<lang>/<key>.mp3 plus index.json, which maps the key of
 each line, and of its English twin, to its clip. The key is ClipKey.of(text) in the app: a changed
 line gets a new clip, an unchanged one is never made twice, and clips no line uses are deleted.
-With ffmpeg on the PATH, each clip is re-encoded to 32 kbps mono.
+With ffmpeg on the PATH, each clip is re-encoded to 32 kbps mono, and a line too short for YarnGPT
+is said a few times over and cut at its first pause.
+
+YarnGPT allows 120 calls a day, shared with the Gateway's live voice. Each run makes at most
+--max-clips (default 100, leaving some for the live voice) and stops cleanly at the daily limit;
+run it again the next day and it carries on where it stopped.
 """
 
 import argparse
@@ -67,9 +72,11 @@ def spoken_names() -> set[str]:
     names = set(_ALSO)
     for path in SOURCES.rglob("*.kt"):
         text = path.read_text(encoding="utf-8")
-        names |= set(_SPOKEN.findall(text)) | set(_PICK.findall(text))
+        # In the bank, s is a sign-up record and w the customer's Words.
         if path.name == "FakeOminiraApi.kt":
             names |= set(_BANK.findall(text))
+        else:
+            names |= set(_SPOKEN.findall(text)) | set(_PICK.findall(text))
     return names
 
 
@@ -107,21 +114,58 @@ def squeeze(audio: bytes) -> bytes:
     return small if len(small) < len(audio) else audio
 
 
-def make(text: str, lang: str, voice: str | None) -> bytes:
+# YarnGPT bills at least 20 characters and does not count padding dots.
+SHORT = 24
+
+
+def first_pause_s(audio: bytes) -> float | None:
+    """Where the first pause starts, after some speech. None when ffmpeg finds none."""
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / "in.mp3"
+        src.write_bytes(audio)
+        done = subprocess.run(["ffmpeg", "-hide_banner", "-i", str(src), "-af", "silencedetect=noise=-35dB:d=0.25",
+                               "-f", "null", "-"], capture_output=True, text=True)
+    starts = [float(m) for m in re.findall(r"silence_start: ([\d.]+)", done.stderr)]
+    return next((t for t in starts if t > 0.3), None)
+
+
+def cut(audio: bytes, seconds: float) -> bytes:
+    with tempfile.TemporaryDirectory() as tmp:
+        src, dst = Path(tmp) / "in.mp3", Path(tmp) / "out.mp3"
+        src.write_bytes(audio)
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(src), "-t", f"{seconds:.2f}", str(dst)], check=True)
+        return dst.read_bytes()
+
+
+def fetch(text: str, lang: str, voice: str | None) -> bytes:
     ticket = yarngpt.prepare(text, lang, output_format="mp3", voice=voice)
     audio = yarngpt.download(ticket["audio_url"])
     if not audio:
         raise yarngpt.SpeechUnavailable("empty_audio", "YarnGPT returned no audio")
-    return squeeze(audio)
+    return audio
+
+
+def make(text: str, lang: str, voice: str | None) -> bytes:
+    if len(text) >= SHORT:
+        return squeeze(fetch(text, lang, voice))
+    if not shutil.which("ffmpeg"):
+        raise yarngpt.SpeechUnavailable("too_short", "needs ffmpeg to cut a repeated short line")
+    said = " ".join([text.rstrip(".") + "."] * max(2, -(-SHORT // len(text)) + 1))
+    audio = fetch(said, lang, voice)
+    pause = first_pause_s(audio)
+    if pause is None:
+        raise yarngpt.SpeechUnavailable("no_pause", "could not find where the first saying ends")
+    return squeeze(cut(audio, pause + 0.15))
 
 
 def main(argv: list[str] | None = None) -> int:
-    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT, help=f"folder for the clips (default {DEFAULT_OUT})")
     ap.add_argument("--only", nargs="*", default=["yo", "ha", "ig"], choices=LANGS)
     ap.add_argument("--lines", type=Path, help="JSON from ClipLinesTest, instead of running it")
     ap.add_argument("--voice", action="append", default=[], help="pin a voice for this run, e.g. yo=idera")
+    ap.add_argument("--max-clips", type=int, default=100, help="most clips this run makes (default 100 of 120 a day)")
     ap.add_argument("--dry-run", action="store_true", help="count what would be made, spend nothing")
     args = ap.parse_args(argv)
 
@@ -135,13 +179,15 @@ def main(argv: list[str] | None = None) -> int:
         settings.yarngpt_voices = ",".join([settings.yarngpt_voices, *args.voice]).strip(",")
 
     failed = 0
+    budget = args.max_clips
+    stopped = None
     for lang in args.only:
         record, index = wanted(rows, lang, spoken)
         folder = args.out / lang
         missing = {k: t for k, t in record.items() if not (folder / f"{k}.mp3").exists()}
         chars = sum(len(t) for t in missing.values())
         print(f"{lang:3}  {len(record)} lines, {len(missing)} to make ({chars:,} characters)")
-        if args.dry_run:
+        if args.dry_run or stopped:
             continue
 
         folder.mkdir(parents=True, exist_ok=True)
@@ -149,9 +195,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f"     voice {voice or 'default'} ({source})")
         made = 0
         for n, (key, text) in enumerate(missing.items(), 1):
+            if budget <= 0:
+                stopped = f"made the {args.max_clips} clips this run allows"
+                break
+            budget -= 1
             try:
                 audio = make(text, lang, voice)
             except yarngpt.SpeechUnavailable as err:
+                if err.code == "RATE_LIMITED":
+                    stopped = "YarnGPT's daily limit is reached"
+                    break
                 print(f"     FAILED {key}: {err}  {text[:60]}")
                 failed += 1
                 index = {k: f for k, f in index.items() if f != f"{key}.mp3"}
@@ -170,6 +223,9 @@ def main(argv: list[str] | None = None) -> int:
         size = sum(p.stat().st_size for p in folder.glob("*.mp3"))
         print(f"     made {made}, removed {len(stale)}, {size / 1_000_000:.1f} MB in {folder}")
 
+    if stopped:
+        print(f"\nStopped: {stopped}. The clips made are kept; run again tomorrow to make the rest.")
+        return 1
     if failed:
         print(f"\n{failed} clips failed. Run again: only the missing ones are made.")
         return 1
