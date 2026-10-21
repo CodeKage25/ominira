@@ -1,0 +1,93 @@
+package app.ominira.core
+
+/**
+ * The few app lines that change with the customer's language. Everything about money comes from
+ * the Gateway's `say`, already in the right language, so this table stays small.
+ * Yorùbá, Hausa and Igbo need a native speaker's check before the demo; Pulse PIN coaching falls
+ * back to English for them until then.
+ */
+object Lines {
+
+    fun hello(lang: Lang): String = when (lang) {
+        Lang.En -> "Hello. How can I help?"
+        Lang.Pcm -> "How far? Wetin you wan do?"
+        Lang.Yo -> "Ẹ káàbọ̀. Kí ni kí n ṣe fún yín?"
+        Lang.Ha -> "Sannu. Me zan yi muku?"
+        Lang.Ig -> "Nnọọ. Gịnị ka m ga-emere gị?"
+    }
+
+    fun whichLanguage(lang: Lang): String = when (lang) {
+        Lang.En -> "Which language?"
+        Lang.Pcm -> "Which language you want?"
+        Lang.Yo -> "Èdè wo ni ẹ fẹ́?"
+        Lang.Ha -> "Wane harshe kuke so?"
+        Lang.Ig -> "Kedu asụsụ ị chọrọ?"
+    }
+
+    fun carryOn(lang: Lang): String = when (lang) {
+        Lang.En -> "Continue in English"
+        Lang.Pcm -> "Make we continue"
+        Lang.Yo -> "Ẹ jẹ́ ká tẹ̀síwájú"
+        Lang.Ha -> "Mu ci gaba"
+        Lang.Ig -> "Ka anyị gaa n’ihu"
+    }
+
+    /** [hour] is the local hour, 0 to 23. English and Pidgin follow the time of day. */
+    fun greeting(lang: Lang, name: String, hour: Int): String {
+        val part = when (hour) {
+            in 0..11 -> "morning"
+            in 12..16 -> "afternoon"
+            else -> "evening"
+        }
+        return when (lang) {
+            Lang.En, Lang.Pcm -> "Good $part, $name."
+            Lang.Yo -> "Ẹ káàsán, $name."
+            Lang.Ha -> "Barka da rana, $name."
+            Lang.Ig -> "Ehihie ọma, $name."
+        }
+    }
+
+    fun whatToDo(lang: Lang): String = when (lang) {
+        Lang.En -> "What do you want to do?"
+        Lang.Pcm -> "Wetin you wan do?"
+        Lang.Yo -> "Kí ni ẹ fẹ́ ṣe?"
+        Lang.Ha -> "Me kuke so ku yi?"
+        Lang.Ig -> "Gịnị ka ị chọrọ ime?"
+    }
+
+    fun pulseExplain(lang: Lang): String = when (lang) {
+        Lang.Pcm -> "Your Pulse PIN na by feeling, so nobody fit see am. Tap the middle of the screen make e start. " +
+            "The phone go dey count with small buzz, one buzz for each number, and e dey start from different number every time. " +
+            "Zero na strong double buzz, so after am na one, then two, like that. " +
+            "When the count reach your number, tap. Do am four times."
+        else -> "Your Pulse PIN is entered by feel, so nobody can see it. Tap the middle of the screen to start. " +
+            "The phone counts with soft buzzes, one buzz for each number, and it starts at a different number every time. " +
+            "Zero is a strong double buzz, so after it comes one, then two, and so on. " +
+            "When the count reaches your digit, tap. Do that four times."
+    }
+
+    fun pulseShort(lang: Lang): String = when (lang) {
+        Lang.Pcm -> "Your Pulse PIN. Tap make e start. Zero na the strong double buzz."
+        else -> "Your Pulse PIN. Tap to start. Zero is the strong double buzz."
+    }
+
+    fun practiceStart(lang: Lang): String = when (lang) {
+        Lang.Pcm -> "Make we practise. Nothing go send. Tap to start, wait for the strong double buzz, that one na zero, " +
+            "then count one, two, three, and tap. Zero go also make small sound so you fit learn am."
+        else -> "Let's practise. Nothing is sent. Tap to start, wait for the strong double buzz, that's zero, " +
+            "then count one, two, three, and tap. Zero also makes a sound while you practise."
+    }
+
+    fun practiceResult(lang: Lang, digit: Int): String {
+        val word = Naira.words(digit.toLong())
+        return when {
+            digit == 3 && lang == Lang.Pcm -> "Na three be that. You don get am. Tap Done when you ready."
+            digit == 3 -> "That was three. You've got it. Tap Done when you're ready."
+            lang == Lang.Pcm -> "Na $word be that. Wait for the strong double buzz, that one na zero, then count one, two, three, and tap."
+            else -> "That was $word. Wait for the strong double buzz, that's zero, then count one, two, three, and tap."
+        }
+    }
+
+    /** What a customer hears after saying a PIN out loud. Nothing they said is kept. */
+    const val PIN_SPOKEN = "Please never say your PIN out loud. I did not keep it. Your Pulse PIN is entered by feel, on the screen."
+}
