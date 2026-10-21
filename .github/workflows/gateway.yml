@@ -1,0 +1,19 @@
+name: Gateway
+
+on:
+  push:
+    paths: ["gateway/**", "docs/api.md", ".github/workflows/gateway.yml"]
+  pull_request:
+    paths: ["gateway/**", "docs/api.md", ".github/workflows/gateway.yml"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gateway
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked
+      - run: uv run pytest -q
