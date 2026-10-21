@@ -31,10 +31,6 @@ import app.ominira.ui.theme.Om
 import app.ominira.voice.rememberEars
 import kotlinx.coroutines.launch
 
-/**
- * Plain home, also the home for sign mode: one question, big written answers, bigger type,
- * and "Or just say it" for anyone who would rather talk. Every reply is written as well as said.
- */
 @Composable
 fun PlainHomeScreen(session: Session, actions: HomeActions) {
     val scope = rememberCoroutineScope()

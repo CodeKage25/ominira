@@ -35,7 +35,6 @@ import app.ominira.ui.theme.Glyphs
 import app.ominira.ui.theme.Om
 import kotlinx.coroutines.launch
 
-/** Block my card: one readback, "Say yes", one Pulse PIN, then where the new card goes. */
 @Composable
 fun BlockCardScreen(session: Session, onHome: () -> Unit) {
     val scope = rememberCoroutineScope()
@@ -119,7 +118,6 @@ fun BlockCardScreen(session: Session, onHome: () -> Unit) {
         readAsked += 1
     }
 
-    // Read the readback on arrival and whenever the customer comes back from the PIN.
     LaunchedEffect(readAsked) {
         val d = draft
         if (readAsked == 0 || d == null || blocked) return@LaunchedEffect
@@ -157,7 +155,6 @@ fun BlockCardScreen(session: Session, onHome: () -> Unit) {
                     readAsked += 1
                 }
                 is Outcome.NotSent -> {
-                    // Back to the readback either way; with canRetry the same draft can be confirmed again.
                     problem = outcome.say
                     pulse = false
                     if (outcome.canRetry) readAsked += 1 else session.say(outcome.say)

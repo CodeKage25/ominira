@@ -65,20 +65,11 @@ import app.ominira.voice.rememberPrompt
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
-/** Where the customer is in sending money. */
 private enum class Step { Ask, Readback, Pulse, Paused, Approval, Done, Stopped, Unsure }
 
 private const val PAUSE_QUESTION = "Is someone on the phone telling you to send this?"
 private const val NEVER_CALLS = "Zenith will never call you to move money. If anyone on this call told you to do this, hang up now."
 
-/**
- * Send money: ask, hear the readback, say yes, pulse the PIN, hear the outcome. The confirm gate
- * may answer with a scam pause or a co-approver wait; both stay on this screen so the customer
- * never loses their place.
- *
- * In voice mode every step is asked and answered out loud. Without voice, the saved people and an
- * amount field do the same job by touch.
- */
 @Composable
 fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit, onSign: () -> Unit) {
     val scope = rememberCoroutineScope()
@@ -185,7 +176,6 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
         }
     }
 
-    /** A spoken or typed request goes to the assistant, which may make a draft. */
     fun request(text: String) {
         heard = text
         busy = true
@@ -209,7 +199,6 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
         }
     }
 
-    /** Without voice: the picked person and the typed amount become a draft directly. */
     fun checkTyped(who: Payee) {
         val kobo = amountText.toLongOrNull()?.times(100) ?: return
         busy = true
@@ -277,11 +266,10 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
                 return@launch
             }
             if (session.callActive()) {
-                // The most important line in the flow: it finishes before anything else is said.
+                // Most important line: it finishes before anything else is said.
                 session.say(NEVER_CALLS)
                 session.speaker.awaitQuiet()
             }
-            // After "chose myself" the gate wants a fresh PIN block, so the customer pulses again.
             handle(answer)
         }
     }
@@ -292,7 +280,7 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
         scope.launch {
             val answer = runCatching { session.api.cancel(d.id) }.getOrNull()
             if (answer == null || answer is Outcome.NotSent) {
-                // Not cancelled: it is still with the approver, so keep listening for the answer.
+                // Cancel failed: it is still with the approver, so keep waiting.
                 session.say(answer?.say ?: "I could not reach the bank to cancel it. It is still waiting. Try again.")
                 waiting = scope.launch { handle(session.api.awaitDecision(d.id)) }
             } else {
@@ -336,7 +324,6 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
         }
     }
 
-    // One voice at a time: each step is said once, then (in voice mode) the microphone opens.
     LaunchedEffect(step, draft?.readbackHash) {
         misses = 0
         val d = draft
@@ -379,7 +366,7 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
             onDoneAction = onHome,
             onDigits = { digits ->
                 val current = draft ?: return@PulseStep
-                // Sealed at once and sent; the digits are not kept.
+                // Seal at once; the digits are never kept.
                 val block = PinBlock.seal(digits)
                 busy = true
                 problem = null
@@ -540,10 +527,8 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
     }
 }
 
-/** "₦20,000", as the Gateway wrote it, or worked out from the kobo. Null for a card block. */
 private fun amountOf(rb: Readback): String? = rb.amountText ?: rb.amountKobo?.let { Naira.format(it) }
 
-/** Money sent: a large tick, the outcome line as a heading, and what went where. */
 @Composable
 private fun DoneBlock(line: String, draft: Draft?) {
     Column(

@@ -3,17 +3,13 @@ package app.ominira.ui.theme
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 
-/** The three looks. [wire] is the `theme` value in PUT /v1/me/preferences. */
 enum class Look(val label: String, val wire: String) {
     Paper("Paper", "light"),
     Night("Night", "dark"),
     Contrast("High contrast", "contrast"),
 }
 
-/**
- * Colour tokens from the Òmìnira design system. Every text pair the design system names reaches
- * 7:1 in all three looks. Change a value in the design system first, then here.
- */
+// Every text pair is 7:1 in all three looks. Change the design system first.
 @Immutable
 class Palette(
     val surface: Color,

@@ -2,13 +2,7 @@ package app.ominira.core
 
 import java.text.Normalizer
 
-/**
- * Understands short spoken answers: yes and no in English, Pidgin, Yorùbá, Hausa and Igbo, the
- * scam-pause answers, a language name, "start", "again", and strings of digits.
- *
- * Tone marks and under-dots are ignored, so "bẹ́ẹ̀ni" and "beeni" are the same word. A clear no
- * always beats a yes: "no, I'd rather read" is a no.
- */
+// A clear no always beats a yes: "no, I'd rather read" is a no.
 object Answers {
 
     private val yesWords = setOf(
@@ -18,7 +12,7 @@ object Answers {
         "oya", "ehen", "ehn",
         // Yorùbá
         "beeni", "bee", "daadaa",
-        // Hausa ("to" is left out: it is far more often the English word)
+        // Hausa ("to" left out: it is usually the English word)
         "eh", "toh", "na'am", "naam",
         // Igbo
         "ee", "ehh",
@@ -57,9 +51,7 @@ object Answers {
         "nine" to '9',
     )
 
-    // A language may be named in any of the five: "Turanci" is English in Hausa, "Bekee" in Igbo,
-    // "Gẹ̀ẹ́sì" in Yorùbá; "Yarbanci" and "Inyamuranci" are Hausa for Yorùbá and Igbo.
-    // Pidgin comes first so "broken English" means Pidgin.
+    // Pidgin first, so "broken English" means Pidgin.
     private val languageNames = listOf(
         Lang.Pcm to setOf("pidgin", "pijin", "pigin", "pidgen", "pidging", "pigeon", "broken", "naija"),
         Lang.Yo to setOf("yoruba", "yorba", "yuroba", "yorouba", "yarbanci"),
@@ -68,7 +60,6 @@ object Answers {
         Lang.En to setOf("english", "inglish", "oyinbo", "turanci", "bekee", "oyibo", "geesi", "gesi"),
     )
 
-    /** Lower case, no tone marks or under-dots, punctuation as spaces (apostrophes kept). */
     fun normalise(text: String): String {
         val bare = Normalizer.normalize(text.lowercase(), Normalizer.Form.NFD).replace(Regex("\\p{Mn}+"), "")
         return bare.replace('’', '\'').replace(Regex("[^a-z0-9' ]"), " ").replace(Regex("\\s+"), " ").trim()
@@ -88,43 +79,33 @@ object Answers {
         return words(text).any { it in yesWords } || hasPhrase(text, yesPhrases)
     }
 
-    /** "Start", "I'm ready", or any yes. */
     fun isStart(text: String): Boolean = !isNo(text) && (isYes(text) || words(text).any { it in startWords })
 
     fun isAgain(text: String): Boolean = words(text).any { it in againWords } || hasPhrase(text, listOf("say it again", "one more time"))
 
-    /** True when any of [options] is one of the words said. */
     fun mentions(text: String, vararg options: String): Boolean {
         val said = words(text)
         return options.any { it in said }
     }
 
-    /**
-     * Scam pause, "is someone on the phone telling you to send this?":
-     * carry on is "carry on", "continue", "no, I chose this myself", or a plain no.
-     */
+    // A plain no means carry on ("no, I chose this myself").
     fun isCarryOn(text: String): Boolean {
         val said = words(text)
         if (said.any { it in stopWords }) return false
         return hasPhrase(text, carryOnPhrases) || isNo(text)
     }
 
-    /** Scam pause: stop is "stop", "cancel", "hold on", or a yes ("yes, someone told me to"). */
+    // A yes means stop ("yes, someone told me to").
     fun isStop(text: String): Boolean {
         if (words(text).any { it in stopWords }) return true
         return isYes(text) && !isCarryOn(text)
     }
 
-    /** The language named, if any. */
     fun language(text: String): Lang? {
         val said = words(text).toSet()
         return languageNames.firstOrNull { (_, names) -> names.any { it in said } }?.first
     }
 
-    /**
-     * Every digit said, in order. "2 2 3 4", "two two three four", "double two three four" and
-     * "22-34" all give "2234". Words that are not digits are skipped.
-     */
     fun digits(text: String): String {
         val out = StringBuilder()
         var times = 1
@@ -148,6 +129,5 @@ object Answers {
         return out.toString()
     }
 
-    /** True when the words carry what sounds like a PIN: the word PIN and four or more digits. */
     fun soundsLikePin(text: String): Boolean = mentions(text, "pin", "password") && digits(text).length >= 4
 }

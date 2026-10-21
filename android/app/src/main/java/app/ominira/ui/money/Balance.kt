@@ -25,14 +25,12 @@ import app.ominira.ui.kit.Tone
 import app.ominira.ui.kit.TxnRows
 import app.ominira.ui.theme.Glyphs
 
-/** One movement of money said as a sentence: "In: fifteen thousand naira from Mama, yesterday." */
 private fun spokenTxn(t: Txn): String {
     val day = Days.spoken(t.at)
     return (if (t.incoming) "In: " else "Out: ") + Naira.spoken(t.amountKobo) +
         (if (t.incoming) " from " else " to ") + t.who + (if (day.isBlank()) "." else ", ${day.lowercase()}.")
 }
 
-/** Your money: the balance, what came in this week, and the latest movements, readable by ear. */
 @Composable
 fun BalanceScreen(session: Session, onHome: () -> Unit) {
     var account by remember { mutableStateOf<Account?>(null) }

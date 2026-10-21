@@ -34,13 +34,8 @@ import app.ominira.ui.theme.Corners
 import app.ominira.ui.theme.Glyphs
 import app.ominira.ui.theme.Om
 
-/** How typed digits are shown. They are always stored as bare digits. */
 enum class Grouping { None, Fours, Thousands }
 
-/**
- * A number field with its label above, a hint, and an error that says what to do.
- * BVNs show in fours ("2221 2345 678"); amounts show with commas ("150,000").
- */
 @Composable
 fun DigitField(
     label: String,
@@ -99,7 +94,6 @@ fun DigitField(
     }
 }
 
-/** Shows bare digits with separators, keeping the cursor on the right digit. */
 private class SeparatedDigits(private val separate: (String) -> String) : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
         val raw = text.text

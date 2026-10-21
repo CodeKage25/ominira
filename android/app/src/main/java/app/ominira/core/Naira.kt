@@ -1,10 +1,5 @@
 package app.ominira.core
 
-/**
- * Money on screen and out loud. Amounts arrive in kobo; customers see and hear whole naira:
- * "₦20,000" and "twenty thousand naira". English words only: lines in other languages come
- * from the Gateway's `say`.
- */
 object Naira {
 
     private val ones = arrayOf(
@@ -18,14 +13,12 @@ object Naira {
         1_000L to "thousand",
     )
 
-    /** "₦20,000". No decimals; kobo are dropped. */
     fun format(kobo: Long): String {
         val naira = kobo / 100
         val sign = if (naira < 0) "-" else ""
         return sign + "₦" + group(kotlin.math.abs(naira))
     }
 
-    /** "842,300" */
     fun group(n: Long): String {
         val digits = n.toString()
         val out = StringBuilder()
@@ -36,16 +29,10 @@ object Naira {
         return out.toString()
     }
 
-    /** "twenty thousand naira" */
     fun spoken(kobo: Long): String = words(kobo / 100) + " naira"
 
-    /** The same, with a capital first letter, to start a sentence. */
     fun spokenSentence(kobo: Long): String = spoken(kobo).replaceFirstChar { it.uppercaseChar() }
 
-    /**
-     * British English number words, the way Nigerian banks read them:
-     * 842300 is "eight hundred and forty-two thousand, three hundred".
-     */
     fun words(n: Long): String {
         if (n < 0) return "minus " + words(-n)
         if (n == 0L) return ones[0]
@@ -82,7 +69,6 @@ object Naira {
         return if (u == 0L) t else t + "-" + ones[u.toInt()]
     }
 
-    /** Digits read one at a time: "4471" is "four, four, seven, one". Anything else is skipped. */
     fun digitWords(digits: String): String =
         digits.filter { it in '0'..'9' }.map { ones[it - '0'] }.joinToString(", ")
 }

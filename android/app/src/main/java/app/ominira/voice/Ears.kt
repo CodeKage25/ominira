@@ -26,18 +26,15 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Opens the microphone for one answer. Made by [rememberEars]. */
 class Ears internal constructor() {
     internal var open: () -> Unit = {}
     internal var close: () -> Unit = {}
 
     fun listen() = open()
 
-    /** Stops a recording in progress; its answer never arrives. */
     fun stop() = close()
 }
 
-/** What one screen's listening holds on to between calls. */
 private class Hold {
     var job: Job? = null
     var recognizer: SpeechRecognizer? = null
@@ -53,27 +50,12 @@ private class Hold {
     }
 }
 
-/**
- * Phone recognisers rarely know Yorùbá, Hausa or Igbo, and asking for one makes many fail
- * quietly. Without cloud speech they listen in Nigerian English.
- */
+// Phone recognisers often fail quietly on yo/ha/ig: listen in en-NG.
 private fun phoneTag(lang: Lang): String = when (lang) {
     Lang.Yo, Lang.Ha, Lang.Ig, Lang.Pcm -> "en-NG"
     Lang.En -> lang.tag
 }
 
-/**
- * Speech in, chosen in this order:
- * 1. Cloud: the app records the answer (rising tone, speak now; falling tone, got it) and the
- *    Gateway transcribes it with YarnGPT, in all five languages.
- * 2. The phone's recogniser inside the app, with the same tones.
- * 3. The phone's own listening box, when the microphone permission is refused, or not yet asked
- *    and [askForMic] is false (the welcome screen: a permission box there would get in the way).
- *
- * [onHeard] gets the words, or null when nothing was heard or listening was dismissed. A spoken
- * PIN is never passed on: the customer hears a warning and [onWarned] runs.
- * [quietMs] is how much quiet ends an answer; digits said one at a time need about two seconds.
- */
 @Composable
 fun rememberEars(
     session: Session,
@@ -182,7 +164,7 @@ fun rememberEars(
                     Tones.gotIt()
                     val words = withContext(Dispatchers.IO) { voice.transcribe(recorded.wav) }
                     when {
-                        words == null -> heard(null) // cloud speech now rests; the next answer uses the phone
+                        words == null -> heard(null)
                         words.pinSpoken -> {
                             session.say(words.say ?: Lines.PIN_SPOKEN)
                             warned()

@@ -4,16 +4,13 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-// Settings read from gradle.properties (the repo's, or ~/.gradle/gradle.properties, which wins).
 fun setting(name: String, fallback: String): String =
     (project.findProperty(name) as String?)?.trim()?.takeIf { it.isNotEmpty() } ?: fallback
 
-// A Kotlin string literal for BuildConfig, with quotes and backslashes escaped.
 fun literal(value: String): String = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
 val useFakeApi = setting("ominira.useFakeApi", "true").toBoolean()
-// No default: the live URL stays out of git. Set it in ~/.gradle/gradle.properties, or pass
-// -Pominira.gatewayUrl=... (CI reads the OMINIRA_GATEWAY_URL repository secret).
+// No default: the live URL stays out of git (see README).
 val gatewayUrl = setting("ominira.gatewayUrl", "")
 val gatewayToken = setting("ominira.gatewayToken", "demo-customer")
 val mockAdminToken = setting("ominira.mockAdminToken", "")
@@ -36,7 +33,7 @@ android {
         buildConfigField("String", "MOCK_ADMIN_TOKEN", literal(mockAdminToken))
         buildConfigField("Boolean", "CLOUD_VOICE", cloudVoice.toString())
 
-        // Release talks HTTPS only. Debug may also reach a laptop Gateway on the same Wi-Fi.
+        // Cleartext is debug only, for a laptop Gateway on the same Wi-Fi.
         manifestPlaceholders["usesCleartext"] = "false"
     }
 

@@ -35,11 +35,9 @@ import app.ominira.ui.theme.Om
 import app.ominira.ui.theme.paletteFor
 import kotlin.math.abs
 
-/** The nearest of [options] to [value], so an old stored value still shows a choice. */
 private fun <T : Comparable<T>> nearest(options: List<T>, value: T, distance: (T, T) -> Double): T =
     options.minByOrNull { distance(it, value) } ?: options.first()
 
-/** Look and sound, ways in, language, and the switches for the demo. Every choice is remembered. */
 @Composable
 fun SettingsScreen(session: Session, onBack: () -> Unit, onLanguage: () -> Unit, onRestart: () -> Unit) {
     Page(

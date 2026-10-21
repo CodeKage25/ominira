@@ -2,14 +2,6 @@ package app.ominira.core
 
 import kotlin.math.roundToLong
 
-/**
- * Reads an amount out of what someone said or typed, the way speech recognisers write it:
- * "20000", "20,000", "₦20,000", "N20,000", "20k", "1.5m", "20 thousand", "twenty thousand",
- * "one million two hundred thousand", "twenty thousand five hundred naira".
- *
- * Reading starts at the first number word and stops at the first ordinary word after it, so in
- * "send 20,000 to Tolu" nothing after "to" is read. Returns kobo, or null when there is no amount.
- */
 object SpokenAmount {
 
     private val small = mapOf(
@@ -22,12 +14,10 @@ object SpokenAmount {
     private val multipliers = mapOf("thousand" to 1_000.0, "k" to 1_000.0, "million" to 1_000_000.0, "m" to 1_000_000.0)
     private val fillers = setOf("and", "naira", "a")
 
-    /** A figure with an optional currency mark in front and an optional k or m behind. */
     private val figure = Regex("""^(?:₦|n)?(\d+(?:\.\d+)?)(k|m)?$""")
 
     fun parseKobo(text: String): Long? {
         var prepared = text.lowercase()
-        // "1,000,000" and "20,000": drop the grouping commas, however many there are.
         while (true) {
             val next = prepared.replace(Regex("""(\d),(\d{3})(?!\d)"""), "$1$2")
             if (next == prepared) break
@@ -35,8 +25,8 @@ object SpokenAmount {
         }
         prepared = prepared.replace(Regex("""[^a-z0-9₦.\s-]"""), " ")
 
-        var finished = 0.0 // groups already closed by thousand or million
-        var group = 0.0 // the group being built
+        var finished = 0.0
+        var group = 0.0
         var started = false
 
         for (raw in prepared.split(Regex("""[\s-]+"""))) {

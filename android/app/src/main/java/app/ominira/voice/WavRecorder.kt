@@ -12,12 +12,6 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
 
-/**
- * Records one spoken answer as 16 kHz, 16-bit mono WAV, for POST /v1/speech/listen.
- * Recording starts when speech starts (a little of the moment before is kept) and stops after a
- * stretch of quiet. A loudness check against the room's own noise stands in for a real voice
- * activity detector.
- */
 object WavRecorder {
 
     sealed interface Result {
@@ -30,10 +24,7 @@ object WavRecorder {
     private const val FRAME_MS = 30
     private const val FRAME = RATE * FRAME_MS / 1000
 
-    /**
-     * The caller holds RECORD_AUDIO. Waits up to [waitMs] for speech, keeps up to [maxMs] of it,
-     * and stops after [quietMs] of quiet. Digits said slowly need a longer [quietMs].
-     */
+    // The caller holds RECORD_AUDIO.
     @SuppressLint("MissingPermission")
     suspend fun record(waitMs: Long = 6_000, maxMs: Long = 15_000, quietMs: Long = 1_200): Result =
         withContext(Dispatchers.IO) {
@@ -123,7 +114,6 @@ object WavRecorder {
             }
         }
 
-    /** A 44-byte RIFF header in front of the samples. */
     private fun wav(pcm: ByteArray): ByteArray {
         val out = ByteArrayOutputStream(44 + pcm.size)
         fun int32(v: Int) {

@@ -1,14 +1,6 @@
 package app.ominira.core
 
-/**
- * Turns the four Pulse PIN digits into the PIN block the Gateway forwards to Zenith.
- *
- * HACKATHON PLACEHOLDER, as docs/api.md defines it: "demo-" followed by each digit replaced by
- * 9 minus that digit, so PIN 2 0 7 5 travels as "demo-7924". The pilot replaces this with an
- * ISO 9564 PIN block encrypted on the device with Zenith's PIN key.
- *
- * Never log what goes in or what comes out.
- */
+// Hackathon placeholder (see README). Never log the digits or the block.
 object PinBlock {
     private const val PREFIX = "demo-"
 
@@ -17,7 +9,7 @@ object PinBlock {
         return PREFIX + digits.joinToString("") { (9 - it).toString() }
     }
 
-    /** Only the fake bank opens a block; the real one never leaves Zenith. Null if malformed. */
+    // Fake bank only: a real PIN block is never opened outside Zenith.
     fun open(block: String): List<Int>? {
         if (!block.startsWith(PREFIX)) return null
         val body = block.removePrefix(PREFIX)

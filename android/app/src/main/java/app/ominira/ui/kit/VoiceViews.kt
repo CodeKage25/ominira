@@ -55,11 +55,6 @@ enum class OrbState(val label: String) {
     Speaking("Speaking"),
 }
 
-/**
- * The voice orb: sun when idle or listening (with a halo), outlined while thinking, mint while
- * speaking. Its state is always written under it and announced; motion never carries it alone,
- * and stops when animations are off.
- */
 @Composable
 fun Orb(state: OrbState, onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 88.dp) {
     val c = Om.color
@@ -129,7 +124,6 @@ fun Orb(state: OrbState, onClick: () -> Unit, modifier: Modifier = Modifier, siz
     }
 }
 
-/** A written copy of a spoken line. Everything Òmìnira says is also shown. */
 @Composable
 fun CaptionBox(who: String, text: String, modifier: Modifier = Modifier) {
     Column(
@@ -145,7 +139,6 @@ fun CaptionBox(who: String, text: String, modifier: Modifier = Modifier) {
     }
 }
 
-/** One line of a conversation, from the customer or from Òmìnira. */
 @Composable
 fun ChatLine(mine: Boolean, text: String, modifier: Modifier = Modifier) {
     val c = Om.color

@@ -6,14 +6,6 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 
-/**
- * Haptic tokens from the design system. Each one has a spoken or written twin on screen, so
- * nothing depends on feeling a vibration alone.
- *
- * Pulse PIN beats are all the same length (80 ms): a medium beat (120 of 255) for every digit and
- * a full-strength double beat for zero, the landmark. Short, even beats are felt in the hand but
- * carry little sound.
- */
 class Haptics(context: Context) {
 
     private val vibrator: Vibrator? = findVibrator(context.applicationContext)
@@ -29,10 +21,10 @@ class Haptics(context: Context) {
     private val usable: Vibrator?
         get() = vibrator?.takeIf { it.hasVibrator() }
 
-    /** One Pulse PIN count beat. */
+    // Every beat is 80 ms: felt in the hand, barely heard.
     fun count() = beat(BEAT_MS, MEDIUM)
 
-    /** Zero: a strong double beat. */
+    // Zero is the landmark to count from: a strong double beat.
     fun zero() {
         val v = usable ?: return
         val timings = longArrayOf(0, BEAT_MS, 70, BEAT_MS)
@@ -43,16 +35,12 @@ class Haptics(context: Context) {
         }
     }
 
-    /** A digit was taken, or the sonar locked on. */
     fun lock() = pattern(0, 110, 160, 110)
 
-    /** Money sent, account open. Rising, five parts. */
     fun done() = pattern(0, 80, 120, 80, 120, 260)
 
-    /** Scam pause, wrong PIN, card blocked: something needs attention. */
     fun stop() = pattern(0, 400, 200, 400)
 
-    /** A light tick for switch scanning. */
     fun tick() = beat(35, VibrationEffect.DEFAULT_AMPLITUDE)
 
     private fun beat(ms: Long, amplitude: Int) {

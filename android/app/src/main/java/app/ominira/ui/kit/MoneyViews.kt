@@ -36,10 +36,6 @@ import app.ominira.ui.theme.Corners
 import app.ominira.ui.theme.Glyphs
 import app.ominira.ui.theme.Om
 
-/**
- * The readback: who, which bank, the last four digits one by one, and the amount. TalkBack reads
- * it as one sentence, the same words Òmìnira speaks. [actions] sit under it, outside that sentence.
- */
 @Composable
 fun ReadbackPanel(
     readback: Readback,
@@ -99,7 +95,6 @@ fun ReadbackPanel(
     }
 }
 
-/** The balance on the forest band, with a button to hear it. */
 @Composable
 fun BalancePanel(label: String, balanceKobo: Long, modifier: Modifier = Modifier, note: String? = null, onHear: (() -> Unit)? = null) {
     val c = Om.color
@@ -123,12 +118,10 @@ fun BalancePanel(label: String, balanceKobo: Long, modifier: Modifier = Modifier
     }
 }
 
-/** One sentence for a movement of money, for TalkBack and for reading aloud. */
 fun txnSentence(t: Txn): String =
     (if (t.incoming) "In, " else "Out, ") + Naira.format(t.amountKobo) + (if (t.incoming) ", from " else ", to ") + t.who +
         Days.spoken(t.at).let { if (it.isBlank()) "" else ", $it" }
 
-/** Recent money in and out. Each row is read as one sentence. */
 @Composable
 fun TxnRows(items: List<Txn>, modifier: Modifier = Modifier) {
     val c = Om.color
@@ -173,7 +166,6 @@ fun TxnRows(items: List<Txn>, modifier: Modifier = Modifier) {
     }
 }
 
-/** The bank card, with the braille letter O that is raised on the real card. */
 @Composable
 fun BankCardView(card: Card, modifier: Modifier = Modifier) {
     val c = Om.color

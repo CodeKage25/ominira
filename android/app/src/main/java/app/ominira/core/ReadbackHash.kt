@@ -2,15 +2,7 @@ package app.ominira.core
 
 import java.security.MessageDigest
 
-/**
- * readback_hash as docs/api.md defines it:
- * "sha256:" + hex(sha256(canonical JSON of {kind, name, bank, account_last4, amount_kobo})),
- * canonical meaning sorted keys and (",", ":") separators, written the way Python's json.dumps
- * writes it (non-ASCII as \uXXXX).
- *
- * The app never computes this for the Gateway: it echoes what the Gateway sent. The offline
- * fake bank uses it so both halves behave the same.
- */
+// Fake bank only (the app echoes the Gateway's hash); must match json.dumps.
 object ReadbackHash {
 
     fun canonical(kind: DraftKind, name: String, bank: String, last4: String, amountKobo: Long?): String {

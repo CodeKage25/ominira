@@ -6,21 +6,12 @@ import android.media.MediaPlayer
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
-/**
- * Short recordings bundled with the app in assets/audio, for lines that must play before sign-in,
- * offline and at once (the language roll call). Missing clips are simply skipped.
- */
 object Clips {
     private const val FOLDER = "audio"
 
-    /** True when assets/audio/[name] is in the APK. */
     fun has(context: Context, name: String): Boolean =
         runCatching { context.assets.list(FOLDER)?.contains(name) == true }.getOrDefault(false)
 
-    /**
-     * Plays assets/audio/[name] and suspends until it ends. False if it is missing or would not
-     * play. Cancelling the coroutine stops it at once.
-     */
     suspend fun play(context: Context, name: String): Boolean {
         if (!has(context, name)) return false
         return suspendCancellableCoroutine { cont ->
@@ -33,7 +24,7 @@ object Clips {
                 if (cont.isActive) cont.resume(ok)
             }
             cont.invokeOnCancellation {
-                // MediaPlayer is not thread safe; releasing from here is acceptable for a short clip.
+                // MediaPlayer is not thread safe; releasing here is fine for a short clip.
                 if (!finished) {
                     finished = true
                     runCatching { player.stop() }
@@ -58,7 +49,7 @@ object Clips {
                 player.setOnPreparedListener { it.start() }
                 player.prepareAsync()
             } catch (e: Exception) {
-                // A compressed asset cannot be opened as a file descriptor; mp3 is stored as is.
+                // A compressed asset cannot be opened as an fd; mp3 is stored as is.
                 end(false)
             }
         }

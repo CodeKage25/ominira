@@ -8,11 +8,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.unit.dp
 
-/**
- * The design system's icon set, drawn from its SVG path data: a 24 grid, 2-unit strokes,
- * round caps and joins. A path starting with "*" is filled instead of stroked.
- * Tint with Icon(tint = ...). An icon always sits beside a word or inside a labelled button.
- */
+// A path starting with "*" is filled instead of stroked.
 object Glyphs {
     val Mic by lazy { glyph("Mic", "M12 3H12A3 3 0 0 1 15 6V11A3 3 0 0 1 12 14H12A3 3 0 0 1 9 11V6A3 3 0 0 1 12 3z", "M5.5 11a6.5 6.5 0 0 0 13 0", "M12 17.5V21", "M8.5 21h7") }
     val Speaker by lazy { glyph("Speaker", "M4 9.5h3.5L12 5.5v13l-4.5-4H4z", "M15.5 9a4 4 0 0 1 0 6", "M18.5 6.5a7.5 7.5 0 0 1 0 11") }

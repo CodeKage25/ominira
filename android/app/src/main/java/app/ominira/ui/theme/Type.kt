@@ -9,23 +9,17 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import app.ominira.R
 
-/** Andika: everything people read. Covers ẹ ọ ṣ, ɓ ɗ ƙ ƴ, ị ụ ṅ, stacked tone marks and ₦. */
 val Andika = FontFamily(
     Font(R.font.andika_regular, FontWeight.Normal),
     Font(R.font.andika_bold, FontWeight.Bold),
 )
 
-/** Unbounded: titles, amounts and the brand only. */
 val Unbounded = FontFamily(
     Font(R.font.unbounded_semibold, FontWeight.SemiBold),
     Font(R.font.unbounded_bold, FontWeight.Bold),
     Font(R.font.unbounded_extrabold, FontWeight.ExtraBold),
 )
 
-/**
- * The type scale from the design system tokens, multiplied by [scale] (1.15 in plain and switch
- * mode) on top of the phone's own font size. Body text is never under 20sp; nothing is under 17sp.
- */
 @Immutable
 class TypeScale(private val scale: Float = 1f) {
     private fun size(v: Float): TextUnit = (v * scale).sp

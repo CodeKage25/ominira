@@ -52,12 +52,6 @@ import kotlinx.coroutines.delay
 
 private class ScanItem(val label: String, val icon: ImageVector, val open: () -> Unit)
 
-/**
- * Switch scanning for one-switch use. A ring moves through the choices at the customer's speed;
- * one press picks, a second press opens. The switch can be the on-screen button, a Bluetooth
- * switch, or a keyboard's space or enter key. Every row also opens directly, so Android's own
- * Switch Access works here too.
- */
 @Composable
 fun SwitchHomeScreen(session: Session, actions: HomeActions) {
     val items = remember(actions) {
@@ -77,7 +71,6 @@ fun SwitchHomeScreen(session: Session, actions: HomeActions) {
 
     LaunchedEffect(paused, picked, scanMs) {
         if (paused) return@LaunchedEffect
-        // A pick stays long enough to press again, at the customer's own speed.
         if (picked >= 0) {
             delay(maxOf(4_000L, scanMs * 3))
             picked = -1

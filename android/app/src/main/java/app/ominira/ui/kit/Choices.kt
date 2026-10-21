@@ -36,7 +36,6 @@ import app.ominira.ui.theme.Corners
 import app.ominira.ui.theme.Glyphs
 import app.ominira.ui.theme.Om
 
-/** The icon for each way in. Names come from [OnboardingCopy], in the customer's language. */
 fun modeIcon(mode: Mode): ImageVector = when (mode) {
     Mode.Voice -> Glyphs.Mic
     Mode.Sign -> Glyphs.Sign
@@ -52,7 +51,6 @@ fun modeColor(mode: Mode): Color = when (mode) {
     Mode.Plain -> Om.color.modePlain
 }
 
-/** A round chip in a mode colour with a mode-ink icon. Decorative. */
 @Composable
 fun ModeChip(color: Color, icon: ImageVector, size: Dp = 52.dp) {
     Box(Modifier.size(size).clip(CircleShape).background(color), contentAlignment = Alignment.Center) {
@@ -60,7 +58,6 @@ fun ModeChip(color: Color, icon: ImageVector, size: Dp = 52.dp) {
     }
 }
 
-/** A way in that can be ticked or unticked. Read by TalkBack as a checkbox. */
 @Composable
 fun WayInTile(mode: Mode, copy: OnboardingCopy, ticked: Boolean, onTick: (Boolean) -> Unit, modifier: Modifier = Modifier) {
     val c = Om.color
@@ -96,7 +93,6 @@ fun WayInTile(mode: Mode, copy: OnboardingCopy, ticked: Boolean, onTick: (Boolea
     }
 }
 
-/** The ways-in tiles, two to a row. */
 @Composable
 fun WayInGrid(ticked: Set<Mode>, copy: OnboardingCopy, onChange: (Mode, Boolean) -> Unit) {
     Mode.entries.chunked(2).forEach { pair ->
@@ -108,10 +104,7 @@ fun WayInGrid(ticked: Set<Mode>, copy: OnboardingCopy, onChange: (Mode, Boolean)
     }
 }
 
-/**
- * A full-width row: a radio choice when [radio] is true, otherwise a plain action.
- * [lang] marks text in another language so TalkBack switches voice for it.
- */
+// lang tags the text so TalkBack reads it in that language's voice.
 @Composable
 fun ChoiceRow(
     title: String,
@@ -163,7 +156,6 @@ fun ChoiceRow(
     }
 }
 
-/** An on or off setting, read by TalkBack as a switch with its state. */
 @Composable
 fun SwitchRow(title: String, checked: Boolean, onChange: (Boolean) -> Unit, modifier: Modifier = Modifier, sub: String? = null) {
     val c = Om.color
@@ -200,7 +192,6 @@ fun SwitchRow(title: String, checked: Boolean, onChange: (Boolean) -> Unit, modi
     }
 }
 
-/** Two to four equal choices side by side: speech speed, Pulse speed. Read as radio buttons. */
 @Composable
 fun <T> Segments(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit, modifier: Modifier = Modifier) {
     val c = Om.color

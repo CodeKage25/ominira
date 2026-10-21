@@ -8,7 +8,7 @@
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
-    <!-- Android 11 and later only show the app the speech engines it declares it looks for. -->
+    <!-- Android 11+ only lets the app see speech engines declared here. -->
     <queries>
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />

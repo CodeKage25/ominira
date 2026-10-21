@@ -10,12 +10,7 @@ import kotlin.math.PI
 import kotlin.math.min
 import kotlin.math.sin
 
-/**
- * Earcons from the design system, synthesised as soft sine tones so nothing clicks:
- * a rising pair for "speak now", a falling pair for "got it", a three-note "done" (523, 659,
- * 784 Hz) and the sonar range (330 to 880 Hz). Played on the media stream, so they are heard on a
- * phone set to silent.
- */
+// Media stream, so tones are heard on a phone set to silent.
 object Tones {
     private const val RATE = 22_050
 
@@ -66,19 +61,16 @@ object Tones {
         }
     }
 
-    /** Rising: speak now. */
     suspend fun speakNow() {
         play(660.0, 90)
         play(880.0, 90)
     }
 
-    /** Falling: got it. */
     suspend fun gotIt() {
         play(880.0, 70)
         play(660.0, 70)
     }
 
-    /** Money sent, account open. */
     suspend fun done() {
         play(523.0, 110)
         play(659.0, 110)

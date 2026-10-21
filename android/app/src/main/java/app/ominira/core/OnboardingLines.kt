@@ -1,13 +1,8 @@
 package app.ominira.core
 
-/**
- * The very first screen speaks one line per language, each in that language, in this order.
- * Draft wording: Yorùbá, Hausa and Igbo need a native speaker's check (and so does the Pidgin).
- * The bundled clips in assets/audio/lang_<code>.mp3 must say exactly these words.
- */
+// Bundled lang_<code>.mp3 clips must say exactly these words.
 object LanguagePrompts {
 
-    /** The order the lines are spoken and the bands are drawn. */
     val order: List<Lang> = listOf(Lang.En, Lang.Pcm, Lang.Yo, Lang.Ha, Lang.Ig)
 
     fun line(lang: Lang): String = when (lang) {
@@ -18,7 +13,6 @@ object LanguagePrompts {
         Lang.Ig -> "Maka Igbo, kwuo Igbo, ma ọ bụ pịa Igbo."
     }
 
-    /** Said in the chosen language once a language is picked. */
     fun chosen(lang: Lang): String = when (lang) {
         Lang.En -> "English. Thank you."
         Lang.Pcm -> "Pidgin. Correct."
@@ -27,18 +21,10 @@ object LanguagePrompts {
         Lang.Ig -> "Igbo. Daalụ."
     }
 
-    /** The bundled clip for [lang], relative to the assets folder. */
     fun clipName(lang: Lang): String = "lang_${lang.code}.mp3"
 }
 
-/**
- * Everything onboarding says or shows after the language is chosen, in that language.
- *
- * English is the reviewed product copy. Pidgin follows the reference wording where there was one.
- * NATIVE-SPEAKER REVIEW NEEDED: the Pidgin, Yorùbá, Hausa and Igbo lines below are drafts written
- * during the hackathon and have not been checked. Hausa asks for "eh" rather than "i" for yes,
- * because the answer parser cannot tell "i" from the English word "I".
- */
+// Pidgin, Yorùbá, Hausa and Igbo copy below are unreviewed drafts.
 class OnboardingCopy(
     val kicker: String,
     val welcome: String,
@@ -103,7 +89,6 @@ class OnboardingCopy(
             ),
         )
 
-        // Draft, for native-speaker review.
         private val pidgin = OnboardingCopy(
             kicker = "Welcome",
             welcome = "Welcome to Òmìnira.",
@@ -132,7 +117,6 @@ class OnboardingCopy(
             ),
         )
 
-        // Draft, for native-speaker review.
         private val yoruba = OnboardingCopy(
             kicker = "Ẹ káàbọ̀",
             welcome = "Ẹ káàbọ̀ sí Òmìnira.",
@@ -161,7 +145,7 @@ class OnboardingCopy(
             ),
         )
 
-        // Draft, for native-speaker review.
+        // Hausa yes is "eh", not "i": the parser can't tell "i" from English "I".
         private val hausa = OnboardingCopy(
             kicker = "Barka",
             welcome = "Barka da zuwa Òmìnira.",
@@ -190,7 +174,6 @@ class OnboardingCopy(
             ),
         )
 
-        // Draft, for native-speaker review.
         private val igbo = OnboardingCopy(
             kicker = "Nnọọ",
             welcome = "Nnọọ na Òmìnira.",

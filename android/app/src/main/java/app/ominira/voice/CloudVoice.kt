@@ -8,14 +8,7 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 
-/**
- * Speech through the Gateway, which holds the YarnGPT key; the phone never sees it.
- * Speaking: POST /v1/speech/say returns a short-lived audio link that [Speaker] plays.
- * Listening: POST /v1/speech/listen takes a 16 kHz mono WAV and returns the words.
- *
- * Every call here blocks: run it off the main thread. After any failure cloud speech rests for a
- * minute and the phone's own voice and recogniser take over.
- */
+// Every call blocks: run it off the main thread.
 class CloudVoice(baseUrl: String, private val token: String) {
 
     private val base = baseUrl.trim().trimEnd('/')
@@ -23,16 +16,15 @@ class CloudVoice(baseUrl: String, private val token: String) {
 
     @Volatile private var restUntil = 0L
 
-    /** null until GET /v1/speech/status has answered; false when the Gateway has no speech. */
+    // null until the status call answers; false when the Gateway has no speech.
     @Volatile private var serverHasSpeech: Boolean? = null
 
     val usable: Boolean
         get() = serverHasSpeech != false && System.currentTimeMillis() >= restUntil
 
-    /** What the Gateway heard. A spoken PIN never comes back as words: [pinSpoken] is set instead. */
+    // A spoken PIN never comes back as words: pinSpoken is set instead.
     class Heard(val text: String, val pinSpoken: Boolean, val say: String?)
 
-    /** An audio link for [text] in [lang], or null (cloud speech then rests). */
     fun audioUrl(text: String, lang: Lang): String? {
         if (!checkStatus()) return null
         val body = JSONObject().put("text", text.take(600)).put("lang", lang.code)
@@ -45,7 +37,6 @@ class CloudVoice(baseUrl: String, private val token: String) {
         }
     }
 
-    /** The words in [wav], or null (cloud speech then rests). */
     fun transcribe(wav: ByteArray): Heard? {
         if (!checkStatus()) return null
         val o = post("/speech/listen", "audio/wav", wav, 35_000) ?: return null
@@ -54,7 +45,6 @@ class CloudVoice(baseUrl: String, private val token: String) {
         return Heard(text, o.optBoolean("pin_spoken", false), say)
     }
 
-    /** Asks GET /v1/speech/status once. A Gateway without speech is never asked again. */
     private fun checkStatus(): Boolean {
         serverHasSpeech?.let { return it }
         var conn: HttpURLConnection? = null
@@ -102,7 +92,7 @@ class CloudVoice(baseUrl: String, private val token: String) {
             val text = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
             when {
                 status in 200..299 -> JSONObject(text)
-                // Too long, too short or not audio: this answer only. Anything else: rest.
+                // 413/415/422 fail this answer only; anything else rests cloud speech.
                 status == 413 || status == 415 || status == 422 -> {
                     Log.w(TAG, "Speech call refused: HTTP $status")
                     null

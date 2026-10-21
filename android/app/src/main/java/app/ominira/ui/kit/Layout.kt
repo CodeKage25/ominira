@@ -46,10 +46,6 @@ import app.ominira.device.Signals
 import app.ominira.ui.theme.Corners
 import app.ominira.ui.theme.Om
 
-/**
- * The frame of every screen: a top bar, a body that scrolls (so the largest font sizes never cut
- * anything off), an optional fixed bottom for the main action, and an optional dock under that.
- */
 @Composable
 fun Page(
     top: @Composable RowScope.() -> Unit,
@@ -59,8 +55,7 @@ fun Page(
     dock: (@Composable () -> Unit)? = null,
     body: @Composable ColumnScope.() -> Unit,
 ) {
-    // Insets first, as one modifier: a caller's modifier that changes shape mid-screen must not
-    // sit between two inset modifiers.
+    // Insets as one modifier: a caller's modifier must not sit between them.
     Column(
         Modifier
             .fillMaxSize()
@@ -99,7 +94,6 @@ fun Page(
     }
 }
 
-/** The one question a screen asks. A heading for TalkBack. */
 @Composable
 fun Heading(text: String, modifier: Modifier = Modifier, color: Color = Om.color.text) {
     Text(text, style = Om.type.title, color = color, modifier = modifier.semantics { heading() })
@@ -115,24 +109,18 @@ fun Hint(text: String, modifier: Modifier = Modifier, color: Color = Om.color.mu
     Text(text, style = Om.type.small, color = color, modifier = modifier)
 }
 
-/** A 3dp focus ring for keyboards, switches and Switch Access. TalkBack draws its own. */
 @Composable
 fun Modifier.focusRing(interaction: MutableInteractionSource, shape: Shape): Modifier {
     val focused by interaction.collectIsFocusedAsState()
     return if (focused) this.border(Om.size.focusRing, Om.color.focus, shape) else this
 }
 
-/** True when "Remove animations" is on. Nothing ever depends on motion to be understood. */
 @Composable
 fun rememberReduceMotion(): Boolean {
     val context = LocalContext.current
     return remember(context) { Signals.reduceMotion(context) }
 }
 
-/**
- * The Òmìnira mark: braille O (dots 1, 3 and 5) with two sound waves. Sun and mint on dark
- * grounds, forest and green on paper. Decorative, so TalkBack skips it.
- */
 @Composable
 fun Mark(size: Dp = 32.dp, onDark: Boolean = Om.color.dark) {
     val dot = if (onDark) Color(0xFFFFC845) else Color(0xFF0E2A20)
@@ -148,7 +136,6 @@ fun Mark(size: Dp = 32.dp, onDark: Boolean = Om.color.dark) {
     }
 }
 
-/** The brand row at the top of home screens. */
 @Composable
 fun Brand(modifier: Modifier = Modifier, onDark: Boolean = Om.color.dark, trailing: @Composable RowScope.() -> Unit = {}) {
     Row(
@@ -167,7 +154,6 @@ fun Brand(modifier: Modifier = Modifier, onDark: Boolean = Om.color.dark, traili
     }
 }
 
-/** Onboarding progress, read as "Step 2 of 5". */
 @Composable
 fun StepDots(step: Int, of: Int, modifier: Modifier = Modifier) {
     Row(

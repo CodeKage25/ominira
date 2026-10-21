@@ -25,7 +25,6 @@ import app.ominira.ui.onboarding.WaysInScreen
 import app.ominira.ui.onboarding.WelcomeScreen
 import app.ominira.ui.theme.OminiraTheme
 
-/** Every place in the app. Onboarding starts at [LANGUAGE], before anything is asked in English. */
 object Route {
     const val LANGUAGE = "language"
     const val WELCOME = "welcome"
@@ -45,10 +44,6 @@ object Route {
     const val SETTINGS_LANGUAGE = "settings/language"
 }
 
-/**
- * The home that fits the customer's ways in: switch first, then plain, then voice. Sign without
- * voice gets plain home: big written choices, sign help on it, no microphone by itself.
- */
 fun homeFor(modes: Set<Mode>): String = when {
     Mode.Switch in modes -> Route.SWITCH_HOME
     Mode.Plain in modes -> Route.PLAIN_HOME
@@ -116,7 +111,6 @@ fun OminiraApp(session: Session) {
     }
 }
 
-/** Back to the right home for the current ways in, with nothing left above it. */
 private fun NavHostController.goHome(session: Session) {
     session.speaker.stop()
     navigate(homeFor(session.modes)) {

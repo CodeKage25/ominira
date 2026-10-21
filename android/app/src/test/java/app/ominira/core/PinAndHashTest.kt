@@ -28,7 +28,7 @@ class PinAndHashTest {
 
     @Test
     fun readbackHashMatchesTheGateway() {
-        // Expected values computed with Python's json.dumps(sort_keys=True, separators=(",", ":")).
+        // Expected: Python json.dumps(sort_keys=True, separators=(",", ":")).
         assertEquals(
             "{\"account_last4\":\"4471\",\"amount_kobo\":2000000,\"bank\":\"Zenith Bank\",\"kind\":\"transfer\",\"name\":\"Adebayo Tolulope\"}",
             ReadbackHash.canonical(DraftKind.Transfer, "Adebayo Tolulope", "Zenith Bank", "4471", 2_000_000),

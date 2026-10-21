@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Only the window behind Compose. Every colour people see comes from the Compose theme. -->
+    <!-- Window only; every colour people see comes from the Compose theme. -->
     <style name="Theme.Ominira" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@color/om_forest</item>
         <item name="android:statusBarColor">@android:color/transparent</item>

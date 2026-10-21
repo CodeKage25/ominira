@@ -56,7 +56,6 @@ import app.ominira.voice.rememberPrompt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/** One moment of the sonar: what is said, how high the guide tone is, how far off centre the face is. */
 private class SonarStep(val line: String, val tone: Float, val offCentre: Float, val hz: Double)
 
 private val sonarSteps = listOf(
@@ -68,11 +67,6 @@ private val sonarSteps = listOf(
     SonarStep("Thank you. That is you, and you are here.", 1f, 0f, 0.0),
 )
 
-/**
- * Sonar selfie. A tone rises as the face moves to the centre and the phone buzzes when it locks;
- * then four random digits, said aloud, show the customer is really there.
- * Hackathon build: the camera is simulated and the digits are not checked.
- */
 @Composable
 fun SonarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
     val scope = rememberCoroutineScope()
@@ -94,7 +88,7 @@ fun SonarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
         started = true
         problem = null
         scope.launch {
-            // A new onboarding session each time, so the liveness digits are always fresh.
+            // New session each time, so the liveness digits are always fresh.
             val fresh = runCatching { session.api.startOnboarding(session.lang) }.getOrNull()
             if (fresh == null) {
                 val line = "I could not start the selfie. Check the connection and try again."
@@ -114,7 +108,6 @@ fun SonarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
             }
             session.haptics.lock()
             session.say("Got it. Now say these numbers.", digits.joinToString(", "))
-            // Camera simulated: send the digits that were shown, as if they were heard.
             val live = runCatching { session.api.sendSelfie(id, digits) }.getOrDefault(true)
             delay(4_000)
             if (!live) {
@@ -129,7 +122,6 @@ fun SonarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
             session.haptics.done()
             session.say(sonarSteps[5].line)
             if (session.talksFirst) {
-                // Nothing to decide here, so a voice customer moves on by themselves.
                 session.speaker.awaitQuiet()
                 next()
             }

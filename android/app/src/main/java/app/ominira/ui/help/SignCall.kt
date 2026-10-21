@@ -45,7 +45,6 @@ import app.ominira.ui.theme.Glyphs
 import app.ominira.ui.theme.Om
 import kotlinx.coroutines.delay
 
-/** The scripted call: who is signing, and what the captions say. */
 private val signScript = listOf(
     "Funmi is signing" to "I have blocked the old card. Nobody can use it now.",
     "You signed" to "Thank you. When will the new one come?",
@@ -53,10 +52,6 @@ private val signScript = listOf(
     "You signed" to "Yes, my home, please.",
 )
 
-/**
- * Sign language help: a video call with a Zenith sign agent, with running captions of both sides.
- * Hackathon build: the video is a placeholder and the captions are scripted.
- */
 @Composable
 fun SignCallScreen(session: Session, onHome: () -> Unit) {
     var seconds by remember { mutableIntStateOf(372) }
@@ -111,7 +106,6 @@ fun SignCallScreen(session: Session, onHome: () -> Unit) {
                     .background(Brush.radialGradient(listOf(Color(0xFF2A5A46), Color(0xFF0E2A20))))
                     .clearAndSetSemantics { contentDescription = "Video of Funmi, a Zenith sign language agent" },
             ) {
-                // Placeholder figure of the agent.
                 Box(
                     Modifier
                         .align(Alignment.BottomCenter)
@@ -153,7 +147,6 @@ fun SignCallScreen(session: Session, onHome: () -> Unit) {
                     )
                 }
             }
-            // The last three lines stay up, so a line is not lost when the next arrives.
             if (captions) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     for (k in maxOf(0, shown - 3) until shown) {

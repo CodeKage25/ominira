@@ -38,10 +38,6 @@ enum class Emphasis { Primary, Secondary, Quiet, Caution, Danger, Sun }
 
 private class ButtonPaint(val fill: Color, val ink: Color, val edge: Color)
 
-/**
- * The Òmìnira button: a word on every button, an icon only beside a word, at least 56dp tall
- * (72dp in plain and switch mode). [busy] keeps the words and adds a ring, so nothing jumps.
- */
 @Composable
 fun ActionButton(
     text: String,
@@ -103,7 +99,6 @@ fun ActionButton(
     }
 }
 
-/** A round button with only an icon. It always has a spoken [label]; [on] makes it a toggle. */
 @Composable
 fun IconAction(
     icon: ImageVector,

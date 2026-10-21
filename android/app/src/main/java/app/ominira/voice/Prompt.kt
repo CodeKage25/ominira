@@ -12,13 +12,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
-/**
- * Asks a question out loud, waits until the question has been said, then listens for the
- * answer. This is how a blind customer moves through the app without finding anything on screen.
- *
- * The microphone only opens by itself when [Session.talksFirst] is true (voice mode, TalkBack off).
- * The answer arrives in the handler given to [rememberPrompt]: the words, or null.
- */
 class Prompt internal constructor(
     private val scope: CoroutineScope,
     private val session: Session,
@@ -28,35 +21,28 @@ class Prompt internal constructor(
     internal var handler: Prompt.(String?) -> Unit = {}
     private var job: Job? = null
 
-    /**
-     * Says [lines], then listens. [listen] is true by default only when the app talks first; a
-     * "Say it" button passes true so anyone who asked to speak is listened to.
-     */
     fun ask(vararg lines: String, listen: Boolean = session.talksFirst) {
         job?.cancel()
-        // A recording still open would hear this question and hand it back as the answer.
+        // An open recording would hear this question and return it as the answer.
         ears.stop()
         job = scope.launch {
             session.say(*lines)
             if (!listen) return@launch
             session.speaker.awaitQuiet()
-            // TalkBack speaks the lines instead of the app; give it time before the microphone opens.
+            // TalkBack is reading the lines; give it time before the mic opens.
             delay(if (session.screenReaderOn()) 250L + lines.sumOf { it.length } * 55L else 250L)
-            // A screen being left is never resumed again, so its question never opens the
-            // microphone over the next screen.
+            // A screen being left never resumes, so it never opens the mic over the next.
             lifecycle.currentStateFlow.first { it.isAtLeast(Lifecycle.State.RESUMED) }
             ears.listen()
         }
     }
 
-    /** Opens the microphone now, for a "Say it" button. */
     fun listenNow() {
         job?.cancel()
         session.speaker.stop()
         ears.listen()
     }
 
-    /** Stops a question before it listens, for example when the customer taps instead. */
     fun cancel() {
         job?.cancel()
         job = null

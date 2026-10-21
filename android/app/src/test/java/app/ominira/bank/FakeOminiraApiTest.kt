@@ -15,7 +15,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** The offline bank must keep the confirm gate's order and the demo scripts in docs/api.md. */
 class FakeOminiraApiTest {
 
     private val rightPin = PinBlock.seal(listOf(2, 0, 7, 5))
@@ -82,7 +81,7 @@ class FakeOminiraApiTest {
         assertEquals("Funmi", (waiting as Outcome.NeedsApproval).approver)
         assertEquals(84_230_000L, bank.accounts().first().balanceKobo)
 
-        // Offline, Funmi approves by herself after about six seconds (virtual time here).
+        // Offline, Funmi approves after about six seconds (virtual time here).
         val decided = bank.awaitDecision(draft.id)
         assertTrue(decided is Outcome.Sent)
         assertTrue(decided.say.startsWith("Funmi approved."))
@@ -131,7 +130,6 @@ class FakeOminiraApiTest {
         val bank = bank()
         val tries = (1..3).map { (bank.unlock(wrongPin) as Unlock.Wrong).triesLeft }
         assertEquals(listOf(2, 1, 0), tries)
-        // Locked: even the right PIN is refused, and no money moves.
         assertTrue(bank.unlock(rightPin) is Unlock.Wrong)
         val draft = bank.transfer("py_tolu", 2_000_000)
         val outcome = bank.confirm(draft.id, draft.readbackHash, rightPin, callActive = false)

@@ -31,23 +31,8 @@ import java.net.URL
 import java.util.Collections
 import java.util.UUID
 
-/** The Gateway answered with something we cannot use for a call that moves no money. */
 private class GatewayTrouble(message: String) : IOException(message)
 
-/**
- * The Òmìnira Gateway over HTTPS, exactly as docs/api.md describes it: JSON, kobo integers,
- * a bearer token, an Idempotency-Key on every state-changing call, problem details switched on
- * `code`, and polling while a draft waits for the co-approver.
- *
- * Offline rules, so bad venue Wi-Fi never ends a demo and never misleads a customer:
- * - A call that moves no money (onboarding, sign in, reading, the assistant, making a draft) may
- *   fall back to [fallback] when the Gateway cannot be reached. The rest of the session then stays
- *   offline.
- * - A draft the Gateway made always stays with the Gateway. Its confirm never falls back.
- * - If the answer to a confirm is lost, the client asks the Gateway (GET /v1/drafts/{id}) what
- *   happened before saying anything. If it still cannot tell, the customer hears
- *   "Do not send it again", never "nothing was sent".
- */
 class GatewayOminiraApi(
     baseUrl: String,
     token: String,
@@ -60,7 +45,6 @@ class GatewayOminiraApi(
 
     @Volatile private var bearer = token
 
-    /** True once the Gateway could not be reached; calls that move no money then use [fallback]. */
     @Volatile var offline = false
         private set
 
@@ -69,8 +53,6 @@ class GatewayOminiraApi(
     @Volatile private var accountId: String? = null
     @Volatile private var conversationId: String? = null
     @Volatile private var syncedLang: Lang? = null
-
-    // ---- Transport -------------------------------------------------------------------------
 
     private class Reply(val status: Int, val body: Any?) {
         val ok: Boolean get() = status in 200..299
@@ -107,7 +89,7 @@ class GatewayOminiraApi(
             if (auth) conn.setRequestProperty("Authorization", "Bearer $bearer")
             extraHeaders.forEach { (k, v) -> conn.setRequestProperty(k, v) }
             if (method != "GET") {
-                // A new key for every new attempt; the same key only to retry the same request.
+                // Fresh key per attempt; the same key only to retry the same request.
                 conn.setRequestProperty("Idempotency-Key", key)
                 val bytes = (body ?: JSONObject()).toString().toByteArray(Charsets.UTF_8)
                 conn.doOutput = true
@@ -130,7 +112,7 @@ class GatewayOminiraApi(
         }
     }
 
-    /** For calls that move no money: if the Gateway cannot be reached, carry on offline. */
+    // Non-money calls only: a money call never falls back offline.
     private suspend fun <T> orOffline(offlineCall: suspend () -> T, online: suspend () -> T): T {
         if (offline) return offlineCall()
         return try {
@@ -149,15 +131,11 @@ class GatewayOminiraApi(
         offline = true
     }
 
-    /** A read that must succeed, or the call is treated as unreachable. */
     private fun Reply.orTrouble(): Reply = if (ok) this else throw GatewayTrouble("HTTP $status $code")
 
     private fun ours(draftId: String): Boolean = draftId in gatewayDrafts
 
-    // ---- Onboarding ------------------------------------------------------------------------
-
     override suspend fun startOnboarding(lang: Lang): OnboardingSession = orOffline({ fallback.startOnboarding(lang) }) {
-        // The Gateway uses this language for later `say` lines, and complete saves it.
         val o = call("POST", "/onboarding/sessions", JSONObject().put("lang", lang.code), auth = false).orTrouble().obj
         val digits = o.getJSONArray("liveness_digits")
         OnboardingSession(o.getString("id"), List(digits.length()) { digits.getInt(it) })
@@ -199,8 +177,6 @@ class GatewayOminiraApi(
         }
     }
 
-    // ---- Sign in ---------------------------------------------------------------------------
-
     override suspend fun unlock(pinBlock: String): Unlock = orOffline({ fallback.unlock(pinBlock) }) {
         val r = call("POST", "/auth/unlock", JSONObject().put("pin_block", pinBlock))
         when {
@@ -209,8 +185,6 @@ class GatewayOminiraApi(
             else -> throw GatewayTrouble("HTTP ${r.status} ${r.code}")
         }
     }
-
-    // ---- Reading money ---------------------------------------------------------------------
 
     override suspend fun accounts(): List<Account> = orOffline({ fallback.accounts() }) {
         val a = call("GET", "/accounts").orTrouble().list
@@ -278,8 +252,6 @@ class GatewayOminiraApi(
         }
     }
 
-    // ---- Preferences -----------------------------------------------------------------------
-
     override suspend fun savePreferences(patch: PreferencePatch) {
         if (offline) return fallback.savePreferences(patch)
         val body = JSONObject()
@@ -299,17 +271,13 @@ class GatewayOminiraApi(
         }
     }
 
-    // ---- The assistant ---------------------------------------------------------------------
-
     override suspend fun turn(text: String, lang: Lang): Turn = orOffline({ fallback.turn(text, lang) }) {
         if (syncedLang != lang) {
-            // Changing lang changes the language of every later `say`.
             call("PUT", "/me/preferences", JSONObject().put("lang", lang.code))
             syncedLang = lang
         }
         var r = postTurn(text)
         if (r.status == 404) {
-            // The Gateway was reset and forgot the conversation: start a new one.
             conversationId = null
             r = postTurn(text)
         }
@@ -327,11 +295,9 @@ class GatewayOminiraApi(
 
     private suspend fun postTurn(text: String): Reply {
         val id = conversationId ?: call("POST", "/conversations").orTrouble().obj.getString("id").also { conversationId = it }
-        // A Claude turn can take several seconds; the Gateway falls back to its rules after eight.
+        // The Gateway answers by rules after 8 s; keep this timeout above that.
         return call("POST", "/conversations/$id/turns", JSONObject().put("text", text), timeoutMs = 25_000)
     }
-
-    // ---- Drafts ------------------------------------------------------------------------------
 
     override suspend fun draftTransfer(payeeId: String, amountKobo: Long): Drafted =
         orOffline({ fallback.draftTransfer(payeeId, amountKobo) }) {
@@ -356,7 +322,6 @@ class GatewayOminiraApi(
         return peek(draftId)?.let { draftFrom(it) }
     }
 
-    /** GET /v1/drafts/{id}, or null when the Gateway cannot tell us right now. */
     private suspend fun peek(draftId: String): JSONObject? = try {
         val r = call("GET", "/drafts/$draftId")
         if (r.ok && r.obj.text("status").isNotBlank()) r.obj else null
@@ -366,14 +331,10 @@ class GatewayOminiraApi(
         null
     }
 
-    // ---- The confirm gate ------------------------------------------------------------------
-
     override suspend fun confirm(draftId: String, readbackHash: String, pinBlock: String, callActive: Boolean): Outcome {
         if (!ours(draftId)) return fallback.confirm(draftId, readbackHash, pinBlock, callActive)
         val body = JSONObject().put("readback_hash", readbackHash).put("pin_block", pinBlock).put("call_active", callActive)
-        // One key for this attempt (this PIN entry). If its answer is lost, the exact same request
-        // goes once more with the same key: the Gateway replays the stored answer, or, if the first
-        // never arrived, runs it now. Zenith's own key {draft}:{attempt} stops a double payment.
+        // Reuse this key only to resend a lost answer: the Gateway replays it.
         val key = UUID.randomUUID().toString()
         var r: Reply? = null
         for (attempt in 0 until 2) {
@@ -386,7 +347,7 @@ class GatewayOminiraApi(
                 Log.w(TAG, "Confirm answer unreadable (try ${attempt + 1})", e)
                 null
             }
-            // 5xx and 429 are not stored by the Gateway, so a retry with the same key really retries.
+            // 5xx and 429 are not stored by the Gateway, so a same-key retry reruns.
             val lost = r == null || (r.status >= 500 && r.code.isBlank())
             if (!lost) break
             if (attempt == 0) delay(1_500)
@@ -406,7 +367,7 @@ class GatewayOminiraApi(
         }
     }
 
-    /** Sorts a problem answer from the gate by its `code`, never its title. */
+    // Sort by `code`, never by title.
     private suspend fun problem(r: Reply, draftId: String): Outcome {
         val code = r.code
         val o = r.obj
@@ -432,14 +393,13 @@ class GatewayOminiraApi(
             "not_found", "forbidden", "unauthorized", "invalid_request", "idempotency_key_reused" ->
                 Outcome.NotSent(code, false, r.say("That did not go through. Nothing was sent."))
             else -> when {
-                // A proxy error page or an unknown server error is not the gate's answer.
+                // A proxy page or unknown 5xx is not the gate's answer: treat as lost.
                 r.status >= 500 -> afterLostAnswer(draftId)
                 else -> Outcome.NotSent(code.ifBlank { "http_${r.status}" }, false, r.say("That did not go through. Nothing was sent."))
             }
         }
     }
 
-    /** After a money call whose answer was lost: ask the Gateway before saying anything. */
     private suspend fun afterLostAnswer(draftId: String): Outcome {
         var o: JSONObject? = null
         for (attempt in 0 until 3) {
@@ -457,12 +417,11 @@ class GatewayOminiraApi(
             DraftStatus.Cancelled -> Outcome.Stopped(say.ifBlank { "Cancelled. Nothing was sent." })
             DraftStatus.Expired -> Outcome.Expired(say.ifBlank { "That request timed out. Nothing was sent." })
             DraftStatus.Failed -> Outcome.NotSent("failed", false, say.ifBlank { "That did not go through. Nothing was sent." })
-            // The gate may still be working on it, and its last line may be about something else.
+            // The gate may still be working, and its last `say` may be stale.
             DraftStatus.AwaitingConfirm, null -> Outcome.Unsure(UNSURE)
         }
     }
 
-    /** A transfer in progress at Zenith: re-check by reference until it lands or fails. */
     private suspend fun settle(draftId: String): Outcome {
         repeat(20) {
             delay(2_000)
@@ -523,7 +482,7 @@ class GatewayOminiraApi(
         var misses = 0
         while (true) {
             delay(2_000)
-            // A dropped poll or a proxy error page is not a decision. Keep listening.
+            // A dropped poll or a proxy error page is not a decision.
             val o = peek(draftId)
             if (o == null) {
                 misses += 1
@@ -537,21 +496,14 @@ class GatewayOminiraApi(
                 DraftStatus.Executed -> return Outcome.Sent(o.text("reference"), say.ifBlank { "Approved and sent." })
                 DraftStatus.Cancelled -> return Outcome.Stopped(say.ifBlank { "Your approver said no. Nothing was sent." })
                 DraftStatus.Expired -> return Outcome.Expired(say.ifBlank { "Your approver did not answer in time. Nothing was sent." })
-                // Back with the customer: the last check before sending held the money
-                // (readback_mismatch, bank_unavailable or limit_exceeded).
                 DraftStatus.AwaitingConfirm -> return backWithCustomer(o, "The bank did not answer after your approver said yes. Nothing was sent. Try again in a minute.")
                 DraftStatus.Failed, DraftStatus.Paused, null ->
                     return Outcome.NotSent(o.text("code").ifBlank { "failed" }, false, say.ifBlank { "That did not go through. Nothing was sent." })
             }
         }
-        // Not reached: the loop only ends by returning. Kept so the function always has an answer.
         return Outcome.Unsure(UNSURE)
     }
 
-    /**
-     * A polled draft back at awaiting_confirm: nothing moved. With readback_mismatch the customer
-     * hears the new readback; otherwise the same draft can be confirmed again.
-     */
     private fun backWithCustomer(o: JSONObject, fallbackLine: String): Outcome {
         val say = o.text("say").ifBlank { fallbackLine }
         val code = o.text("code")
@@ -564,12 +516,6 @@ class GatewayOminiraApi(
         }
     }
 
-    // ---- Rehearsals --------------------------------------------------------------------------
-
-    /**
-     * POST /_mock/reset: the Gateway's mock bank back to the demo world. Only with the admin token
-     * (X-Mock-Admin); without one nothing is sent. Never throws.
-     */
     suspend fun resetMock(): Boolean {
         if (mockAdminToken.isBlank()) return false
         return try {
@@ -583,8 +529,6 @@ class GatewayOminiraApi(
             false
         }
     }
-
-    // ---- Parsing -----------------------------------------------------------------------------
 
     private fun draftFrom(o: JSONObject): Draft {
         val d = Draft(
@@ -626,5 +570,5 @@ class GatewayOminiraApi(
     }
 }
 
-/** org.json's optString turns JSON null into the word "null"; this gives "" instead. */
+// optString turns JSON null into "null"; this gives "" instead.
 private fun JSONObject.text(key: String): String = if (!has(key) || isNull(key)) "" else optString(key, "")

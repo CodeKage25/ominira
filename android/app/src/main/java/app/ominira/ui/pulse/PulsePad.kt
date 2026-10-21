@@ -51,7 +51,7 @@ import app.ominira.voice.Tones
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/** The moving parts of one Pulse PIN entry. Digits live here only until the fourth is taken. */
+// Digits live here only until the fourth is taken.
 @Stable
 private class PulseCount {
     var running by mutableStateOf(false)
@@ -64,7 +64,7 @@ private class PulseCount {
     var lastTap = 0L
     val digits = ArrayList<Int>(4)
 
-    /** Each round starts at a random digit, so the moment of a tap tells an onlooker nothing. */
+    // Random start, so the moment of a tap tells an onlooker nothing.
     fun newRound(context: Context) {
         val s = (0..9).random()
         inEars = Signals.wiredEarphones(context)
@@ -81,18 +81,7 @@ private class PulseCount {
     }
 }
 
-/**
- * Pulse PIN. Tap to start the count; the phone gives one beat per digit, 0 to 9 and round again,
- * starting somewhere new each time. Zero is a strong double buzz, the landmark to count from.
- * Tap when the count reaches your digit. After each digit the count rests 0.7 s, then starts again.
- *
- * With wired earphones in, the count is quiet ticks in the ears (zero higher and longer) and the
- * phone stays still. Zero also sounds on the loudspeaker while practising, or when the customer
- * turned [zeroSound] on. In [practice] nothing is entered: each tap goes to [onPractice].
- *
- * [onDigits] gets the four digits; seal them at once and never keep them. Put a key() around the
- * pad to start it afresh.
- */
+// Seal onDigits at once and never keep them. Wrap in key() to restart.
 @Composable
 fun PulsePad(
     haptics: Haptics,
@@ -126,7 +115,6 @@ fun PulsePad(
                 else -> haptics.count()
             }
         }
-        // Let the "digit taken" buzz finish, and give a breath, before the next count.
         if (pad.round > 1) delay(700)
         beat(pad.current)
         while (true) {
@@ -191,7 +179,6 @@ fun PulsePad(
             }
         }
 
-        // The count itself, drawn only when asked for.
         Row(
             Modifier.fillMaxWidth().clearAndSetSemantics { },
             horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),

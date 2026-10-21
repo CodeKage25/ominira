@@ -45,7 +45,6 @@ import app.ominira.voice.rememberPrompt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/** Where a home screen sends each request. */
 class HomeActions(
     val send: () -> Unit,
     val balance: () -> Unit,
@@ -54,10 +53,7 @@ class HomeActions(
     val settings: () -> Unit,
 )
 
-/**
- * Hands a turn that made a draft to the right screen. Returns false when there is no draft, so
- * the caller speaks the reply instead.
- */
+// False when the turn made no draft; the caller then speaks the reply.
 internal fun routeTurn(session: Session, turn: Turn, actions: HomeActions): Boolean {
     val draft = turn.draft ?: return false
     session.pendingTurn = turn
@@ -68,10 +64,6 @@ internal fun routeTurn(session: Session, turn: Turn, actions: HomeActions): Bool
     return true
 }
 
-/**
- * Voice home: it greets the customer and listens straight away. The orb is the way in; the
- * suggestions below are the same requests one tap away.
- */
 @Composable
 fun VoiceHomeScreen(session: Session, actions: HomeActions) {
     val scope = rememberCoroutineScope()
@@ -96,7 +88,7 @@ fun VoiceHomeScreen(session: Session, actions: HomeActions) {
     }
 
     fun send(text: String) {
-        if (orb == OrbState.Thinking) return // one request at a time
+        if (orb == OrbState.Thinking) return
         prompt.cancel()
         heard = text
         orb = OrbState.Thinking
@@ -113,7 +105,6 @@ fun VoiceHomeScreen(session: Session, actions: HomeActions) {
             orb = OrbState.Idle
             if (routeTurn(session, turn, actions)) return@launch
             if (session.talksFirst) {
-                // A follow-up question ("How much should I send to Tolu?") is its own prompt.
                 if (turn.say.trimEnd().endsWith("?")) ask(turn.say) else ask(turn.say, "Anything else?")
             } else {
                 orb = OrbState.Speaking
@@ -133,7 +124,6 @@ fun VoiceHomeScreen(session: Session, actions: HomeActions) {
         if (session.talksFirst) ask(session.greeting(), "What would you like to do?")
     }
 
-    // The orb never stays on Speaking after the voice has stopped.
     LaunchedEffect(talking, orb) {
         if (!talking && orb == OrbState.Speaking) {
             delay(1_500)

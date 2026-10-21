@@ -8,7 +8,6 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-/** When something happened, said simply: "Today", "Yesterday", "Wed 14 Oct". */
 object Days {
     private val short: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE d MMM", Locale.UK)
     private val long: DateTimeFormatter = DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.UK)
@@ -19,15 +18,12 @@ object Days {
             ?: runCatching { LocalDateTime.parse(iso.removeSuffix("Z")).toInstant(ZoneOffset.UTC) }.getOrNull()
     }
 
-    /** For the screen. */
     fun label(iso: String, zone: ZoneId = ZoneId.systemDefault(), today: LocalDate = LocalDate.now(zone)): String =
         name(iso, zone, today, short)
 
-    /** For speech and TalkBack: "Wednesday 14 October". */
     fun spoken(iso: String, zone: ZoneId = ZoneId.systemDefault(), today: LocalDate = LocalDate.now(zone)): String =
         name(iso, zone, today, long)
 
-    /** A date of birth, "1961-03-14", read as "14 March 1961". Anything else comes back unchanged. */
     fun bornOn(isoDate: String): String =
         runCatching { DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.UK).format(LocalDate.parse(isoDate)) }.getOrDefault(isoDate)
 

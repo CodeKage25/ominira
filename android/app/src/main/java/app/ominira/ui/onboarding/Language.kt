@@ -53,22 +53,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/** One answer from the microphone. A new object each time, so the same words twice still count. */
+// A new object each time, so the same words twice still count.
 private class Answer(val text: String?)
 
-/**
- * The very first screen, before anything in English is asked: not everyone speaks English.
- *
- * It speaks straight away, one line per language, each in that language and its own voice:
- * a bundled clip if there is one, else the Gateway's voice, else the phone's voice for English and
- * Pidgin (a line is skipped rather than read in Yorùbá, Hausa or Igbo by an English voice). Then it
- * listens for a language name. Nothing heard: the lines play once more, then it waits for a tap.
- *
- * Five big bands, each labelled only in its own language, are the touch way in. With TalkBack on
- * nothing plays and the microphone stays shut: the bands are the interface.
- *
- * From Settings ([fromSettings]), it plays only in voice mode, and choosing goes back.
- */
 @Composable
 fun LanguageScreen(session: Session, fromSettings: Boolean, onBack: (() -> Unit)?, onChosen: () -> Unit) {
     val context = LocalContext.current
@@ -86,7 +73,7 @@ fun LanguageScreen(session: Session, fromSettings: Boolean, onBack: (() -> Unit)
         answer = Answer(text)
     }
 
-    /** May the phone's own engine say a line in [lang]? English and Pidgin, or a real voice for it. */
+    // No yo/ha/ig phone voice: skip the line, never read it in an English voice.
     fun phoneMay(lang: Lang): Boolean = lang == Lang.En || lang == Lang.Pcm || session.speaker.hasPhoneVoiceFor(lang)
 
     suspend fun sayLine(lang: Lang, text: String, clip: String?) {
@@ -155,7 +142,6 @@ fun LanguageScreen(session: Session, fromSettings: Boolean, onBack: (() -> Unit)
                     })
                 }
                 Box(Modifier.weight(1f))
-                // Decorative: the rising tone already says "speak now".
                 if (listening) Icon(Glyphs.Mic, contentDescription = null, tint = Om.color.action, modifier = Modifier.size(32.dp))
             }
         }
@@ -165,10 +151,6 @@ fun LanguageScreen(session: Session, fromSettings: Boolean, onBack: (() -> Unit)
     }
 }
 
-/**
- * One language, labelled only in its own words. The words carry their language, so TalkBack reads
- * each band in that language's voice where the phone has one.
- */
 @Composable
 private fun LanguageBand(lang: Lang, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val c = Om.color
@@ -195,7 +177,7 @@ private fun LanguageBand(lang: Lang, selected: Boolean, modifier: Modifier, onCl
             LanguagePrompts.line(lang),
             style = Om.type.small.copy(localeList = locale),
             color = c.muted,
-            // The band is named by the language alone; the spoken prompt is for sighted readers.
+            // The band is named by the language alone; this line is for sighted readers.
             modifier = Modifier.clearAndSetSemantics { },
         )
     }

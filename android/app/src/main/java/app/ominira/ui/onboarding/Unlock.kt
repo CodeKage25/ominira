@@ -22,10 +22,6 @@ import app.ominira.ui.theme.Om
 import app.ominira.voice.Tones
 import kotlinx.coroutines.launch
 
-/**
- * Pulse PIN sign in. Demo PIN 2 0 7 5. Three wrong tries locks it. In voice mode it goes home by
- * itself once unlocked; otherwise "Go to my home" does.
- */
 @Composable
 fun UnlockScreen(session: Session, onUnlocked: () -> Unit) {
     val scope = rememberCoroutineScope()

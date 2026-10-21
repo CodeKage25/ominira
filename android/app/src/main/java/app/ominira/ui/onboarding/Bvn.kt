@@ -28,10 +28,6 @@ import app.ominira.ui.theme.Glyphs
 import app.ominira.voice.rememberPrompt
 import kotlinx.coroutines.launch
 
-/**
- * BVN, said or typed. Spoken digits are read back one by one and used only after a yes.
- * The same identity check Zenith runs today; then onboarding is complete.
- */
 @Composable
 fun BvnScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
     val scope = rememberCoroutineScope()
@@ -91,7 +87,7 @@ fun BvnScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
         }
     }
 
-    // A longer quiet ends the answer, so a BVN said slowly is not cut off after the first gap.
+    // Longer quiet, so a BVN said slowly is not cut off at the first gap.
     val prompt = rememberPrompt(session, quietMs = 2_000) { heard ->
         val pending = heardBvn
         when {

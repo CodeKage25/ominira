@@ -42,23 +42,15 @@ import app.ominira.ui.theme.Glyphs
 import app.ominira.ui.theme.Om
 import app.ominira.voice.rememberPrompt
 
-/**
- * The first thing anyone meets. Òmìnira speaks before it asks for anything: say yes, or tap
- * anywhere (the whole screen is one button), and it talks the rest of the way. "Read and tap
- * instead", near the top, leads to the ways-in picker, where nothing is ticked, so a deaf
- * customer never lands in voice mode. With TalkBack on, the app stays quiet and TalkBack reads it.
- */
 @Composable
 fun WelcomeScreen(session: Session, onTalk: () -> Unit, onRead: () -> Unit) {
     val leave = remember { Once() }
     var tries by remember { mutableIntStateOf(0) }
     var dismissed by remember { mutableIntStateOf(0) }
-    // Everything said here is also written here.
     var line by remember { mutableStateOf<String?>(null) }
     val readerOn = remember { session.screenReaderOn() }
     val copy = OnboardingCopy.of(session.lang)
-    // Spoken in the chosen language when there is a voice for it; otherwise in English, which is
-    // better than Yorùbá, Hausa or Igbo read out by an English voice. The screen stays in the language.
+    // No voice for the language: speak English, not yo/ha/ig in an English voice.
     val voiced = remember(session.lang) { session.speaker.hasVoiceFor(session.lang) }
     val spoken = if (voiced) copy else OnboardingCopy.of(Lang.En)
     val speakIn = if (voiced) session.lang else Lang.En
@@ -78,12 +70,10 @@ fun WelcomeScreen(session: Session, onTalk: () -> Unit, onRead: () -> Unit) {
         onRead()
     }
 
-    // No permission box on this screen: until the microphone is allowed, the phone's own
-    // listening box takes the answer.
+    // No permission box here: the phone's own listening box takes the answer.
     val prompt = rememberPrompt(session, askForMic = false) { heard ->
         when {
             heard == null -> {
-                // The listening box was closed, nearly always by a tap on the screen.
                 dismissed += 1
                 tell { if (dismissed >= 2) it.stopListening else it.tapToBegin }
             }
@@ -146,10 +136,6 @@ fun WelcomeScreen(session: Session, onTalk: () -> Unit, onRead: () -> Unit) {
     }
 }
 
-/**
- * Ask how, never what: "How would you like to use Òmìnira?" Several ways can be on. Reached by
- * choosing to read and tap, so this screen stays quiet, and nothing is ticked for the customer.
- */
 @Composable
 fun WaysInScreen(session: Session, onNext: () -> Unit) {
     var chosen by remember { mutableStateOf(emptySet<Mode>()) }

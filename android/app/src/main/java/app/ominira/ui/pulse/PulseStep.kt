@@ -31,10 +31,6 @@ import app.ominira.ui.kit.Tone
 import app.ominira.ui.theme.Glyphs
 import app.ominira.ui.theme.Om
 
-/**
- * Two buttons above every Pulse PIN pad: the spoken explanation, any time, and a practice round
- * where nothing is entered and zero also sounds, so the customer learns the strong double buzz.
- */
 @Composable
 fun PulseCoach(session: Session, practising: Boolean, onPractising: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -57,12 +53,6 @@ fun PulseCoach(session: Session, practising: Boolean, onPractising: (Boolean) ->
     }
 }
 
-/**
- * A whole Pulse PIN screen on the forest band, so it reads the same in every look. In voice mode
- * the count is not drawn (the screen stays dark); "Show count" draws it for sighted viewers.
- *
- * Used for sign in and for every money confirm. [attempt] starts the pad afresh after a wrong PIN.
- */
 @Composable
 fun PulseStep(
     session: Session,

@@ -44,10 +44,6 @@ private fun paint(tone: Tone): TonePaint = when (tone) {
     Tone.Info -> TonePaint(Om.color.info, Om.color.infoSoft, Glyphs.Info)
 }
 
-/**
- * A status message: an icon, a bold line saying what happened, then what to do. Never colour
- * alone. Announced by TalkBack when it appears; a danger notice interrupts.
- */
 @Composable
 fun Notice(tone: Tone, title: String, modifier: Modifier = Modifier, body: String? = null, icon: ImageVector? = null) {
     val p = paint(tone)
@@ -71,7 +67,6 @@ fun Notice(tone: Tone, title: String, modifier: Modifier = Modifier, body: Strin
     }
 }
 
-/** A small label: "On a call", "Blocked", "Live 6:12". */
 @Composable
 fun Badge(tone: Tone, text: String, modifier: Modifier = Modifier, showIcon: Boolean = true, icon: ImageVector? = null) {
     val p = paint(tone)
@@ -89,7 +84,6 @@ fun Badge(tone: Tone, text: String, modifier: Modifier = Modifier, showIcon: Boo
     }
 }
 
-/** A short "done" line on the forest band. */
 @Composable
 fun Confirmation(text: String, modifier: Modifier = Modifier) {
     Row(
@@ -112,7 +106,6 @@ enum class Progress { Done, Now, Next }
 
 class Milestone(val title: String, val sub: String, val stage: Progress)
 
-/** A short timeline: done, happening now, next. Each step reads as one line. */
 @Composable
 fun Timeline(steps: List<Milestone>, modifier: Modifier = Modifier) {
     val c = Om.color
@@ -157,10 +150,7 @@ fun Timeline(steps: List<Milestone>, modifier: Modifier = Modifier) {
     }
 }
 
-/**
- * A sheet over a scrim that cannot be swiped or tapped away. Used for the scam pause: while it is
- * up, the screen behind should clear its own semantics so TalkBack only finds the sheet.
- */
+// Callers clear the semantics behind it, so TalkBack finds only the sheet.
 @Composable
 fun BlockingSheet(caution: Boolean, content: @Composable ColumnScope.() -> Unit) {
     val c = Om.color

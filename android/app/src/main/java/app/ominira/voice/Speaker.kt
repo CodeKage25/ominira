@@ -17,16 +17,6 @@ import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 
-/**
- * Speech out, one voice at a time.
- *
- * With cloud voice available ([cloud] returns one that is usable), each line is spoken by the
- * Gateway's YarnGPT voice in any of the five languages. Otherwise, or when the cloud fails, the
- * phone's own text-to-speech speaks it.
- *
- * Lines are spoken one after another with a readback pause between them (500 ms by default), so
- * amount, name, bank and digits land one at a time.
- */
 class Speaker(context: Context, private val cloud: () -> CloudVoice?) : TextToSpeech.OnInitListener {
 
     private class Request(val lang: Lang, val lines: List<String>, val gapMs: Long, val phoneFallback: Boolean)
@@ -42,19 +32,15 @@ class Speaker(context: Context, private val cloud: () -> CloudVoice?) : TextToSp
     @Volatile private var lastPhoneLine: String? = null
     private var counter = 0
 
-    /** speech-rate token: 0.8 slower, 0.95 normal, 1.15 faster. */
     @Volatile var rate: Float = 0.95f
 
     private val _talking = MutableStateFlow(false)
-    /** True from the moment a line is asked for until the last of it has been spoken. */
     val talking: StateFlow<Boolean> = _talking.asStateFlow()
 
     private val _caption = MutableStateFlow("")
-    /** The words being spoken, for captions. */
     val caption: StateFlow<String> = _caption.asStateFlow()
 
-    // Declared last: with no speech engine at all, TextToSpeech calls onInit from inside its own
-    // constructor, and everything onInit touches must already exist.
+    // Declared last: with no engine, onInit runs inside this constructor.
     private val tts = TextToSpeech(context.applicationContext, this)
 
     override fun onInit(status: Int) {
@@ -85,11 +71,7 @@ class Speaker(context: Context, private val cloud: () -> CloudVoice?) : TextToSp
         }
     }
 
-    /**
-     * Speaks [lines] in order, stopping whatever was being said. Call on the main thread.
-     * With [phoneFallback] false, a line the cloud voice cannot say is skipped rather than read by
-     * the phone (which may only have an English voice).
-     */
+    // Main thread. phoneFallback false: skip a line rather than read it in English.
     fun speak(lang: Lang, lines: List<String>, gapMs: Long = 500, phoneFallback: Boolean = true) {
         val clean = lines.map { it.trim() }.filter { it.isNotEmpty() }
         if (clean.isEmpty() || pool.isShutdown) return
@@ -109,7 +91,7 @@ class Speaker(context: Context, private val cloud: () -> CloudVoice?) : TextToSp
 
     private fun inCloud(voice: CloudVoice, ticket: Int, request: Request) {
         if (engineOk) tts.stop()
-        // The cloud voice reads sentences; a full stop after each line gives it the pauses.
+        // The cloud voice pauses at full stops, so end each line with one.
         val text = request.lines.joinToString(" ") { line ->
             if (line.endsWith(".") || line.endsWith("?") || line.endsWith("!")) line else "$line."
         }
@@ -123,7 +105,7 @@ class Speaker(context: Context, private val cloud: () -> CloudVoice?) : TextToSp
         }
     }
 
-    /** Main thread only. */
+    // Main thread only.
     private fun play(url: String, ticket: Int, request: Request) {
         releasePlayer()
         val mp = MediaPlayer()
@@ -161,7 +143,6 @@ class Speaker(context: Context, private val cloud: () -> CloudVoice?) : TextToSp
         }
     }
 
-    /** The cloud voice failed: the phone speaks, unless this request said it must not. */
     private fun fallBack(request: Request) {
         if (request.phoneFallback) onPhone(request) else _talking.value = false
     }
@@ -176,7 +157,6 @@ class Speaker(context: Context, private val cloud: () -> CloudVoice?) : TextToSp
     private fun onPhone(request: Request) {
         if (!engineOk) {
             if (engineDone.value) {
-                // The engine started and failed: there is no voice to wait for.
                 _talking.value = false
             } else {
                 waiting = request
@@ -201,26 +181,17 @@ class Speaker(context: Context, private val cloud: () -> CloudVoice?) : TextToSp
         }
     }
 
-    /**
-     * True when there is a voice for [lang]: always with usable cloud speech, otherwise only if
-     * the phone has one. Most phones have none for Yorùbá, Hausa or Igbo.
-     */
     fun hasVoiceFor(lang: Lang): Boolean {
         if (cloud()?.usable == true) return true
         if (!engineOk) return false
         return tts.isLanguageAvailable(Locale.forLanguageTag(lang.tag)) >= TextToSpeech.LANG_AVAILABLE
     }
 
-    /** True when the phone's own engine has a voice for [lang] (not counting cloud speech). */
     fun hasPhoneVoiceFor(lang: Lang): Boolean {
         if (!engineOk) return false
         return tts.isLanguageAvailable(Locale.forLanguageTag(lang.tag)) >= TextToSpeech.LANG_AVAILABLE
     }
 
-    /**
-     * Speaks one line and suspends until it has been said. Returns false, saying nothing, when no
-     * voice may say it: no usable cloud voice and [phoneFallback] is false.
-     */
     suspend fun speakAndWait(lang: Lang, line: String, phoneFallback: Boolean): Boolean {
         val voice = cloud()
         if ((voice == null || !voice.usable) && !phoneFallback) return false
@@ -229,7 +200,6 @@ class Speaker(context: Context, private val cloud: () -> CloudVoice?) : TextToSp
         return true
     }
 
-    /** Stops speaking at once, on both voices. */
     fun stop() {
         turn.incrementAndGet()
         waiting = null
@@ -238,10 +208,6 @@ class Speaker(context: Context, private val cloud: () -> CloudVoice?) : TextToSp
         _talking.value = false
     }
 
-    /**
-     * Suspends until nothing is being said, so the microphone never opens over the app's own
-     * voice. Gives up after [maxMs] so a stuck engine cannot hang a screen.
-     */
     suspend fun awaitQuiet(maxMs: Long = 30_000) {
         withTimeoutOrNull(15_000) { engineDone.first { it } }
         withTimeoutOrNull(maxMs) { talking.first { !it } }

@@ -1,11 +1,5 @@
 package app.ominira.core
 
-/**
- * The few app lines that change with the customer's language. Everything about money comes from
- * the Gateway's `say`, already in the right language, so this table stays small.
- * Yorùbá, Hausa and Igbo need a native speaker's check before the demo; Pulse PIN coaching falls
- * back to English for them until then.
- */
 object Lines {
 
     fun hello(lang: Lang): String = when (lang) {
@@ -32,7 +26,6 @@ object Lines {
         Lang.Ig -> "Ka anyị gaa n’ihu"
     }
 
-    /** [hour] is the local hour, 0 to 23. English and Pidgin follow the time of day. */
     fun greeting(lang: Lang, name: String, hour: Int): String {
         val part = when (hour) {
             in 0..11 -> "morning"
@@ -88,6 +81,5 @@ object Lines {
         }
     }
 
-    /** What a customer hears after saying a PIN out loud. Nothing they said is kept. */
     const val PIN_SPOKEN = "Please never say your PIN out loud. I did not keep it. Your Pulse PIN is entered by feel, on the screen."
 }

@@ -15,7 +15,6 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-/** Sizes from the design system. [target] is 56dp, or 72dp in plain and switch mode. */
 @Immutable
 class Sizes(val target: Dp, val roomy: Boolean) {
     val gutter: Dp = 24.dp
@@ -23,7 +22,6 @@ class Sizes(val target: Dp, val roomy: Boolean) {
     val focusRing: Dp = 3.dp
 }
 
-/** Corner shapes from the design system. */
 object Corners {
     val sm = RoundedCornerShape(10.dp)
     val md = RoundedCornerShape(18.dp)
@@ -37,7 +35,6 @@ private val LocalPalette = staticCompositionLocalOf { PaperPalette }
 private val LocalTypeScale = staticCompositionLocalOf { TypeScale() }
 private val LocalSizes = staticCompositionLocalOf { Sizes(56.dp, roomy = false) }
 
-/** Tokens anywhere in the tree: Om.color.action, Om.type.body, Om.size.target. */
 object Om {
     val color: Palette
         @Composable @ReadOnlyComposable get() = LocalPalette.current
@@ -53,7 +50,6 @@ fun OminiraTheme(look: Look, roomy: Boolean, content: @Composable () -> Unit) {
     val type = remember(roomy) { TypeScale(if (roomy) 1.15f else 1f) }
     val sizes = remember(roomy) { Sizes(if (roomy) 72.dp else 56.dp, roomy) }
 
-    // The few Material pieces in use (ripples, the progress ring) read this scheme.
     val scheme = if (palette.dark) {
         darkColorScheme(
             primary = palette.action, onPrimary = palette.onAction,

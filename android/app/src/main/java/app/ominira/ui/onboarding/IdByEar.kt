@@ -66,7 +66,6 @@ import kotlinx.coroutines.launch
 private val cardLines = listOf("Ready when you are.", "Hold your card up a little.", "Tilt left a little.", "Got it.")
 private val cardTilt = listOf(-14f, -14f, -5f, 0f)
 
-/** What the customer hears about their ID: name, NIN ending digit by digit, date of birth. */
 private fun idLines(id: IdDetails): Array<String> = arrayOf(
     "Is this you?",
     id.fullName + ".",
@@ -74,11 +73,6 @@ private fun idLines(id: IdDetails): Array<String> = arrayOf(
     "Born " + Days.bornOn(id.bornOn) + ".",
 )
 
-/**
- * ID by ear: guided capture ("Hold your card up a little. Tilt left a little. Got it."), then the
- * name, NIN ending and date of birth read back. Yes goes on, again repeats, no retakes.
- * Hackathon build: the camera is simulated.
- */
 @Composable
 fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
     val scope = rememberCoroutineScope()
@@ -100,7 +94,7 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
 
     fun next() = leave.run(onNext)
 
-    // Declared before begin(), which asks through it. A spoken "start" sets startAsked instead.
+    // Declared before begin(), which asks through it.
     val prompt = rememberPrompt(session) { heard ->
         val id = details
         when {
@@ -112,7 +106,6 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
             }
             id == null -> session.say("Tap anywhere when you are ready.")
             Answers.isNo(heard) -> {
-                // Wrong card or a bad read: go round again.
                 details = null
                 phase = 0
                 started = false
@@ -151,7 +144,7 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
                 return@launch
             }
             details = read
-            misses = 0 // the "is this you?" step gets its own tries
+            misses = 0
             if (session.talksFirst) prompt.ask(*idLines(read), confirmLine) else session.say(*idLines(read))
         }
     }

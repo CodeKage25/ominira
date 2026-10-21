@@ -29,16 +29,6 @@ import java.time.Duration
 import java.time.Instant
 import kotlin.random.Random
 
-/**
- * The bank inside the app, for demos with no network. Same demo world as docs/api.md (Ronke,
- * ₦842,300, Tolu, Mama and new payee Musa, card ending 8830, Funmi approving above ₦50,000,
- * Pulse PIN 2 0 7 5) and the same confirm gate, checked in the same order:
- * real draft, heard it, limits, scam pause, Pulse PIN, co-approver, execute.
- *
- * Offline, Funmi approves by herself [approvalDelayMs] after she is asked.
- *
- * [latency] scales the small pauses that make the demo feel like a network; tests pass 0.
- */
 class FakeOminiraApi(
     private val now: () -> Instant = { Instant.now() },
     private val approvalDelayMs: Long = 6_000,
@@ -52,10 +42,10 @@ class FakeOminiraApi(
     private var lang = Lang.En
 
     private val approver = "Funmi"
-    private val pauseThresholdKobo = 5_000_000L // ₦50,000, to a new payee during a call
-    private val approverThresholdKobo = 5_000_000L // above ₦50,000, Funmi decides
-    private val perTransferLimitKobo = 100_000_000L // ₦1,000,000
-    private val dailyLimitKobo = 500_000_000L // ₦5,000,000
+    private val pauseThresholdKobo = 5_000_000L
+    private val approverThresholdKobo = 5_000_000L
+    private val perTransferLimitKobo = 100_000_000L
+    private val dailyLimitKobo = 500_000_000L
 
     private val account = Account("ac_1", "Current account", "4567", 0)
 
@@ -86,7 +76,6 @@ class FakeOminiraApi(
 
     private val records = LinkedHashMap<String, Record>()
 
-    /** "Send money to Tolu", then "twenty thousand": who the unfinished request was for. */
     private var waitingFor: Payee? = null
 
     private class Signup(
@@ -101,8 +90,6 @@ class FakeOminiraApi(
         if (latency > 0) delay(ms * latency)
     }
 
-    // ---- Onboarding ----------------------------------------------------------------------
-
     override suspend fun startOnboarding(lang: Lang): OnboardingSession {
         pause(300)
         this.lang = lang
@@ -112,7 +99,6 @@ class FakeOminiraApi(
         return OnboardingSession(id, digits)
     }
 
-    /** As on the Gateway: live unless digits were sent and they do not match. */
     override suspend fun sendSelfie(sessionId: String, spokenDigits: List<Int>?): Boolean {
         pause(500)
         val s = signups.getOrPut(sessionId) { Signup() }
@@ -140,8 +126,6 @@ class FakeOminiraApi(
         return s.selfie && s.idRead && s.bvnOk
     }
 
-    // ---- Sign in ---------------------------------------------------------------------------
-
     override suspend fun unlock(pinBlock: String): Unlock {
         pause(250)
         return when (val check = checkPin(pinBlock)) {
@@ -150,7 +134,7 @@ class FakeOminiraApi(
         }
     }
 
-    /** Null when the PIN is right. Shared by sign in and confirm: one PIN, one count of tries. */
+    // Null when right. Shared by sign in and confirm: one count of tries.
     private fun checkPin(pinBlock: String): Outcome.WrongPin? {
         if (triesLeft == 0) return Outcome.WrongPin(0, LOCKED)
         if (PinBlock.open(pinBlock) == pin) {
@@ -162,8 +146,6 @@ class FakeOminiraApi(
         val tries = if (triesLeft == 1) "one try" else Naira.words(triesLeft.toLong()) + " tries"
         return Outcome.WrongPin(triesLeft, "That PIN did not match. Feel the count again. You have $tries left.")
     }
-
-    // ---- Reading money -------------------------------------------------------------------
 
     override suspend fun accounts(): List<Account> {
         pause(150)
@@ -191,7 +173,6 @@ class FakeOminiraApi(
         return cameIn()
     }
 
-    /** Worked out from the transactions of the last seven days, so it stays true after a transfer. */
     private fun cameIn(): String {
         val weekAgo = now().minus(Duration.ofDays(7))
         val incoming = txns.filter { it.incoming && (Instant.parse(it.at).isAfter(weekAgo)) }
@@ -216,15 +197,13 @@ class FakeOminiraApi(
         patch.lang?.let { lang = it }
     }
 
-    // ---- The assistant ---------------------------------------------------------------------
-
     override suspend fun turn(text: String, lang: Lang): Turn {
         pause(600)
         this.lang = lang
         val heard = mask(text)
         fun answer(line: String, draft: Draft? = null) = Turn(heard, line, line, "rules", draft)
 
-        // A spoken PIN is caught before anything else, and never kept.
+        // The spoken PIN check comes first; the PIN is never kept.
         if (Answers.soundsLikePin(text)) {
             waitingFor = null
             return answer(Lines.PIN_SPOKEN)
@@ -269,11 +248,8 @@ class FakeOminiraApi(
         }
     }
 
-    /** Account numbers and BVNs are never repeated in full. */
     private fun mask(text: String): String =
         text.replace(Regex("""\d{10,}""")) { m -> "•".repeat(m.value.length - 4) + m.value.takeLast(4) }
-
-    // ---- Drafts --------------------------------------------------------------------------
 
     override suspend fun draftTransfer(payeeId: String, amountKobo: Long): Drafted {
         pause(200)
@@ -353,12 +329,10 @@ class FakeOminiraApi(
         r.draft = r.draft.copy(status = status, say = say, reference = reference)
     }
 
-    // ---- The confirm gate ----------------------------------------------------------------
-
     override suspend fun confirm(draftId: String, readbackHash: String, pinBlock: String, callActive: Boolean): Outcome {
         pause(800)
 
-        // 1. Real draft: this customer's, open, not expired.
+        // Same gate order as the Gateway; do not reorder these checks.
         val r = records[draftId] ?: return Outcome.NotSent("not_found", false, "I could not find that request. Nothing was sent.")
         expireIfStale(r)
         when (r.draft.status) {
@@ -370,7 +344,6 @@ class FakeOminiraApi(
             DraftStatus.AwaitingConfirm, DraftStatus.Paused -> Unit
         }
 
-        // 2. Heard it: the readback the customer heard must be the one we would send.
         val fresh = ReadbackHash.of(r.draft.readback)
         if (readbackHash != fresh) {
             return Outcome.HearAgain(r.draft.readback, fresh, "Something changed since I read it to you. Please listen again.")
@@ -378,7 +351,6 @@ class FakeOminiraApi(
 
         val amount = r.draft.readback.amountKobo ?: 0L
         if (r.draft.kind == DraftKind.Transfer) {
-            // 3. Limits, then what is in the account.
             if (amount > perTransferLimitKobo) {
                 return Outcome.NotSent("limit_exceeded", false, "That is more than one million naira, the most you can send at once. Nothing was sent.")
             }
@@ -390,7 +362,6 @@ class FakeOminiraApi(
                 return Outcome.NotSent("insufficient_funds", false, "That is more than you have. Nothing was sent.")
             }
 
-            // 4. Scam pause: a new payee, a large amount and a call, or a flagged payee.
             val p = r.payee
             val risky = p != null && ((p.isNew && amount >= pauseThresholdKobo && callActive) || p.flagged)
             if (risky && !r.pauseAnswered) {
@@ -399,16 +370,13 @@ class FakeOminiraApi(
             }
         }
 
-        // 5. Pulse PIN.
         checkPin(pinBlock)?.let { return it }
 
-        // 6. Co-approver. The PIN is already checked, so approval executes without a second PIN.
         if (r.draft.kind == DraftKind.Transfer && amount > approverThresholdKobo) {
             set(r, DraftStatus.AwaitingApproval, approvalLine())
             return Outcome.NeedsApproval(approver, approvalLine())
         }
 
-        // 7. Execute.
         return execute(r)
     }
 

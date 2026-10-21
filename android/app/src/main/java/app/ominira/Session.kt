@@ -27,47 +27,33 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
-/**
- * Everything that outlives a screen: the customer's choices (kept on the phone), the bank client,
- * the voice and the haptics. Screens get it as a parameter.
- */
 class Session(app: Application) : AndroidViewModel(app) {
 
     private val store = app.getSharedPreferences("ominira", Context.MODE_PRIVATE)
     private val background = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val context: Context get() = getApplication<Application>()
 
-    // ---- Which bank ------------------------------------------------------------------------
-
-    /** Live Gateway or the bank inside the app. gradle.properties sets the default; Settings flips it. */
     var useGateway by mutableStateOf(store.getBoolean(K_GATEWAY, !BuildConfig.USE_FAKE_API))
         private set
 
     var api: OminiraApi = newApi()
         private set
 
-    /** The live client lost the Gateway and this session now runs on the bank inside the app. */
     val gatewayLost: Boolean get() = (api as? GatewayOminiraApi)?.offline == true
 
     private val cloudVoice: CloudVoice? =
         if (BuildConfig.CLOUD_VOICE) CloudVoice(BuildConfig.GATEWAY_URL, BuildConfig.GATEWAY_TOKEN) else null
 
-    /** Cloud speech only with the live Gateway, and not once the session has gone offline. */
     fun activeCloudVoice(): CloudVoice? = if (api is GatewayOminiraApi && !gatewayLost) cloudVoice else null
 
     private fun newApi(): OminiraApi =
         if (useGateway && BuildConfig.GATEWAY_URL.isNotBlank()) GatewayOminiraApi(BuildConfig.GATEWAY_URL, BuildConfig.GATEWAY_TOKEN, BuildConfig.MOCK_ADMIN_TOKEN)
         else FakeOminiraApi()
 
-    // ---- Voice and touch ---------------------------------------------------------------------
-
     val speaker = Speaker(app) { activeCloudVoice() }
     val haptics = Haptics(app)
 
-    /** Posts a line to TalkBack. Set by MainActivity while it is alive. */
     var announcer: ((String) -> Unit)? = null
-
-    // ---- Remembered choices ------------------------------------------------------------------
 
     var look by mutableStateOf(enumOr(store.getString(K_LOOK, null), Look.Paper))
         private set
@@ -78,37 +64,28 @@ class Session(app: Application) : AndroidViewModel(app) {
     var speechRate by mutableStateOf(store.getFloat(K_RATE, 0.95f))
         private set
 
-    /** Pulse PIN beat gap: 1.8 s slower, 1.3 s normal, 0.9 s faster. Switch and plain start slower. */
     var pulseGapMs by mutableStateOf(store.getLong(K_PULSE, 1_300L))
         private set
 
-    /** Zero also sounds on the loudspeaker during a real PIN. Off: a listener could count from it. */
+    // Off by default: a listener could count the PIN from the zero sound.
     var zeroSound by mutableStateOf(store.getBoolean(K_ZERO, false))
         private set
     var captions by mutableStateOf(store.getBoolean(K_CAPTIONS, true))
         private set
 
-    /** How long the scanning ring rests on each choice. */
     var scanMs by mutableStateOf(store.getLong(K_SCAN, 2_500L))
         private set
 
-    // ---- This run only -----------------------------------------------------------------------
-
-    /** Settings > "Pretend I am on a phone call", so the scam pause can be shown. */
     var demoCallActive by mutableStateOf(false)
 
-    /** A draft the assistant made on a home screen, handed to the send or card screen. */
     var pendingTurn by mutableStateOf<Turn?>(null)
 
-    /** The onboarding session this phone started. */
     var onboardingId: String? = null
 
-    /** The microphone permission was asked for once already in this run. */
     var micAsked = false
 
     val customerName = "Ronke"
 
-    /** Plain and switch mode get bigger type and 72dp targets. */
     val roomy: Boolean get() = Mode.Plain in modes || Mode.Switch in modes
 
     init {
@@ -176,7 +153,6 @@ class Session(app: Application) : AndroidViewModel(app) {
         onboardingId = null
     }
 
-    /** Sends every remembered choice to the Gateway, once onboarding has given this phone a token. */
     fun syncAll() = sync(PreferencePatch(lang = lang, modes = modes, theme = look.wire, speechRate = speechRate, pulseGapMs = pulseGapMs))
 
     private fun sync(patch: PreferencePatch) {
@@ -184,10 +160,6 @@ class Session(app: Application) : AndroidViewModel(app) {
         background.launch { runCatching { client.savePreferences(patch) } }
     }
 
-    /**
-     * "Start again from welcome": a fresh bank, no pretend call, nothing half done. With the live
-     * Gateway and an admin token, the Gateway's mock bank is put back to the demo world too.
-     */
     fun restart() {
         speaker.stop()
         val fresh = newApi()
@@ -198,23 +170,14 @@ class Session(app: Application) : AndroidViewModel(app) {
         onboardingId = null
     }
 
-    // ---- Talking -----------------------------------------------------------------------------
-
     fun screenReaderOn(): Boolean = Signals.screenReaderOn(context)
 
     fun callActive(): Boolean = demoCallActive || Signals.inCall(context)
 
-    /**
-     * True when the app should ask each question out loud and then listen: voice mode is on and
-     * TalkBack is off. With TalkBack on, TalkBack reads the screen and the app never opens the
-     * microphone by itself.
-     */
+    // TalkBack on: the app never opens the microphone by itself.
     val talksFirst: Boolean get() = Mode.Voice in modes && !screenReaderOn()
 
-    /**
-     * Says [lines] in the customer's language, with readback pauses between them. With TalkBack
-     * on, the words go to TalkBack instead, so the customer only ever hears one voice.
-     */
+    // TalkBack on: words go to TalkBack, so the customer hears one voice.
     fun say(vararg lines: String) = sayIn(lang, *lines)
 
     fun sayIn(language: Lang, vararg lines: String) {
@@ -228,12 +191,10 @@ class Session(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Spoken on arrival only in voice mode with TalkBack off; TalkBack already reads the screen. */
     fun sayOnArrival(vararg lines: String) {
         if (talksFirst) speaker.speak(lang, lines.toList())
     }
 
-    /** What a Pulse PIN screen says as it opens: the full explanation three times, then a reminder. */
     fun pulseIntro(): String {
         val seen = store.getInt(K_PULSE_INTROS, 0)
         store.edit().putInt(K_PULSE_INTROS, seen + 1).apply()
@@ -242,10 +203,8 @@ class Session(app: Application) : AndroidViewModel(app) {
 
     fun greeting(): String = Lines.greeting(lang, customerName, Calendar.getInstance().get(Calendar.HOUR_OF_DAY))
 
-    /** The customer's current account, or null if the bank could not say. */
     suspend fun mainAccount(): Account? = runCatching { api.accounts().firstOrNull() }.getOrNull()
 
-    /** This phone's onboarding session, started on first use. */
     suspend fun onboardingSession(): String {
         onboardingId?.let { return it }
         val started = api.startOnboarding(lang)
