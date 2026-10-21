@@ -5,6 +5,7 @@ on:
     paths: ["gateway/**", "docs/api.md", ".github/workflows/gateway.yml"]
   pull_request:
     paths: ["gateway/**", "docs/api.md", ".github/workflows/gateway.yml"]
+  workflow_dispatch:
 
 jobs:
   test:
@@ -17,3 +18,34 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - run: uv sync --locked
       - run: uv run pytest -q
+
+  # main only, after the tests. Every deploy starts the mock bank afresh (its SQLite lives in the
+  # container), so do not push Gateway changes in the hours before a demo.
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # GitHub's own token, swapped for Google credentials: no key is stored anywhere
+    concurrency:
+      group: gateway-deploy
+      cancel-in-progress: false
+    env:
+      PROJECT: united-strategy-472602-a5
+      REGION: africa-south1
+      SERVICE: ominira-gateway
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/409863421509/locations/global/workloadIdentityPools/github/providers/ominira
+          service_account: github-deployer@united-strategy-472602-a5.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      # Keys, limits and the single warm instance stay as they were set on the service.
+      - name: Deploy
+        run: gcloud run deploy "$SERVICE" --source gateway --region "$REGION" --project "$PROJECT" --quiet
+      - name: Check it answers
+        run: |
+          url=$(gcloud run services describe "$SERVICE" --region "$REGION" --project "$PROJECT" --format='value(status.url)')
+          curl -fsS --retry 5 --retry-delay 5 "$url/health"

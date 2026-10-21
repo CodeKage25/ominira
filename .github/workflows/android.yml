@@ -20,12 +20,45 @@ jobs:
           distribution: temurin
           java-version: "17"
       - uses: gradle/actions/setup-gradle@v4
-      - name: Build the debug APK (talks to the live Gateway, falls back offline)
+      # With the Gateway's address set, the APK starts on the live Gateway (each phone its own customer,
+      # money between phones); without it, on the bank inside the app.
+      - name: Build the debug APK and run the unit tests
         env:
           OMINIRA_GATEWAY_URL: ${{ secrets.OMINIRA_GATEWAY_URL }}
-        run: ./gradlew --no-daemon assembleDebug testDebugUnitTest -Pominira.gatewayUrl="$OMINIRA_GATEWAY_URL"
+        run: |
+          fake=true
+          if [ -n "$OMINIRA_GATEWAY_URL" ]; then fake=false; fi
+          ./gradlew --no-daemon assembleDebug testDebugUnitTest \
+            -Pominira.gatewayUrl="$OMINIRA_GATEWAY_URL" -Pominira.useFakeApi="$fake"
       - uses: actions/upload-artifact@v4
         with:
           name: ominira-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
           retention-days: 14
+
+  # main only: the latest APK on a "demo" pre-release, to download straight onto the demo phones.
+  publish:
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: android-publish
+      cancel-in-progress: true
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ominira-debug-apk
+      - name: Publish to the demo release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          mv app-debug.apk ominira-demo.apk
+          if ! gh release view demo >/dev/null 2>&1; then
+            gh release create demo --prerelease --title "Demo APK" --target "$GITHUB_SHA" \
+              --notes "The latest build of main, for the demo phones. Debug build: install it from the phone's browser."
+          fi
+          gh release upload demo ominira-demo.apk --clobber
+          gh release edit demo --target "$GITHUB_SHA" --notes "The latest build of main ($GITHUB_SHA), for the demo phones. Debug build: install it from the phone's browser."

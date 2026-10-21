@@ -63,7 +63,12 @@ Without an Anthropic key the assistant uses an offline rule parser, and without 
 
 Open `android/` in Android Studio and run the `app` configuration on a phone with Android 8.0 or later. It runs fully offline by default. To use a Gateway, set `ominira.useFakeApi=false` and `ominira.gatewayUrl` in your own `~/.gradle/gradle.properties`. See [`android/README.md`](android/README.md).
 
-Every push builds the debug APK on GitHub Actions. Download it from **Actions > Android > latest run > ominira-debug-apk**.
+**CI/CD** (GitHub Actions)
+
+- Every push and pull request runs the Gateway's tests and builds the Android APK with its unit tests.
+- On `main`, after the tests pass, the Gateway deploys to Cloud Run (`ominira-gateway`, africa-south1). GitHub signs in to Google Cloud through Workload Identity Federation, so no key is stored, and only this repository is trusted. The Gateway's keys and settings live on the Cloud Run service and stay as they are across deploys.
+- On `main`, the APK points at the live Gateway (the `OMINIRA_GATEWAY_URL` secret) and is published to the **demo** pre-release: open its page on each demo phone and install `ominira-demo.apk`.
+- Every Gateway deploy starts its mock bank afresh: customers who signed up, and their balances, are gone. Do not push Gateway changes in the hours before a demo.
 
 ## Try it
 
