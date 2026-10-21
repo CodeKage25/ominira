@@ -20,7 +20,8 @@ With ffmpeg on the PATH, each clip is re-encoded to 32 kbps mono, and a line too
 is said a few times over and cut at its first pause.
 
 Clips go through YarnGPT's job route, billed in credits (about 1 per 1,000 characters), so they
-never use the 120 prepare calls a day the Gateway's live voice needs. --max-clips caps a run, and
+never use the 120 prepare calls a day the Gateway's live voice needs. The job route has its own
+120 a day; --route prepare spends the live voice's instead, for a day with no demo. --max-clips caps a run, and
 the run stops cleanly if YarnGPT rate-limits it; run it again and it carries on where it stopped.
 """
 
@@ -137,9 +138,15 @@ def cut(audio: bytes, seconds: float) -> bytes:
         return dst.read_bytes()
 
 
+ROUTE = "job"
+
+
 def fetch(text: str, lang: str, voice: str | None) -> bytes:
-    # Same line, same key: a retry gets the first job back and is not billed again.
-    audio = yarngpt.render(text, voice, key=f"ominira-clip-{lang}-{clip_key(text)}")
+    if ROUTE == "prepare":
+        audio = yarngpt.download(yarngpt.prepare(text, lang, output_format="mp3", voice=voice)["audio_url"])
+    else:
+        # Same line, same key: a retry gets the first job back and is not billed again.
+        audio = yarngpt.render(text, voice, key=f"ominira-clip-{lang}-{clip_key(text)}")
     if not audio:
         raise yarngpt.SpeechUnavailable("empty_audio", "YarnGPT returned no audio")
     return audio
@@ -168,10 +175,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--only", nargs="*", default=["yo", "ha", "ig"], choices=LANGS)
     ap.add_argument("--lines", type=Path, help="JSON from ClipLinesTest, instead of running it")
     ap.add_argument("--voice", action="append", default=[], help="pin a voice for this run, e.g. yo=idera")
+    ap.add_argument("--route", choices=("job", "prepare"), default="job",
+                    help="job (default), or prepare: uses the live voice's 120 calls a day")
     ap.add_argument("--max-clips", type=int, default=1000, help="most clips this run makes (default 1000)")
     ap.add_argument("--dry-run", action="store_true", help="count what would be made, spend nothing")
     args = ap.parse_args(argv)
 
+    global ROUTE
+    ROUTE = args.route
     rows = json.loads(args.lines.read_text(encoding="utf-8")) if args.lines else export_lines()
     spoken = spoken_names()
 
