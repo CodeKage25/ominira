@@ -68,7 +68,8 @@ Open `android/` in Android Studio and run the `app` configuration on a phone wit
 - Every push and pull request runs the Gateway's tests and builds the Android APK with its unit tests.
 - On `main`, after the tests pass, the Gateway deploys to Cloud Run (`ominira-gateway`, africa-south1). GitHub signs in to Google Cloud through Workload Identity Federation, so no key is stored, and only this repository is trusted. The Gateway's keys and settings live on the Cloud Run service and stay as they are across deploys.
 - On `main`, the APK points at the live Gateway (the `OMINIRA_GATEWAY_URL` secret) and is published to the **demo** pre-release: open its page on each demo phone and install `ominira-demo.apk`.
-- Every Gateway deploy starts its mock bank afresh: customers who signed up, and their balances, are gone. Do not push Gateway changes in the hours before a demo.
+- The deployed Gateway keeps its data in Cloud SQL (Postgres, `ominira-db`, africa-south1); the connection string is in Secret Manager (`ominira-database-url`), readable only by the service. Sign-ups, balances and transfers survive deploys and restarts.
+- A change that adds a column to an existing table needs one mock reset after it deploys (`POST /_mock/reset` with `X-Mock-Admin`): the Gateway creates missing tables on start but does not alter existing ones, and the reset rebuilds the demo world.
 
 ## Try it
 

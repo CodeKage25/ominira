@@ -19,8 +19,8 @@ jobs:
       - run: uv sync --locked
       - run: uv run pytest -q
 
-  # main only, after the tests. Every deploy starts the mock bank afresh (its SQLite lives in the
-  # container), so do not push Gateway changes in the hours before a demo.
+  # main only, after the tests. Data lives in Cloud SQL, so a deploy keeps it; a new column needs one
+  # mock reset after the deploy (see the README).
   deploy:
     needs: test
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
