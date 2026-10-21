@@ -81,7 +81,12 @@ ending `0006`, or UBA `2109876543` (06, dormant); BVN `12345678901` (someone els
 - **Wrong PIN:** two tries left, then one, then locked.
 - **Someone new:** `POST /v1/payees/lookup`, then a draft with `bank_code` and `account_number`. The first payment saves them.
 - **The assistant cannot move money:** any confirm, cancel, pause answer or decision with `demo-assistant` is `403`.
-- **A spoken PIN:** "my PIN is 2075, send..." is caught in code before any model call. Nothing is drafted.
+- **A spoken PIN:** "my PIN is 2075, send..." (or "2075 is my PIN", or "pin mi ni 2075") is caught in code before any model call. Nothing is drafted.
+- **A scammer on the phone can't switch off your protections without your PIN:** raising the scam-pause
+  threshold, raising or clearing the daily limit, and adding or removing the co-approver all answer
+  `401 pin_required` until the customer pulses their PIN. Lowering a limit needs no PIN.
+- **Typing the number doesn't dodge a flag:** after "stop" on Musa, a draft to OPay `8031447710` is
+  still Musa's draft, so it pauses, and every other open request to Musa was cancelled.
 
 ### Rehearsal commands
 
@@ -127,6 +132,14 @@ curl -s $G/_mock/state | jq
 On a public deployment set `MOCK_ADMIN_TOKEN` and add `-H "X-Mock-Admin: $TOKEN"`, or set
 `MOCK_ADMIN=false` to switch these off (404).
 
+Protective settings need the PIN, for example:
+
+```bash
+curl -s -X PUT $G/v1/me/preferences -H "$C" -H "$J" -d '{"pause_threshold_kobo":20000000}' | jq .code   # pin_required
+curl -s -X PUT $G/v1/me/preferences -H "$C" -H "$J" -d '{"pause_threshold_kobo":20000000,"pin_block":"demo-7924"}' | jq
+curl -s -X DELETE $G/v1/approvers/ap_funmi -H "$C" -H "X-Pin-Block: demo-7924" | jq
+```
+
 ## How money is kept safe
 
 - **The gate runs in order and stops at the first failure:** real draft, readback hash, limits,
@@ -134,13 +147,26 @@ On a public deployment set `MOCK_ADMIN_TOKEN` and add `-H "X-Mock-Admin: $TOKEN"
   order), so Funmi is never asked about something Ronke could not authorise.
 - **Never twice:** a draft is marked `processing` before Zenith is called, under a per-draft lock
   (and `SELECT ... FOR UPDATE` on Postgres). Zenith's key is `{draft_id}:{attempt}`. A timeout or
-  "in progress" keeps the key and is re-checked by key; only a definite "not sent" (91, 96) moves the
-  attempt on. A double tap, a retry after a timeout and a late reply all land on the same transfer.
-- **Idempotency-Key** replays the first answer for 24 hours; 5xx and 429 answers are not kept.
+  "in progress" keeps the key, and the draft stays `processing` (it cannot be cancelled or expire)
+  until Zenith gives a final answer for that key; if Zenith has no record, the next re-check sends it
+  again under the same key. Only a definite "not sent" (91, 96) moves the attempt on. A double tap,
+  a retry after a timeout and a late reply all land on the same transfer.
+- **Limits hold:** a transfer's limit check and the transfer itself run under a per-customer lock,
+  so two drafts confirmed at once cannot both fit under the daily limit.
+- **Flags stick:** a draft to an account number that belongs to a saved payee is that payee's
+  draft. "Stop" on a scam pause flags the payee and cancels every other open request to them, and an
+  approval for a payee flagged while it waited is held, not paid.
+- **PIN guessing is slow:** 5 PIN checks a minute per token (unlock, confirm and settings together),
+  on top of Zenith's lock after three wrong tries. New-account name enquiries are 5 a minute per
+  customer, whether they come from a lookup, a draft or the assistant.
+- **Idempotency-Key** replays the first answer for 24 hours; 5xx and 429 answers are not kept. The
+  stored fingerprints are HMACs under `IDEMPOTENCY_SECRET` (random per process when unset), so the
+  table cannot be used to guess a PIN block.
 - **Audit:** every step is in a hash-chained log. `GET /v1/audit/verify` finds an edited, deleted or
   reordered row.
 - **No secrets stored:** no PIN, PIN block or BVN anywhere; a full account number lives in a draft
-  only while it is open.
+  only while it is open, and expired drafts are swept at start and whenever a draft is created.
+  Account labels for the assistant live in process memory, not the database.
 
 ## The assistant
 
@@ -207,7 +233,7 @@ gcloud builds submit --project $P --tag $IMG .          # or: docker build -t $I
 gcloud run deploy gateway --project $P --region africa-south1 --image $IMG \
   --allow-unauthenticated --no-invoker-iam-check --min-instances 1 --max-instances 1 \
   --set-env-vars ZENITH_PROFILE=realistic,ASSISTANT=claude,CLAUDE_MODEL=claude-sonnet-5-5,DATABASE_URL=sqlite:////tmp/ominira.db \
-  --set-secrets ANTHROPIC_API_KEY=anthropic-api-key:latest,YARNGPT_API_KEY=yarngpt-api-key:latest,MOCK_ADMIN_TOKEN=mock-admin-token:latest
+  --set-secrets ANTHROPIC_API_KEY=anthropic-api-key:latest,YARNGPT_API_KEY=yarngpt-api-key:latest,MOCK_ADMIN_TOKEN=mock-admin-token:latest,IDEMPOTENCY_SECRET=idempotency-secret:latest
 ```
 
 Create any secret that does not exist yet with
@@ -229,6 +255,14 @@ for the app's role:
 REVOKE UPDATE, DELETE, TRUNCATE ON audit_log FROM gateway;
 GRANT SELECT, INSERT ON audit_log TO gateway;
 ```
+
+## Known gaps for the demo
+
+- **Onboarding has no authentication.** Anyone can start a session, and `complete` hands back the
+  demo customer's token (and, with a `lang`, sets her language). That is deliberate for the hackathon,
+  where every new account is Ronke; the pilot opens a real account and enrols a device passkey there.
+- After three wrong PINs only `/_mock/reset` unlocks the mock core. Zenith's real process is a call
+  from the bank.
 
 ## Not built yet
 

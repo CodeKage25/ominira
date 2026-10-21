@@ -133,14 +133,16 @@ def test_walk_every_endpoint(client, yarn):
     _keys(approvers[0], {"id", "name", "threshold_kobo"})
     queue = _call(c, "GET", "/v1/approvals", expect=200, headers=A).json()
     _keys(queue[0], {"id", "status", "customer", "amount_kobo", "amount_text", "to", "bank", "account_last4",
-                     "asked_at", "draft_status"})
+                     "asked_at", "draft_status", "flagged"})
     decided = _call(c, "POST", "/v1/approvals/{}/decision", queue[0]["id"], expect=200, headers=A,
                     json={"decision": "approve"}).json()
     _keys(decided, {"approval", "status", "say", "reference"})
     added = _call(c, "POST", "/v1/approvers", expect=201, headers=C,
-                  json={"name": "Kehinde", "phone": "+2348012345678", "threshold_kobo": 10_000_000}).json()
+                  json={"name": "Kehinde", "phone": "+2348012345678", "threshold_kobo": 10_000_000,
+                        "pin_block": PIN_OK}).json()
     _keys(added, {"id", "name", "threshold_kobo"})
-    assert _call(c, "DELETE", "/v1/approvers/{}", added["id"], expect=200, headers=C).json() == {"removed": added["id"]}
+    removed = _call(c, "DELETE", "/v1/approvers/{}", added["id"], expect=200, headers=C | {"X-Pin-Block": PIN_OK})
+    assert removed.json() == {"removed": added["id"]}
 
     # Preferences
     _keys(_call(c, "GET", "/v1/me/preferences", expect=200, headers=C).json(), PREFS)

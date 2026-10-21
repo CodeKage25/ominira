@@ -104,7 +104,8 @@ def test_preferences_validation(client):
 
 def test_limits_can_be_cleared_with_null(client):
     client.put("/v1/me/preferences", headers=CUSTOMER, json={"daily_limit_kobo": 1_000_000})
-    cleared = client.put("/v1/me/preferences", headers=CUSTOMER, json={"daily_limit_kobo": None}).json()
+    cleared = client.put("/v1/me/preferences", headers=CUSTOMER,
+                         json={"daily_limit_kobo": None, "pin_block": PIN_OK}).json()
     assert cleared["daily_limit_kobo"] is None
 
 
@@ -174,10 +175,10 @@ def test_approvers_replace_and_remove(client):
     assert client.get("/v1/approvers", headers=CUSTOMER).json() == [
         {"id": "ap_funmi", "name": "Funmi", "threshold_kobo": 5_000_000}]
     new = client.post("/v1/approvers", headers=CUSTOMER, json={"name": "Kehinde", "phone": "+2348012345678",
-                                                              "threshold_kobo": 10_000_000})
+                                                              "threshold_kobo": 10_000_000, "pin_block": PIN_OK})
     assert new.status_code == 201
     assert [a["name"] for a in client.get("/v1/approvers", headers=CUSTOMER).json()] == ["Kehinde"]
-    assert client.delete("/v1/approvers/ap_nope", headers=CUSTOMER).status_code == 404
+    assert client.delete("/v1/approvers/ap_nope", headers=CUSTOMER | {"X-Pin-Block": PIN_OK}).status_code == 404
 
 
 # ---- audit chain --------------------------------------------------------------------------------

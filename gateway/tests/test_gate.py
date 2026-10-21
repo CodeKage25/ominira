@@ -254,7 +254,7 @@ def test_customers_own_daily_limit_is_lower(client):
 def test_insufficient_funds_fails_the_draft(client):
     d = make_draft(client, payee_id="py_tolu", amount_kobo=90_000_000)  # ₦900,000 > ₦842,300
     client.post("/v1/approvers", headers=CUSTOMER, json={"name": "Funmi", "phone": "+2348059876543",
-                                                         "threshold_kobo": 99_000_000})
+                                                         "threshold_kobo": 99_000_000, "pin_block": PIN_OK})
     r = confirm(client, d)
     assert r.status_code == 422 and r.json()["code"] == "insufficient_funds"
     view = client.get(f"/v1/drafts/{d['id']}", headers=CUSTOMER).json()
@@ -411,7 +411,8 @@ def test_cancel_withdraws_the_pending_approval(client):
 
 def test_removing_the_approver_means_no_approval_needed(client):
     approver_id = client.get("/v1/approvers", headers=CUSTOMER).json()[0]["id"]
-    assert client.delete(f"/v1/approvers/{approver_id}", headers=CUSTOMER).json() == {"removed": approver_id}
+    r = client.delete(f"/v1/approvers/{approver_id}", headers=CUSTOMER | {"X-Pin-Block": PIN_OK})
+    assert r.json() == {"removed": approver_id}
     assert confirm(client, make_draft(client, payee_id="py_tolu", amount_kobo=K150)).status_code == 200
 
 
@@ -477,13 +478,15 @@ def test_timeout_after_the_money_went_is_found_by_requery(client):
     assert len(moves()) == 1 and balance(client) == START - K20
 
 
-def test_timeout_before_arrival_keeps_the_same_key(client):
+def test_timeout_before_arrival_stays_processing_and_resends_the_same_key(client):
     client.post("/_mock/controls", json={"next_transfer_timeout": "before_send"})
     d = make_draft(client, payee_id="py_tolu", amount_kobo=K20)
     r = confirm(client, d)
-    assert r.status_code == 503 and r.json()["code"] == "bank_unavailable" and r.json()["zenith_code"] == "timeout"
-    assert client.get(f"/v1/drafts/{d['id']}", headers=CUSTOMER).json()["status"] == "awaiting_confirm"
-    assert confirm(client, d).status_code == 200
+    assert r.status_code == 202 and r.json()["code"] == "processing"  # unknown outcome, never "not sent"
+    assert confirm(client, d).json()["code"] == "processing"
+    assert balance(client) == START and moves() == []
+    view = client.get(f"/v1/drafts/{d['id']}", headers=CUSTOMER).json()  # Zenith has no record: resend, same key
+    assert view["status"] == "executed" and view["say"] == "Sent. Tolu has it."
     assert [m.idempotency_key for m in moves()] == [f"{d['id']}:1"]
     assert balance(client) == START - K20
 

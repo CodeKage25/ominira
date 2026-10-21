@@ -10,7 +10,9 @@ this file disagree, fix one of them in the same change.
   24 h per token, method and path, and replays it for the same key and body with the header
   `Idempotent-Replayed: true`; the same key with a different body is `422 idempotency_key_reused`.
   5xx and 429 answers are not stored, so retrying them with the same key really retries. Use a new
-  key for each new attempt the customer makes (a new PIN entry is a new attempt).
+  key for each new attempt the customer makes (a new PIN entry is a new attempt). Stored request
+  fingerprints are HMACs under a server secret (`IDEMPOTENCY_SECRET`), never plain hashes, so a stored
+  confirm cannot be used to guess a PIN block.
 - Anything a customer hears carries `say`: one line, already in the customer's language.
 - Languages: `en`, `pcm` (Pidgin), `yo`, `ha`, `ig`.
 
@@ -44,7 +46,8 @@ whenever the body has `retry_after`.
 |---|---|---|---|
 | 401 | `unauthorized` | | missing or unknown token |
 | 401 | `pin_incorrect` | `tries_left` (0 means locked) | Pulse PIN did not match |
-| 403 | `forbidden` | `say` | wrong role for this call |
+| 401 | `pin_required` | `say` | a call that weakens a protection was sent without `pin_block` |
+| 403 | `forbidden` | `say` | wrong role for this call, or an approver who was removed or replaced |
 | 404 | `not_found`, `payee_not_found`, `card_not_found` | | |
 | 409 | `pause_required` | `draft_id` | scam pause; answer with pause-answer |
 | 409 | `readback_mismatch` | `readback`, `readback_hash` | read the new readback to the customer, then confirm with the new hash |
@@ -61,8 +64,8 @@ whenever the body has `retry_after`.
 | 422 | `invalid_amount`, `invalid_account`, `account_dormant`, `unknown_bank` | | |
 | 422 | `limit_exceeded` | `limit` (`per_transaction` or `daily`), `max_kobo` or `remaining_today_kobo` | |
 | 422 | `insufficient_funds`, `failed` | `zenith_code` on `failed` | definite "not sent" |
-| 429 | `rate_limited` | `retry_after` | |
-| 503 | `bank_unavailable` | `retry_after`, `zenith_code` | definite "not sent"; the draft stays open and can be confirmed again. `zenith_code` is the NIP code, or `"timeout"` when the request never reached Zenith |
+| 429 | `rate_limited` | `retry_after` | name enquiries (5 a minute per customer), PIN checks (5 a minute per token), speech |
+| 503 | `bank_unavailable` | `retry_after`, `zenith_code` | definite "not sent" (NIP 91 or 96, or the name enquiry failed); the draft stays open and can be confirmed again |
 | 503 | `speech_unavailable` | `provider_code` | use the phone's own voice |
 
 ## Drafts and the confirm gate
@@ -75,7 +78,7 @@ awaiting_confirm ──confirm──> paused ──pause-answer stop──> canc
        ├──confirm (PIN ok, over approver threshold)──> awaiting_approval ──approve──> executed
        │                                                       ├──decline──> cancelled
        │                                                       └──15 min──> expired
-       ├──confirm──> executed | processing (in progress at Zenith; GET re-checks by reference)
+       ├──confirm──> executed | processing (in progress, or no answer yet; GET re-checks by key)
        ├──confirm, definite not-sent (NIP 91/96)──> awaiting_confirm (attempt + 1)
        ├──confirm, refused──> failed
        ├──cancel──> cancelled
@@ -86,6 +89,8 @@ awaiting_confirm ──confirm──> paused ──pause-answer stop──> canc
 
 1. **Real draft**: this customer's, open, not expired.
 2. **Heard it**: name enquiry again, rebuild the readback; its hash must equal `readback_hash` sent.
+   A draft made from an account number that belongs to a saved payee is that payee's draft, so
+   `is_new`, `flagged` and the warning line all apply.
 3. **Limits**: Zenith per-transaction and daily limits, then the customer's own lower daily limit.
 4. **Scam pause** (transfers): (new payee AND amount ≥ pause threshold (₦50,000) AND `call_active`)
    OR payee flagged, and the customer has not already answered a pause on this draft.
@@ -93,8 +98,15 @@ awaiting_confirm ──confirm──> paused ──pause-answer stop──> canc
 6. **Co-approver** (transfers): amount above the active approver's threshold → `awaiting_approval`.
    The PIN is checked before the approver is asked, so an approved draft executes without a second PIN.
 7. **Execute** with Zenith idempotency key `{draft_id}:{attempt}`. Timeout or "in progress" keeps the
-   key and is re-queried by reference, so a retry can never pay twice.
+   key and the draft stays `processing` until Zenith gives a final answer for that key: it cannot be
+   cancelled (`409 processing`) and never expires. `GET /v1/drafts/{id}` re-checks it, and if Zenith
+   has no record of the key, sends it again under the same key, so a late arrival and the resend are
+   one transfer. Only a definite "not sent" (91, 96) moves the attempt on.
 8. **Audit** (hash-chained) and reply with `say`.
+
+Steps 3 to 7 of a transfer run under a per-customer lock, so two drafts confirmed at once cannot
+both fit under the same daily limit. Drafts and approvals that run out of time are closed at start
+and whenever a draft is created, so no full account number lingers.
 
 `readback_hash` = `"sha256:" + hex(sha256(canonical JSON of {kind, name, bank, account_last4, amount_kobo}))`,
 canonical meaning sorted keys and `(",", ":")` separators. Clients never compute it; they echo it.
@@ -136,6 +148,8 @@ canonical meaning sorted keys and `(",", ":")` separators. Clients never compute
 ### Sign in (customer)
 
 `POST /v1/auth/unlock` `{"pin_block": "..."}` → `{"ok": true, "say": "Welcome back."}` or `401 pin_incorrect`.
+Every PIN check (unlock, confirm, protective settings) counts against 5 a minute per token; the
+sixth is `429 rate_limited`.
 
 **Placeholder PIN block**: `"demo-"` + each digit replaced by `9 - digit`. PIN 2 0 7 5 → `"demo-7924"`.
 The pilot replaces it with an ISO 9564 block encrypted on the device with Zenith's PIN key.
@@ -150,7 +164,7 @@ The pilot replaces it with an ISO 9564 block encrypted on the device with Zenith
 | `GET /v1/accounts/{id}/income-summary` | `{"say": "This week ₦... came in, from ..."}` |
 | `GET /v1/banks` | `[{"code": "057", "name": "Zenith Bank Plc", "short": "Zenith Bank"}]` |
 | `GET /v1/payees` | `[{"id", "nickname", "name", "bank", "account_last4", "is_new", "flagged"}]` |
-| `POST /v1/payees/lookup` `{"bank_code", "account_number"}` | `{"name", "bank", "account_last4", "say"}`; 5 a minute per customer |
+| `POST /v1/payees/lookup` `{"bank_code", "account_number"}` | `{"name", "bank", "account_last4", "say"}`; 5 a minute per customer, shared with drafts to new accounts and the assistant's lookups |
 | `GET /v1/cards` | `[{"id": "cd_1", "last4": "8830", "holder": "Ronke Adeyemi", "status": "active"\|"blocked"}]` |
 
 ### Drafts
@@ -160,7 +174,7 @@ The pilot replaces it with an ISO 9564 block encrypted on the device with Zenith
 | `POST /v1/drafts` | customer, assistant | `{"kind": "transfer", "amount_kobo", "payee_id"}` or `{"kind": "transfer", "amount_kobo", "bank_code", "account_number"}` or `{"kind": "card_block", "card_id"}`; optional `"source"` | `201` draft |
 | `GET /v1/drafts/{id}` | customer | | draft (re-checks `processing`, expires drafts older than 10 minutes and stale approvals) |
 | `POST /v1/drafts/{id}/confirm` | customer | `{"readback_hash", "pin_block", "call_active": false}` | see below |
-| `POST /v1/drafts/{id}/pause-answer` | customer | `{"answer": "stop"\|"chose_myself"}` | `{"status": "cancelled"\|"awaiting_confirm", "say"}` |
+| `POST /v1/drafts/{id}/pause-answer` | customer | `{"answer": "stop"\|"chose_myself"}` | `{"status": "cancelled"\|"awaiting_confirm", "say"}`. `stop` flags the payee and cancels every other open draft to them, withdrawing their approvals |
 | `POST /v1/drafts/{id}/cancel` | customer | | `{"status": "cancelled", "say"}` |
 
 Confirm answers:
@@ -178,16 +192,21 @@ While `awaiting_approval`, the client polls `GET /v1/drafts/{id}` every 2 s unti
 | Call | Who | |
 |---|---|---|
 | `GET /v1/approvers` | customer | `[{"id", "name", "threshold_kobo"}]` |
-| `POST /v1/approvers` `{"name", "phone", "threshold_kobo"}` | customer | `201`; replaces the active one |
-| `DELETE /v1/approvers/{id}` | customer | `{"removed": id}` |
-| `GET /v1/approvals` | approver | `[{"id", "status", "customer", "amount_kobo", "amount_text", "to", "bank", "account_last4", "asked_at", "draft_status"}]`, newest first, never the balance |
+| `POST /v1/approvers` `{"name", "phone", "threshold_kobo", "pin_block"}` | customer | `201`; replaces the active one. Needs the PIN |
+| `DELETE /v1/approvers/{id}` with header `X-Pin-Block: <pin_block>` | customer | `{"removed": id}`. Needs the PIN |
+| `GET /v1/approvals` | approver | `[{"id", "status", "customer", "amount_kobo", "amount_text", "to", "bank", "account_last4", "asked_at", "draft_status", "flagged"}]`, newest first, never the balance. `flagged` is true when the customer stopped a payment to this person after a call |
 | `POST /v1/approvals/{id}/decision` `{"decision": "approve"\|"decline"}` | approver | `{"approval": "approved"\|"declined", "status", "say", "reference"?, "code"?}` |
 
 Just before an approved transfer moves, the Gateway runs the name enquiry and the limits again. If
 either changed, nothing moves: the answer is `{"approval": "approved", "status": "awaiting_confirm"
 or "failed", "say", "code": "readback_mismatch" | "bank_unavailable" | "limit_exceeded"}`, and the
 customer confirms again (a new readback, a new PIN, and a new approval) if they still want it.
+If the customer flagged the payee while the request waited (and had not answered a pause on this
+draft), nothing moves either: `{"approval": "approved", "status": "paused", "code": "pause_required", "say"}`,
+and the customer answers the pause.
 A decision on a request that waited more than 15 minutes is `410 approval_expired`.
+Removing or replacing an approver withdraws their pending requests (those drafts are cancelled), and
+their token gets `403 forbidden` from then on.
 
 ### Preferences (customer)
 
@@ -195,6 +214,10 @@ A decision on a request that waited more than 15 minutes is `410 approval_expire
 `{"lang", "modes": ["voice"|"sign"|"switch"|"plain"], "theme": "system"|"light"|"dark"|"contrast",
 "speech_rate": 0.5-2.0, "pulse_gap_ms": 400-3000, "daily_limit_kobo", "pause_threshold_kobo"}`.
 Changing `lang` changes the language of every later `say`.
+A change that weakens a protection needs `"pin_block"` in the same body: raising `pause_threshold_kobo`
+(or clearing it when it is below the ₦50,000 default), and raising or clearing `daily_limit_kobo`.
+Without it: `401 pin_required`; with a wrong one: `401 pin_incorrect`. Lowering a limit, and every
+other field, needs no PIN.
 
 ### Assistant (customer)
 
@@ -204,10 +227,15 @@ Changing `lang` changes the language of every later `say`.
 | `POST /v1/conversations/{id}/turns` | `{"text": "send twenty thousand to Tolu"}` | `{"heard", "reply", "say", "engine": "claude"\|"rules", "draft": draft\|null}` |
 | `POST /v1/conversations/{id}/voice-turns` | raw `audio/wav` body | as above plus `"reply_audio_url"` (nullable) and `"timings"` |
 
-`heard` is the text with account numbers and BVNs masked (`ACCOUNT_1`, `[BVN]`, `[PIN]`).
+`heard` is the text with numbers masked: `ACCOUNT_1` (10 digits), `[BVN]` (11), `[CARD]` (12 to 19),
+`[PIN]`. Numbers split by spaces, dots, commas, slashes or dashes, and numbers glued to letters, are
+masked too. An `ACCOUNT_n` label keeps its number for the whole conversation (held in memory on the
+Gateway, never stored). A PIN is caught in either order ("my PIN is 2075", "2075 is my PIN") and in
+Pidgin, Yorùbá, Hausa and Igbo phrasings.
 `engine` is `rules` for a turn stopped by the PIN guard and for a voice turn where nothing was heard. A turn that contains a spoken PIN
 ("my PIN is 2075") is caught in code before any model call: no draft, and `say` tells the customer
-never to say it aloud. "Send money to Tolu" then "twenty thousand" works across two turns.
+never to say it aloud. "Send money to Tolu" then "twenty thousand" works across two turns, and so does "send money to
+0123456789 at GTBank" then "twenty thousand".
 
 ### Speech (YarnGPT behind the Gateway; the phone never holds the key)
 
