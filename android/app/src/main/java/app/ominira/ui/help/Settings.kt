@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.heading
@@ -16,6 +17,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.ominira.BuildConfig
 import app.ominira.Session
+import app.ominira.core.DemoPeople
+import app.ominira.core.DemoPerson
 import app.ominira.core.Mode
 import app.ominira.core.OnboardingCopy
 import app.ominira.ui.kit.ActionButton
@@ -28,19 +31,29 @@ import app.ominira.ui.kit.Kicker
 import app.ominira.ui.kit.Page
 import app.ominira.ui.kit.Segments
 import app.ominira.ui.kit.SwitchRow
+import app.ominira.ui.kit.VoiceDock
 import app.ominira.ui.kit.WayInGrid
 import app.ominira.ui.theme.Glyphs
 import app.ominira.ui.theme.Look
 import app.ominira.ui.theme.Om
 import app.ominira.ui.theme.paletteFor
+import app.ominira.voice.rememberVoice
 import kotlin.math.abs
 
 private fun <T : Comparable<T>> nearest(options: List<T>, value: T, distance: (T, T) -> Double): T =
     options.minByOrNull { distance(it, value) } ?: options.first()
 
 @Composable
-fun SettingsScreen(session: Session, onBack: () -> Unit, onLanguage: () -> Unit, onRestart: () -> Unit) {
+fun SettingsScreen(
+    session: Session,
+    onBack: () -> Unit,
+    onLanguage: () -> Unit,
+    onRestart: () -> Unit,
+    onWhose: (DemoPerson) -> Unit,
+) {
     val w = session.words
+    val voice = rememberVoice()
+    LaunchedEffect(Unit) { voice.arrive(session.spoken.placeSettings, session.spoken.mainSettings) }
     Page(
         top = {
             IconAction(Glyphs.Back, w.back, onBack)
@@ -51,6 +64,7 @@ fun SettingsScreen(session: Session, onBack: () -> Unit, onLanguage: () -> Unit,
                 session.say(*session.spoken.sampleLines.toTypedArray())
             }, icon = Glyphs.Speaker)
         },
+        dock = { VoiceDock(session) },
     ) {
         Label(w.theme)
         for (look in Look.entries) {
@@ -145,6 +159,21 @@ fun SettingsScreen(session: Session, onBack: () -> Unit, onLanguage: () -> Unit,
                 else -> w.gatewayOn(BuildConfig.GATEWAY_URL)
             },
         )
+        if (session.liveGateway) {
+            Label(w.whosePhone)
+            Hint(w.whosePhoneHint)
+            // Before any choice, a phone that never signed up speaks for the demo customer.
+            val current = session.personKey ?: if (session.hasOwnAccount) null else DemoPeople.all.first().key
+            for (person in DemoPeople.all) {
+                ChoiceRow(
+                    title = person.firstName,
+                    onClick = { onWhose(person) },
+                    selected = person.key == current,
+                    minHeight = 64.dp,
+                    sub = person.lang?.nativeName,
+                )
+            }
+        }
         ActionButton(w.startAgain, onClick = onRestart, style = Emphasis.Secondary)
         Hint(w.about)
     }

@@ -30,10 +30,13 @@ import app.ominira.ui.kit.Notice
 import app.ominira.ui.kit.Page
 import app.ominira.ui.kit.ReadbackPanel
 import app.ominira.ui.kit.Tone
+import app.ominira.ui.kit.VoiceDock
 import app.ominira.ui.kit.touchAnswer
 import app.ominira.ui.pulse.PulseStep
 import app.ominira.ui.theme.Glyphs
 import app.ominira.ui.theme.Om
+import app.ominira.voice.LocalVoice
+import app.ominira.voice.rememberVoice
 import kotlinx.coroutines.launch
 
 @Composable
@@ -52,7 +55,10 @@ fun BlockCardScreen(session: Session, onHome: () -> Unit) {
     var misses by remember { mutableIntStateOf(0) }
     var leaving by remember { mutableStateOf(false) }
     var readAsked by remember { mutableIntStateOf(0) }
-    val voice = session.talksFirst
+    val host = LocalVoice.current
+    // Spoken to get here: this screen talks back even outside voice mode.
+    val byVoice = remember { host.cameByVoice() }
+    val voice = session.talksFirst || byVoice
     val w = session.words
     val s = session.spoken
     val touch = session.answersByTouch
@@ -76,29 +82,47 @@ fun BlockCardScreen(session: Session, onHome: () -> Unit) {
         onHome()
     }
 
-    val prompt = app.ominira.voice.rememberPrompt(session) { said ->
-        if (said == null) return@rememberPrompt
+    // Words the question did not take: ask again twice, then point at the screen.
+    val missed: (String) -> Unit = {
         when {
-            blocked && Answers.mentions(said, "home", "house", "ile", "gida", "ulo") -> finish("home")
-            blocked && Answers.mentions(said, "branch", "bank", "office", "eka", "reshe", "alaka") -> finish("branch")
-            blocked && misses < 2 -> {
+            misses >= 2 -> session.say(if (blocked) s.tapWhereThenDone else s.useButtons)
+            else -> {
                 misses += 1
-                ask(shipLine)
+                host.ask(if (blocked) shipLine else confirmLine, listen = voice && session.understands)
             }
-            blocked -> session.say(s.tapWhereThenDone)
-            Answers.isNo(said) -> leave()
-            Answers.isAgain(said) -> draft?.let { ask(*it.readback.spoken.toTypedArray(), confirmLine) }
-            Answers.isYes(said) || Answers.isStart(said) -> if (draft != null) {
-                problem = null
-                pulse = true
-            }
-            misses < 2 -> {
-                misses += 1
-                ask(confirmLine)
-            }
-            else -> session.say(s.useButtons)
         }
     }
+
+    rememberVoice(
+        onHeard = { said ->
+            when {
+                blocked && Answers.mentions(said, "home", "house", "ile", "gida", "ulo") -> {
+                    finish("home")
+                    true
+                }
+                blocked && Answers.mentions(said, "branch", "bank", "office", "eka", "reshe", "alaka") -> {
+                    finish("branch")
+                    true
+                }
+                blocked || draft == null -> false
+                Answers.isNo(said) -> {
+                    leave()
+                    true
+                }
+                Answers.isAgain(said) -> {
+                    draft?.let { host.ask(*it.readback.spoken.toTypedArray(), confirmLine, listen = voice && session.understands) }
+                    true
+                }
+                Answers.isYes(said) || Answers.isStart(said) -> {
+                    problem = null
+                    pulse = true
+                    true
+                }
+                else -> false
+            }
+        },
+        onMissed = if (blocked || draft != null) missed else null,
+    )
 
     LaunchedEffect(Unit) {
         session.pendingTurn = null
@@ -108,7 +132,10 @@ fun BlockCardScreen(session: Session, onHome: () -> Unit) {
         if (draft == null && c != null) {
             when (val made = runCatching { session.api.draftCardBlock(c.id) }.getOrNull()) {
                 is Drafted.Made -> draft = made.draft
-                is Drafted.Refused -> {
+                is Drafted.Refused -> if (made.code == Drafted.UNREACHABLE) {
+                    problem = w.bankUnreachableNoChange
+                    session.say(s.bankUnreachableNoChange)
+                } else {
                     problem = made.say
                     session.say(made.say)
                 }
@@ -124,8 +151,9 @@ fun BlockCardScreen(session: Session, onHome: () -> Unit) {
     LaunchedEffect(readAsked) {
         val d = draft
         if (readAsked == 0 || d == null || blocked) return@LaunchedEffect
-        val lines = d.readback.spoken.toTypedArray()
-        if (voice) prompt.ask(*lines, confirmLine) else session.say(*lines)
+        // The first time, say where this is.
+        val lines = (listOfNotNull(s.placeCard.takeIf { readAsked == 1 }) + d.readback.spoken).toTypedArray()
+        if (voice) host.ask(*lines, confirmLine, listen = session.understands) else session.say(*lines)
     }
 
     fun confirmWith(digits: List<Int>) {
@@ -142,7 +170,7 @@ fun BlockCardScreen(session: Session, onHome: () -> Unit) {
                     pulse = false
                     card = card?.copy(blocked = true)
                     session.haptics.stop()
-                    if (voice) prompt.ask(outcome.say, shipLine) else session.say(outcome.say, s.whereSendCard)
+                    if (voice) host.ask(outcome.say, shipLine, listen = session.understands) else session.say(outcome.say, s.whereSendCard)
                 }
                 is Outcome.WrongPin -> {
                     problem = outcome.say
@@ -196,7 +224,7 @@ fun BlockCardScreen(session: Session, onHome: () -> Unit) {
         modifier = Modifier.touchAnswer(
             touch && (blocked || draft != null),
             onTap = {
-                prompt.cancel()
+                host.cancel()
                 if (blocked) {
                     finish("home")
                 } else {
@@ -205,13 +233,13 @@ fun BlockCardScreen(session: Session, onHome: () -> Unit) {
                 }
             },
             onHold = {
-                prompt.cancel()
+                host.cancel()
                 if (blocked) finish("branch") else leave()
             },
         ),
         top = {
             IconAction(Glyphs.Back, w.backToHome, {
-                prompt.cancel()
+                host.cancel()
                 leave()
             })
             Heading(w.myCard, Modifier.weight(1f))
@@ -219,14 +247,14 @@ fun BlockCardScreen(session: Session, onHome: () -> Unit) {
         bottom = {
             if (blocked) {
                 ActionButton(w.done, onClick = {
-                    prompt.cancel()
+                    host.cancel()
                     finish(ship)
                 }, icon = Glyphs.Home)
             } else {
                 ActionButton(
                     w.pulseToBlock,
                     onClick = {
-                        prompt.cancel()
+                        host.cancel()
                         problem = null
                         pulse = true
                     },
@@ -235,11 +263,12 @@ fun BlockCardScreen(session: Session, onHome: () -> Unit) {
                     enabled = draft != null,
                 )
                 ActionButton(w.notNow, onClick = {
-                    prompt.cancel()
+                    host.cancel()
                     leave()
                 }, style = Emphasis.Quiet)
             }
         },
+        dock = { VoiceDock(session) },
     ) {
         card?.let { BankCardView(it) }
         problem?.let { Notice(if (blocked) Tone.Info else Tone.Caution, it) }
@@ -247,11 +276,11 @@ fun BlockCardScreen(session: Session, onHome: () -> Unit) {
             Confirmation(w.cardBlockedNew)
             Text(w.whereCardGo, style = Om.type.label, color = Om.color.text, modifier = Modifier.semantics { heading() })
             ChoiceRow(w.myHomeAddress, onClick = {
-                prompt.cancel()
+                host.cancel()
                 ship = "home"
             }, selected = ship == "home", sub = "14 Bode Thomas Street, Surulere")
             ChoiceRow(w.zenithBranch, onClick = {
-                prompt.cancel()
+                host.cancel()
                 ship = "branch"
             }, selected = ship == "branch", sub = w.pickUpMyself)
         } else {

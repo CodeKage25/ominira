@@ -14,7 +14,9 @@ this file disagree, fix one of them in the same change.
   fingerprints are HMACs under a server secret (`IDEMPOTENCY_SECRET`), never plain hashes, so a stored
   confirm cannot be used to guess a PIN block.
 - Anything a customer hears carries `say`: one line, already in the customer's language.
-- Languages: `en`, `pcm` (Pidgin), `yo`, `ha`, `ig`.
+- Languages: `en`, `pcm` (Pidgin), `yo`, `ha`, `ig`. Every `say` and readback line, amounts and digits
+  included, is in the customer's language ("Naira dubu ashirin."); Pidgin says amounts in English words.
+  Yorùbá, Hausa and Igbo copy is an unreviewed draft until native speakers check it.
 
 ## One rule
 
@@ -29,6 +31,7 @@ only the approver's token can approve. The assistant never sees a PIN or a full 
 | `demo-customer` | customer (Ronke's phone) | everything for Ronke |
 | `demo-approver` | approver (Funmi) | `GET /v1/approvals`, `POST /v1/approvals/{id}/decision` |
 | `demo-assistant` | assistant | read endpoints and `POST /v1/drafts`; every confirm, cancel, pause-answer and decision call is `403 forbidden` |
+| `demo-tolu`, `demo-mama`, `demo-musa`, `demo-aisha`, `demo-emeka`, `demo-chika` | customer | everything for that person (see the demo world) |
 
 ## Errors
 
@@ -56,6 +59,7 @@ whenever the body has `retry_after`.
 | 409 | `draft_closed` | `status_now` | cancelled or failed |
 | 409 | `already_blocked` | | card already blocked |
 | 409 | `not_paused`, `already_decided`, `onboarding_incomplete` | | |
+| 409 | `onboarding_closed` | | `complete` called again, or `pin` after the sign-up's PIN was set |
 | 410 | `draft_expired` | `draft_id` | older than 10 minutes |
 | 410 | `approval_expired` | `draft_id` | approver did not answer within 15 minutes |
 | 413 / 415 / 422 | `audio_too_long` / `audio_expected` / `audio_too_short` | | speech uploads |
@@ -145,8 +149,8 @@ canonical meaning sorted keys and `(",", ":")` separators. Clients never compute
 | `POST /v1/onboarding/{id}/id-document` | `{"full_name", "nin_last4", "born_on"}` (optional: what the phone read off the card) | The same three keys. With a body, the name names the new account and only the name is kept; without one, the mock reads `{"full_name": "Ronke Adeyemi", "nin_last4": "5521", "born_on": "1961-03-14"}` |
 | `POST /v1/onboarding/{id}/bvn` | `{"bvn": "22212345678"}` | `{"match": true, "say": "..."}` (`match` false for `12345678901`; not 11 digits is `422 invalid_request`) |
 | `POST /v1/onboarding/{id}/bvn-check` | | With the customer's consent, Zenith finds the BVN with NIBSS from their NIN and phone, so nothing is said aloud. `{"match": true, "say": "..."}`, and the session counts as BVN matched |
-| `POST /v1/onboarding/{id}/complete` | | `{"customer_id": "cus_...", "token": "..."}`: a new customer with their own Zenith account (₦100,000 in the mock), card and token, and no PIN until `pin`. Called again, the same customer. Or `409 onboarding_incomplete` until the BVN matched (and the selfie, if sent, was live) |
-| `POST /v1/onboarding/{id}/pin` | `{"pin_block": "demo-..."}` | The new account's own Pulse PIN, sealed on the phone. `{"ok": true, "say": "..."}`; `409 onboarding_incomplete` before `complete`; `422 weak_pin` for one digit four times, a run up or down, or a repeated pair |
+| `POST /v1/onboarding/{id}/complete` | | `{"customer_id": "cus_...", "token": "..."}`: a new customer with their own Zenith account (₦100,000 in the mock), card and token, and no PIN until `pin`. The token is given once: called again, `409 onboarding_closed`. Or `409 onboarding_incomplete` until the BVN matched (and the selfie, if sent, was live) |
+| `POST /v1/onboarding/{id}/pin` | `{"pin_block": "demo-..."}` | The new account's own Pulse PIN, sealed on the phone. `{"ok": true, "say": "..."}`; `409 onboarding_incomplete` before `complete`; `422 weak_pin` for one digit four times, a run up or down, or a repeated pair (try again). Once a PIN is set the sign-up is closed: another `pin` is `409 onboarding_closed` |
 
 ### Sign in (customer)
 
@@ -240,6 +244,9 @@ Pidgin, Yorùbá, Hausa and Igbo phrasings.
 ("my PIN is 2075") is caught in code before any model call: no draft, and `say` tells the customer
 never to say it aloud. "Send money to Tolu" then "twenty thousand" works across two turns, and so does "send money to
 0123456789 at GTBank" then "twenty thousand".
+The rule parser understands sending, the balance, money in and blocking the card in all five languages,
+with or without tone marks, and amounts in their words or digits: "fi ẹgbẹ̀rún ogún ránṣẹ́ sí Tolu",
+"aika dubu ashirin zuwa ga Musa", "ziga puku iri abụọ nye Emeka", "Elo lo wa ninu account mi".
 
 ### Speech (YarnGPT behind the Gateway; the phone never holds the key)
 
@@ -281,14 +288,28 @@ first. `null` clears `next_transfer_code` and `next_transfer_timeout`.
 | Card | `cd_1`, ending 8830 |
 | Limits | ₦1,000,000 per transfer, ₦5,000,000 a day |
 
+The saved people are customers too, so money sent to them lands. Each has ₦250,000, Pulse PIN
+**2 0 7 5**, Ronke's limits, a card, and Ronke saved as payee `py_ronke_<nickname>` ("Ronke", paid
+before); no co-approver. Name enquiry gives the names below.
+
+| Person | Customer | Token | `lang` | Bank, account | Name |
+|---|---|---|---|---|---|
+| Tolu | `cus_tolu` | `demo-tolu` | `yo` | Zenith Bank 057, 2044714471 | Adebayo Tolulope |
+| Mama | `cus_mama` | `demo-mama` | `yo` | GTBank 058, 0123450213 | Adeyemi Folake |
+| Musa | `cus_musa` | `demo-musa` | `ha` | OPay 999992, 8031447710 | Musa Ibrahim |
+| Aisha | `cus_aisha` | `demo-aisha` | `ha` | UBA 033, 2150987654 | Bello Aisha |
+| Emeka | `cus_emeka` | `demo-emeka` | `ig` | Zenith Bank 057, 2234567890 | Nwosu Emeka |
+| Chika | `cus_chika` | `demo-chika` | `ig` | Access Bank 044, 0691234567 | Okonkwo Chika |
+
 Mock account rules: ten identical digits → invalid (07); ending `0006`, or UBA `2109876543` → dormant (06);
 BVN `12345678901` belongs to someone else; any other 10-digit number at a listed bank → a consistent
 generated name.
 
 Each sign-up is a customer of the mock bank too: a Zenith (057) account number, ₦100,000 and a card,
-named from the card the phone read. Name enquiry on a Zenith number the mock bank holds gives its owner's
-name, and a transfer between two such accounts debits one and credits the other in the same database
-transaction, with an incoming line on the receiver's side. Transfers to other banks only leave.
+named from the card the phone read. Name enquiry on an account the mock bank holds gives its owner's
+name, and a transfer between two such accounts, at any bank, debits one and credits the other in the
+same database transaction, with an incoming line on the receiver's side. Transfers to any other account
+only leave.
 
 ## Demo scripts the two halves must agree on
 

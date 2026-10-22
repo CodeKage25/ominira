@@ -1121,6 +1121,90 @@ class Words private constructor(val lang: Lang) {
     )
     val pauseFull get() = "$pauseQuestion " + t("Nothing has been sent.", "Nothing don comot.", "Kò sí owó tó tíì lọ.", "Ba a aika komai ba tukuna.", "Ọ dịbeghị ihe e zigara.")
 
+    // Voice dock and the commands it answers on the phone
+    val speak get() = t("Speak", "Talk", "Sọ̀rọ̀", "Yi magana", "Kwuo okwu")
+    val nothingToRepeat get() = t("I have not said anything yet.", "I never talk anything yet.", "Mi ò tíì sọ nǹkankan.", "Ban faɗi komai ba tukuna.", "Ekwubeghị m ihe ọ bụla.")
+    val commandsList get() = t(
+        "You can say: go home, go back, my balance, send money, my card, settings, say that again, where am I, or stop.",
+        "You fit talk: go home, go back, my balance, send money, my card, settings, talk am again, where I dey, or stop.",
+        "Ẹ lè sọ pé: padà sí ilé, padà sẹ́yìn, owó mi, fi owó ránṣẹ́, káàdì mi, ètò, ẹ tún sọ, níbo ni mo wà, tàbí dúró.",
+        "Kuna iya cewa: koma gida, koma baya, kuɗina, aika kuɗi, katina, saituna, sake faɗa, ina nake, ko tsaya.",
+        "Ị nwere ike ikwu: laghachi n'ụlọ, laghachi azụ, ego m, ziga ego, kaadị m, ntọala, kwuo ya ọzọ, ebee ka m nọ, ma ọ bụ kwụsị.",
+    )
+    val placeSend get() = t("Send money.", "Send money.", "Fi owó ránṣẹ́.", "Aika kuɗi.", "Ziga ego.")
+    val placeBalance get() = t("Your balance.", "Your balance.", "Owó inú àkáǹtì yín.", "Kuɗin asusunku.", "Ego dị na akaụntụ gị.")
+    val placeCard get() = t("Your card.", "Your card.", "Káàdì yín.", "Katinku.", "Kaadị gị.")
+    val placeSign get() = t("Sign language help.", "Sign language help.", "Ìrànlọ́wọ́ èdè àwọn adití.", "Taimako da yaren kurame.", "Enyemaka asụsụ aka.")
+    val placeSettings get() = t("Settings.", "Settings.", "Ètò.", "Saituna.", "Ntọala.")
+    fun placeName(place: Place): String = when (place) {
+        Place.Home -> homeTitle
+        Place.Send -> placeSend
+        Place.Balance -> placeBalance
+        Place.Card -> placeCard
+        Place.Sign -> placeSign
+        Place.Settings -> placeSettings
+    }
+    val mainHome get() = t(
+        "Say what you want to do, or choose from the screen.",
+        "Talk wetin you wan do, or choose from the screen.",
+        "Ẹ sọ ohun tí ẹ fẹ́ ṣe, tàbí ẹ yàn lójú fóònù.",
+        "Ku faɗi abin da kuke so ku yi, ko ku zaɓa a allon.",
+        "Kwuo ihe ị chọrọ ime, ma ọ bụ họrọ na ihuenyo.",
+    )
+    val mainSend get() = t(
+        "Say who to send to and how much, or choose a person.",
+        "Talk who you wan send give and how much, or choose person.",
+        "Ẹ sọ ẹni tí ẹ fẹ́ fi ránṣẹ́ sí àti iye rẹ̀, tàbí ẹ yan ènìyàn.",
+        "Ku faɗi wanda za ku aika wa da nawa, ko ku zaɓi mutum.",
+        "Kwuo onye ị chọrọ iziga na ego ole, ma ọ bụ họrọ mmadụ.",
+    )
+    val mainBalance get() = t(
+        "Press Read the latest to me to hear what came in and went out.",
+        "Press Read the latest one give me to hear wetin enter and comot.",
+        "Ẹ tẹ Ka àwọn tuntun fún mi láti gbọ́ owó tó wọlé àti tó jáde.",
+        "Ku danna Karanta mini na baya-bayan nan don jin kuɗin da suka shigo da fita.",
+        "Pịa Gụọrọ m nke ọhụrụ ka ị nụ ego batara na nke pụrụ.",
+    )
+    val mainCard get() = t(
+        "Check the card, then pulse your PIN to block it, or say no.",
+        "Check the card, then pulse your PIN make I block am, or talk no.",
+        "Ẹ yẹ káàdì náà wò, lẹ́yìn náà ẹ pulse PIN yín láti dí i, tàbí ẹ sọ rárá.",
+        "Ku duba katin, sannan ku yi pulse PIN don toshe shi, ko ku ce a'a.",
+        "Lelee kaadị ahụ, mgbe ahụ pulse PIN gị ka egbochie ya, ma ọ bụ kwuo mba.",
+    )
+    val mainSign get() = t(
+        "A sign language call with a Zenith agent. Press End call when you are done.",
+        "Sign language call with Zenith agent. Press End call when you finish.",
+        "Ìpè èdè àwọn adití pẹ̀lú òṣìṣẹ́ Zenith. Ẹ tẹ Parí ìpè nígbà tí ẹ bá parí.",
+        "Kira da yaren kurame tare da ma'aikacin Zenith. Ku danna Kammala kira idan kun gama.",
+        "Oku asụsụ aka na onye ọrụ Zenith. Pịa Kwụsị oku mgbe ị mechara.",
+    )
+    val mainSettings get() = t(
+        "Choose how the app looks and sounds.",
+        "Choose how the app go look and sound.",
+        "Ẹ yan bí ìṣàfilọ́lẹ̀ náà ṣe máa rí àti bí yóò ṣe dún.",
+        "Ku zaɓi yadda manhajar za ta yi kama da sauti.",
+        "Họrọ otú ngwa a ga-adị na otú ọ ga-ada.",
+    )
+    fun mainAction(place: Place): String = when (place) {
+        Place.Home -> mainHome
+        Place.Send -> mainSend
+        Place.Balance -> mainBalance
+        Place.Card -> mainCard
+        Place.Sign -> mainSign
+        Place.Settings -> mainSettings
+    }
+
+    // Settings, for the demo: whose phone this is
+    val whosePhone get() = t("Whose phone is this", "Whose phone be this", "Fóònù ta ni èyí", "Wayar wane ce wannan", "Ekwentị onye bụ nke a")
+    val whosePhoneHint get() = t(
+        "The app becomes this customer and speaks their language.",
+        "The app go turn this customer and talk their language.",
+        "Ìṣàfilọ́lẹ̀ náà yóò di oníbàárà yìí, yóò sì sọ èdè rẹ̀.",
+        "Manhajar za ta zama wannan abokin ciniki, ta yi magana da harshensa.",
+        "Ngwa a ga-aghọ onye ahịa a, ga-asụkwa asụsụ ya.",
+    )
+
     companion object {
         private val all = Lang.entries.associateWith { Words(it) }
         fun of(lang: Lang): Words = all.getValue(lang)

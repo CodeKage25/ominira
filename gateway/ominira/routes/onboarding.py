@@ -5,7 +5,6 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ominira import audit_log, lines
@@ -112,10 +111,14 @@ def pin(sid: str, body: PinIn, db: Session = Depends(get_session)):
     row = _session(db, sid)
     if not row.completed:
         raise Problem(409, "onboarding_incomplete", "Open the account before setting its PIN")
+    if row.pin_set:
+        raise Problem(409, "onboarding_closed", "This sign-up is finished; change the PIN with Zenith")
     say_lang = row.lang or "en"
     customer = _customer_of(db, row)
     if not get_core().set_pin(customer.core_ref, body.pin_block):
         raise Problem(422, "weak_pin", "Choose a PIN that is harder to guess", lines.say(say_lang, "pin_weak"))
+    row.pin_set = True
+    db.commit()
     audit_log.record("pin_set", actor="customer", customer_id=customer.id, onboarding_id=sid)
     return {"ok": True, "say": lines.say(say_lang, "pin_set")}
 
@@ -123,22 +126,23 @@ def pin(sid: str, body: PinIn, db: Session = Depends(get_session)):
 @router.post("/{sid}/complete")
 def complete(sid: str, db: Session = Depends(get_session)):
     row = _session(db, sid)
+    if row.completed:
+        # The token is handed out once: a session id must not fetch it again.
+        raise Problem(409, "onboarding_closed", "This account is already open")
     if not row.bvn_matched or row.live is False:
         raise Problem(409, "onboarding_incomplete", "Finish the selfie and the BVN check first")
-    if not row.completed:
-        # Each sign-up is its own customer, named from the card the phone read.
-        name = row.full_name or get_core().read_id_document(sid).full_name
-        core_ref = get_core().open_customer(name)
-        customer = Customer(id=new_id("cus_"), core_ref=core_ref, phone="", lang=row.lang or "en")
-        db.add(customer)
-        db.flush()
-        db.add(Token(token=secrets.token_urlsafe(24), role="customer", customer_id=customer.id))
-        if mock_core() is not None:
-            give_starter_payees(db, customer.id, core_ref)
-        row.customer_id = customer.id
-        row.completed = True
-        db.commit()
-        audit_log.record("account_opened", actor="customer", customer_id=customer.id, onboarding_id=sid)
-    customer = _customer_of(db, row)
-    token = db.scalars(select(Token).where(Token.customer_id == customer.id, Token.role == "customer")).first()
+    # Each sign-up is its own customer, named from the card the phone read.
+    name = row.full_name or get_core().read_id_document(sid).full_name
+    core_ref = get_core().open_customer(name)
+    customer = Customer(id=new_id("cus_"), core_ref=core_ref, phone="", lang=row.lang or "en")
+    db.add(customer)
+    db.flush()
+    token = Token(token=secrets.token_urlsafe(24), role="customer", customer_id=customer.id)
+    db.add(token)
+    if mock_core() is not None:
+        give_starter_payees(db, customer.id, core_ref)
+    row.customer_id = customer.id
+    row.completed = True
+    db.commit()
+    audit_log.record("account_opened", actor="customer", customer_id=customer.id, onboarding_id=sid)
     return {"customer_id": customer.id, "token": token.token}

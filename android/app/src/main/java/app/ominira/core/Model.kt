@@ -94,6 +94,11 @@ data class Draft(
 sealed interface Drafted {
     data class Made(val draft: Draft) : Drafted
     data class Refused(val code: String, val say: String) : Drafted
+
+    companion object {
+        // The bank could not be reached: the screen says so in the customer's language.
+        const val UNREACHABLE = "unreachable"
+    }
 }
 
 sealed interface Outcome {

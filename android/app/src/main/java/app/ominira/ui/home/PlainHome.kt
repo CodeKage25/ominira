@@ -6,7 +6,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -15,66 +14,34 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.ominira.Session
-import app.ominira.ui.kit.ActionButton
 import app.ominira.ui.kit.Brand
-import app.ominira.ui.kit.CaptionBox
 import app.ominira.ui.kit.ChoiceRow
-import app.ominira.ui.kit.Emphasis
 import app.ominira.ui.kit.IconAction
 import app.ominira.ui.kit.ModeChip
 import app.ominira.ui.kit.Notice
 import app.ominira.ui.kit.Page
 import app.ominira.ui.kit.Tone
+import app.ominira.ui.kit.VoiceDock
 import app.ominira.ui.theme.Glyphs
 import app.ominira.ui.theme.Om
-import app.ominira.voice.rememberEars
-import kotlinx.coroutines.launch
+import app.ominira.voice.rememberVoice
 
 @Composable
 fun PlainHomeScreen(session: Session, actions: HomeActions) {
-    val scope = rememberCoroutineScope()
-    var reply by remember { mutableStateOf<String?>(null) }
     var calling by remember { mutableStateOf(false) }
-    var working by remember { mutableStateOf(false) }
     val w = session.words
+    val voice = rememberVoice()
 
-    val ears = rememberEars(session) { text ->
-        if (text.isNullOrBlank()) return@rememberEars
-        working = true
-        scope.launch {
-            val turn = runCatching { session.api.turn(text, session.lang) }.getOrNull()
-            working = false
-            if (turn == null) {
-                reply = session.words.couldNotDo
-            } else if (!routeTurn(session, turn, actions)) {
-                reply = turn.say
-                session.say(turn.say)
-            }
-        }
-    }
-
-    LaunchedEffect(Unit) { session.sayOnArrival(session.spoken.whatToDo) }
+    LaunchedEffect(Unit) { voice.arrive(session.greeting(session.voiceLang), session.spoken.whatToDo) }
 
     Page(
         top = {
             Brand(Modifier.weight(1f)) { IconAction(Glyphs.Settings, w.settings, actions.settings) }
         },
-        bottom = {
-            ActionButton(
-                w.orJustSay,
-                onClick = {
-                    session.speaker.stop()
-                    ears.listen()
-                },
-                style = Emphasis.Sun,
-                icon = Glyphs.Mic,
-                busy = working,
-            )
-        },
+        dock = { VoiceDock(session) },
     ) {
         Text(session.greeting(), style = Om.type.lead, color = Om.color.muted)
         Text(w.whatToDo, style = Om.type.displayM, color = Om.color.text, modifier = Modifier.semantics { heading() })
-        reply?.let { CaptionBox(w.ominiraSaid, it) }
         BigChoice(w.sendMoney, Om.color.modeVoice, Glyphs.Send, actions.send)
         BigChoice(w.howMuchHave, Om.color.modeSwitch, Glyphs.Wallet, actions.balance)
         BigChoice(w.myCard, Om.color.modeSign, Glyphs.Card, actions.card)

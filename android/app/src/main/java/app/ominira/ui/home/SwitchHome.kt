@@ -46,9 +46,11 @@ import app.ominira.ui.kit.IconAction
 import app.ominira.ui.kit.Notice
 import app.ominira.ui.kit.Page
 import app.ominira.ui.kit.Tone
+import app.ominira.ui.kit.VoiceDock
 import app.ominira.ui.theme.Corners
 import app.ominira.ui.theme.Glyphs
 import app.ominira.ui.theme.Om
+import app.ominira.voice.rememberVoice
 import kotlinx.coroutines.delay
 
 // label picks from Words, so the screen and the voice can each use their own language.
@@ -56,8 +58,11 @@ private class ScanItem(val label: Words.() -> String, val icon: ImageVector, val
 
 @Composable
 fun SwitchHomeScreen(session: Session, actions: HomeActions) {
-    val items = remember(actions) {
+    val voice = rememberVoice()
+    val items = remember(actions, voice) {
         listOf(
+            // Speak opens the one microphone, and closes it when it is open.
+            ScanItem({ if (voice.listening) stop else speak }, Glyphs.Mic) { if (voice.listening) voice.stop() else voice.listenNow() },
             ScanItem({ sendMoney }, Glyphs.Send, actions.send),
             ScanItem({ myBalance }, Glyphs.Wallet, actions.balance),
             ScanItem({ myCard }, Glyphs.Card, actions.card),
@@ -84,7 +89,10 @@ fun SwitchHomeScreen(session: Session, actions: HomeActions) {
             session.haptics.tick()
         }
     }
-    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    LaunchedEffect(Unit) {
+        runCatching { focus.requestFocus() }
+        voice.arrive(session.spoken.homeTitle, session.spoken.whatToDo)
+    }
 
     fun press() {
         session.haptics.lock()
@@ -128,6 +136,7 @@ fun SwitchHomeScreen(session: Session, actions: HomeActions) {
                 )
             }
         },
+        dock = { VoiceDock(session, showButton = false) },
     ) {
         Heading(w.whatToDo)
         Hint(if (paused) w.scanPaused else w.ringMoves(scanMs / 1000.0))

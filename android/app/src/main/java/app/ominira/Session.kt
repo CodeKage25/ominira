@@ -10,6 +10,8 @@ import app.ominira.bank.FakeOminiraApi
 import app.ominira.bank.GatewayOminiraApi
 import app.ominira.bank.OminiraApi
 import app.ominira.core.Account
+import app.ominira.core.DemoPeople
+import app.ominira.core.DemoPerson
 import app.ominira.core.IdDetails
 import app.ominira.core.Lang
 import app.ominira.core.Lines
@@ -30,7 +32,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 class Session(app: Application) : AndroidViewModel(app) {
 
@@ -53,15 +58,23 @@ class Session(app: Application) : AndroidViewModel(app) {
 
     private fun newApi(): OminiraApi =
         if (useGateway && BuildConfig.GATEWAY_URL.isNotBlank()) {
-            // The phone's own customer once it has signed up; the demo customer before that.
+            // A demo person chosen in Settings, else the phone's own customer once it has signed up, else the demo customer.
             GatewayOminiraApi(
                 BuildConfig.GATEWAY_URL,
-                store.getString(K_TOKEN, null) ?: BuildConfig.GATEWAY_TOKEN,
+                chosenToken() ?: store.getString(K_TOKEN, null) ?: BuildConfig.GATEWAY_TOKEN,
                 BuildConfig.MOCK_ADMIN_TOKEN,
-                onToken = { store.edit().putString(K_TOKEN, it).apply() },
+                onToken = {
+                    store.edit().putString(K_TOKEN, it).remove(K_PERSON).apply()
+                    personKey = null
+                },
             )
         }
         else FakeOminiraApi(lang = Lang.fromCode(store.getString(K_LANG, null)) ?: Lang.En)
+
+    private fun chosenToken(): String? =
+        DemoPeople.byKey(store.getString(K_PERSON, null))?.let { it.token ?: BuildConfig.GATEWAY_TOKEN }
+
+    val liveGateway: Boolean get() = api is GatewayOminiraApi
 
     val speaker = Speaker(app) { activeCloudVoice() }
     val haptics = Haptics(app)
@@ -113,21 +126,37 @@ class Session(app: Application) : AndroidViewModel(app) {
     // This phone signed up before: it opens on the Pulse PIN, not on onboarding.
     val hasOwnAccount: Boolean get() = store.contains(K_TOKEN)
 
+    val onboarded: Boolean get() = hasOwnAccount || store.getBoolean(K_ONBOARDED, false)
+
+    fun markOnboarded() {
+        store.edit().putBoolean(K_ONBOARDED, true).apply()
+    }
+
+    // The demo person this phone speaks for, chosen in Settings; null for its own customer.
+    var personKey by mutableStateOf(store.getString(K_PERSON, null))
+        private set
+
+    // Open while the shared voice host listens; money in waits for it to close.
+    val micOpen = MutableStateFlow(false)
+
     private var watcher: Job? = null
 
     // While the app is open, money that lands is announced in the customer's language. Gateway only:
     // the bank inside the app has no one else to send money.
     fun watchIncoming() {
-        if (!signedIn || api !is GatewayOminiraApi || watcher?.isActive == true) return
+        val client = api as? GatewayOminiraApi ?: return
+        if (!signedIn || watcher?.isActive == true) return
         watcher = background.launch {
             var seen: Set<String>? = null
             while (true) {
-                val came = mainAccount()?.let { a -> runCatching { api.transactions(a.id, 10, "in") }.getOrNull() }
+                // Only a real Gateway reply is announced, never the bank inside the app.
+                val came = client.incomingNow(10)
                 if (came != null) {
                     val before = seen
                     // The first look only learns what is already there.
                     if (before != null) {
                         for (t in came.filter { it.id !in before }) {
+                            awaitTurnToSpeak()
                             haptics.done()
                             say(spoken.moneyIn(spoken.money(t.amountKobo), t.who))
                         }
@@ -136,6 +165,16 @@ class Session(app: Application) : AndroidViewModel(app) {
                 }
                 delay(10_000)
             }
+        }
+    }
+
+    // Never over a line being said, never into an open microphone.
+    private suspend fun awaitTurnToSpeak() {
+        repeat(20) {
+            speaker.awaitQuiet()
+            withTimeoutOrNull(60_000) { micOpen.first { !it } }
+            delay(400)
+            if (!speaker.talking.value && !micOpen.value) return
         }
     }
 
@@ -171,7 +210,7 @@ class Session(app: Application) : AndroidViewModel(app) {
     init {
         speaker.rate = speechRate
         checkHearing(lang)
-        if (hasOwnAccount) refreshName()
+        if (onboarded) refreshName()
     }
 
     private fun checkHearing(value: Lang) {
@@ -250,9 +289,38 @@ class Session(app: Application) : AndroidViewModel(app) {
         speaker.stop()
         useGateway = value
         store.edit().putBoolean(K_GATEWAY, value).apply()
+        stopWatching()
         api = newApi()
         pendingTurn = null
         onboardingId = null
+        watchIncoming()
+    }
+
+    // Demo only, live Gateway: the phone becomes one of the Gateway's seeded customers.
+    fun chooseCustomer(person: DemoPerson) {
+        val client = api as? GatewayOminiraApi ?: return
+        speaker.stop()
+        stopWatching()
+        store.edit().putString(K_PERSON, person.key).putBoolean(K_ONBOARDED, true).putString(K_NAME, person.firstName).apply()
+        personKey = person.key
+        client.switchCustomer(person.token ?: BuildConfig.GATEWAY_TOKEN)
+        customerName = person.firstName
+        person.lang?.let { chooseLang(it) }
+        pendingTurn = null
+        onboardingId = null
+        idOnFile = null
+        signedIn = true
+        watchIncoming()
+        // The Gateway's own name and language for them win.
+        background.launch {
+            val (name, spokenLang) = client.profile() ?: return@launch
+            if (api !== client || personKey != person.key) return@launch
+            if (name != null) {
+                customerName = name
+                store.edit().putString(K_NAME, name).apply()
+            }
+            if (spokenLang != null && spokenLang != lang) chooseLang(spokenLang)
+        }
     }
 
     fun syncAll() = sync(PreferencePatch(lang = lang, modes = modes, theme = look.wire, speechRate = speechRate, pulseGapMs = pulseGapMs))
@@ -267,8 +335,9 @@ class Session(app: Application) : AndroidViewModel(app) {
         // With its own customer, the phone just signs up again: resetting the shared mock bank would wipe
         // the other phone's customer in a two-phone demo. Only the demo customer resets it.
         val ownCustomer = store.contains(K_TOKEN)
-        store.edit().remove(K_TOKEN).remove(K_NAME).apply()
+        store.edit().remove(K_TOKEN).remove(K_NAME).remove(K_PERSON).remove(K_ONBOARDED).apply()
         customerName = ""
+        personKey = null
         stopWatching()
         signedIn = false
         val fresh = newApi()
@@ -290,8 +359,26 @@ class Session(app: Application) : AndroidViewModel(app) {
     // TalkBack on: words go to TalkBack, so the customer hears one voice.
     fun say(vararg lines: String) = sayIn(lang, *lines)
 
+    // The last line said, for "say that again" and the dock's caption.
+    var lastLine by mutableStateOf<String?>(null)
+        private set
+    private var lastSaid: Pair<Lang, List<String>>? = null
+
+    private fun keepLast(language: Lang, lines: List<String>) {
+        val clean = lines.filter { it.isNotBlank() }
+        if (clean.isEmpty()) return
+        lastSaid = language to clean
+        lastLine = clean.joinToString(" ")
+    }
+
+    fun sayAgain() {
+        val last = lastSaid
+        if (last == null) say(spoken.nothingToRepeat) else sayIn(last.first, *last.second.toTypedArray())
+    }
+
     fun sayIn(language: Lang, vararg lines: String) {
         if (lines.isEmpty()) return
+        keepLast(language, lines.toList())
         val announce = announcer
         if (screenReaderOn() && announce != null) {
             speaker.stop()
@@ -302,7 +389,9 @@ class Session(app: Application) : AndroidViewModel(app) {
     }
 
     fun sayOnArrival(vararg lines: String) {
-        if (talksFirst) speaker.speak(lang, lines.toList())
+        if (!talksFirst) return
+        keepLast(lang, lines.toList())
+        speaker.speak(lang, lines.toList())
     }
 
     fun pulseIntro(): String {
@@ -335,6 +424,8 @@ class Session(app: Application) : AndroidViewModel(app) {
         const val K_GATEWAY = "gateway"
         const val K_TOKEN = "customerToken"
         const val K_NAME = "customerName"
+        const val K_PERSON = "demoPerson"
+        const val K_ONBOARDED = "onboarded"
         const val K_LOOK = "look"
         const val K_LANG = "lang"
         const val K_MODES = "modes"

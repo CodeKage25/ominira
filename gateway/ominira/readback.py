@@ -22,9 +22,9 @@ def nip_name(raw: str) -> str:
 def for_transfer(lang: str, *, name: str, bank: str, last4: str, amount_kobo: int,
                  warning: str | None = None) -> dict:
     spoken = [
-        amounts.sentence(amount_kobo),
+        amounts.sentence(amount_kobo, lang),
         lines.say(lang, "rb_to", name=name),
-        lines.say(lang, "rb_bank", bank=bank, digits=amounts.digit_words(last4)),
+        lines.say(lang, "rb_bank", bank=bank, digits=amounts.digit_words(last4, lang)),
         lines.say(lang, "rb_pulse_send"),
     ]
     if warning:
@@ -37,7 +37,7 @@ def for_transfer(lang: str, *, name: str, bank: str, last4: str, amount_kobo: in
 
 def for_card_block(lang: str, *, last4: str) -> dict:
     spoken = [
-        lines.say(lang, "rb_block", digits=amounts.digit_words(last4)),
+        lines.say(lang, "rb_block", digits=amounts.digit_words(last4, lang)),
         lines.say(lang, "rb_block_effect"),
         lines.say(lang, "rb_pulse_block"),
     ]

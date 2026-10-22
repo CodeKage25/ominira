@@ -153,7 +153,7 @@ def _limit_problem(customer: Customer, amount: int) -> Problem | None:
     lim = get_core().limits(customer.core_ref)
     if amount > lim.per_transaction_kobo:
         return Problem(422, "limit_exceeded", "Over the per-transaction limit",
-                       lines.say(lang, "limit_single", max=amounts.spoken(lim.per_transaction_kobo)),
+                       lines.say(lang, "limit_single", max=amounts.spoken(lim.per_transaction_kobo, lang)),
                        limit="per_transaction", max_kobo=lim.per_transaction_kobo)
     daily = lim.daily_kobo
     if customer.daily_limit_kobo:
@@ -161,7 +161,7 @@ def _limit_problem(customer: Customer, amount: int) -> Problem | None:
     remaining = max(0, daily - lim.used_today_kobo)
     if amount > remaining:
         return Problem(422, "limit_exceeded", "Over the daily limit",
-                       lines.say(lang, "limit_daily", remaining=amounts.spoken(remaining)),
+                       lines.say(lang, "limit_daily", remaining=amounts.spoken(remaining, lang)),
                        limit="daily", remaining_today_kobo=remaining)
     return None
 
@@ -231,7 +231,7 @@ def _confirm(db: Session, caller: Caller, draft_id: str, client_hash: str, pin_b
             db.add(approval)
             draft.status = "awaiting_approval"
             draft.last_say = lines.say(lang, "approval_wait", approver=approver.name,
-                                       threshold=amounts.spoken(approver.threshold_kobo))
+                                       threshold=amounts.spoken(approver.threshold_kobo, lang))
             db.commit()
             audit_log.record("approval_requested", actor="customer", customer_id=customer.id, draft_id=draft.id,
                              approval_id=approval.id, approver_id=approver.id, amount_kobo=amount)

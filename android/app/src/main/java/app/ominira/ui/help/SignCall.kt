@@ -41,9 +41,11 @@ import app.ominira.ui.kit.IconAction
 import app.ominira.ui.kit.Notice
 import app.ominira.ui.kit.Page
 import app.ominira.ui.kit.Tone
+import app.ominira.ui.kit.VoiceDock
 import app.ominira.ui.theme.Corners
 import app.ominira.ui.theme.Glyphs
 import app.ominira.ui.theme.Om
+import app.ominira.voice.rememberVoice
 import kotlinx.coroutines.delay
 
 // Funmi signs the even lines, the customer the odd ones.
@@ -59,6 +61,9 @@ fun SignCallScreen(session: Session, onHome: () -> Unit) {
     var ended by remember { mutableStateOf(false) }
     val w = session.words
     val script = signScript(w)
+    val voice = rememberVoice()
+
+    LaunchedEffect(Unit) { voice.arrive(session.spoken.placeSign, session.spoken.mainSign) }
 
     LaunchedEffect(ended) {
         while (!ended) {
@@ -93,6 +98,7 @@ fun SignCallScreen(session: Session, onHome: () -> Unit) {
                 }
             }
         },
+        dock = { VoiceDock(session) },
     ) {
         if (ended) {
             Heading(w.callEnded)

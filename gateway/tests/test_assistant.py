@@ -341,11 +341,12 @@ def test_the_next_turn_follows_a_language_change(client):
     assert card["draft"]["readback"]["lang"] == "pcm"
 
 
-@pytest.mark.parametrize("lang", ["yo", "ha", "ig"])
-def test_yoruba_hausa_igbo_customers_get_english_lines_until_reviewed(client, lang):
+@pytest.mark.parametrize("lang,found", [("yo", "Mo rí Adebayo Tolulope"), ("ha", "Na sami Adebayo Tolulope"),
+                                        ("ig", "Achọtara m Adebayo Tolulope")])
+def test_yoruba_hausa_igbo_customers_hear_their_own_language(client, lang, found):
     client.put("/v1/me/preferences", headers=CUSTOMER, json={"lang": lang})
     body = _say(client, _conv(client), "send twenty thousand to Tolu")
-    assert body["say"].startswith("I found Adebayo Tolulope") and body["draft"]["readback"]["lang"] == lang
+    assert body["say"].startswith(found) and body["draft"]["readback"]["lang"] == lang
 
 
 def test_claude_is_told_the_customers_language(client, fake_claude):

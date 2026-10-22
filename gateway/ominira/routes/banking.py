@@ -54,7 +54,7 @@ def accounts(caller: Caller = Depends(reader)):
 def balance(account_id: str, caller: Caller = Depends(reader)):
     acct = _account(caller, account_id)
     return {"balance_kobo": acct.balance_kobo,
-            "say": lines.say(caller.lang, "balance", amount=amounts.spoken(acct.balance_kobo))}
+            "say": lines.say(caller.lang, "balance", amount=amounts.spoken(acct.balance_kobo, caller.lang))}
 
 
 @router.get("/accounts/{account_id}/transactions")
@@ -98,7 +98,7 @@ def lookup(body: LookupIn, caller: Caller = Depends(reader)):
     name = readback.nip_name(enquiry.account_name)
     return {"name": name, "bank": enquiry.bank.short, "account_last4": enquiry.last4,
             "say": lines.say(caller.lang, "lookup_found", name=name, bank=enquiry.bank.short,
-                             digits=amounts.digit_words(enquiry.last4))}
+                             digits=amounts.digit_words(enquiry.last4, caller.lang))}
 
 
 # ---- cards --------------------------------------------------------------------------------------
