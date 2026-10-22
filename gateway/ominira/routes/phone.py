@@ -4,6 +4,7 @@ confirm gate moves money, so the readback, PIN, limits, scam pause and co-approv
 Every request must carry Twilio's signature. A call's state lives in this process for the few minutes of
 the call: the service runs as one instance."""
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -19,7 +20,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, Response
 from sqlalchemy import select
 
-from ominira import drafting, gate, lines
+from ominira import drafting, gate, lines, phone_callers
 from ominira.assistant import run_turn
 from ominira.core import get_core
 from ominira.database import SessionFactory
@@ -43,6 +44,7 @@ CALL_TTL_S = 3600
 class Call:
     lang: str = "en"
     customer_id: str | None = None
+    account: str | None = None  # a stranger's account number, until its PIN passes
     conversation_id: str | None = None
     draft_id: str | None = None
     readback_hash: str | None = None
@@ -75,6 +77,12 @@ async def _form(request: Request) -> dict[str, str]:
     if not settings.twilio_auth_token or not hmac.compare_digest(sent, _signature(str(request.url), form)):
         raise Problem(403, "forbidden", "Not signed by Twilio")
     return form
+
+
+async def _off_loop(work, request: Request) -> Response:
+    """Signed on the loop; the call's work (speech, Claude, the gate, the database) blocks, so on a thread."""
+    form = await _form(request)
+    return await asyncio.to_thread(work, request, form, _call(form["CallSid"]))
 
 
 def _twiml(*parts: str) -> Response:
@@ -121,6 +129,10 @@ async def voice(request: Request):
         url = f"wss://{request.url.netloc}/phone/stream"
         ticket = ticket_for(form.get("From", ""))
         return _twiml(f'<Connect><Stream url="{escape(url)}"><Parameter name="ticket" value="{ticket}"/></Stream></Connect>')
+    return await asyncio.to_thread(_menu, request)
+
+
+def _menu(request: Request) -> Response:
     menu = "".join(_line(request, lang, f"phone_menu_{lang}") for lang in LANGS)
     return _twiml(f'<Gather numDigits="1" action="/phone/language" timeout="8">{menu}</Gather>',
                   '<Redirect method="POST">/phone/voice</Redirect>')
@@ -136,8 +148,10 @@ def _ask_account(request: Request, call: Call, lead: str = "") -> Response:
 
 @router.post("/language")
 async def language(request: Request):
-    form = await _form(request)
-    call = _call(form["CallSid"])
+    return await _off_loop(_language, request)
+
+
+def _language(request: Request, form: dict[str, str], call: Call) -> Response:
     digit = form.get("Digits", "")
     if digit not in ("1", "2", "3", "4", "5"):
         return _twiml('<Redirect method="POST">/phone/voice</Redirect>')
@@ -147,22 +161,60 @@ async def language(request: Request):
 
 @router.post("/account")
 async def account(request: Request):
-    form = await _form(request)
-    call = _call(form["CallSid"])
-    number = form.get("Digits", "")
-    core_ref = get_core().customer_for_account(number) if len(number) == 10 else None
+    return await _off_loop(_account, request)
+
+
+def _account(request: Request, form: dict[str, str], call: Call) -> Response:
+    number, caller = form.get("Digits", ""), form.get("From", "")
+    if len(number) != 10:
+        call.misses += 1
+        return _ask_account(request, call, _line(request, call.lang, "phone_no_account"))
+    customer = phone_callers.owner(number)
+    if customer is not None and caller and customer.phone == caller:
+        return _open(request, call, customer.id, get_core().profile(customer.core_ref).first_name)
+    # A stranger hears the same next step whether or not the account is real.
+    if not phone_callers.may_try(caller):
+        return _twiml(_line(request, call.lang, "phone_stranger"), "<Hangup/>")
+    call.account, call.misses = number, 0
+    return _ask_caller_pin(request, call)
+
+
+def _ask_caller_pin(request: Request, call: Call) -> Response:
+    if call.misses > 2:
+        return _twiml(_line(request, call.lang, "phone_bye"), "<Hangup/>")
+    prompt = _line(request, call.lang, "phone_pin")
+    return _twiml(f'<Gather numDigits="4" finishOnKey="#" action="/phone/caller" timeout="20">{prompt}</Gather>',
+                  '<Redirect method="POST">/phone/caller</Redirect>')
+
+
+@router.post("/caller")
+async def caller_pin(request: Request):
+    return await _off_loop(_caller_pin, request)
+
+
+def _caller_pin(request: Request, form: dict[str, str], call: Call) -> Response:
+    if call.account is None:
+        return _twiml('<Redirect method="POST">/phone/voice</Redirect>')
+    digits = form.get("Digits", "")
+    if len(digits) != 4 or not digits.isdigit():
+        call.misses += 1
+        return _ask_caller_pin(request, call)
+    number, call.account = call.account, None
+    found = phone_callers.prove(form.get("From", ""), number, _seal(digits), call.lang)
+    if found is None:
+        return _twiml(_line(request, call.lang, "phone_stranger"), "<Hangup/>")
+    return _open(request, call, *found)
+
+
+def _open(request: Request, call: Call, customer_id: str, first: str) -> Response:
     with SessionFactory() as db:
-        customer = db.scalars(select(Customer).where(Customer.core_ref == core_ref)).first() if core_ref else None
-        if customer is None:
-            call.misses += 1
-            return _ask_account(request, call, _line(request, call.lang, "phone_no_account"))
+        customer = db.get(Customer, customer_id)
         # The language chosen on the call is the one the bank answers in, here and in the app.
         customer.lang = call.lang
         conv = Conversation(id=drafting.new_id("cv_"), customer_id=customer.id)
         db.add(conv)
         db.commit()
         call.customer_id, call.conversation_id, call.misses = customer.id, conv.id, 0
-        first = get_core().profile(customer.core_ref).first_name
     return _ask(request, call, _line(request, call.lang, "phone_hello", first=first))
 
 
@@ -179,14 +231,19 @@ def _ask(request: Request, call: Call, prompt: str) -> Response:
 
 @router.post("/heard")
 async def heard(request: Request):
-    form = await _form(request)
-    return _request(request, _call(form["CallSid"]), form.get("SpeechResult", "").strip())
+    return await _off_loop(_heard, request)
+
+
+def _heard(request: Request, form: dict[str, str], call: Call) -> Response:
+    return _request(request, call, form.get("SpeechResult", "").strip())
 
 
 @router.post("/recorded")
 async def recorded(request: Request):
-    form = await _form(request)
-    call = _call(form["CallSid"])
+    return await _off_loop(_recorded, request)
+
+
+def _recorded(request: Request, form: dict[str, str], call: Call) -> Response:
     text = ""
     url = form.get("RecordingUrl", "")
     if url:
@@ -249,8 +306,10 @@ def _after(request: Request, call: Call, say: str | None) -> Response:
 
 @router.post("/choice")
 async def choice(request: Request):
-    form = await _form(request)
-    call = _call(form["CallSid"])
+    return await _off_loop(_choice, request)
+
+
+def _choice(request: Request, form: dict[str, str], call: Call) -> Response:
     if call.draft_id is None:
         return _ask(request, call, _line(request, call.lang, "phone_more"))
     digit = form.get("Digits", "")
@@ -275,8 +334,10 @@ def _seal(digits: str) -> str:
 
 @router.post("/pin")
 async def pin(request: Request):
-    form = await _form(request)
-    call = _call(form["CallSid"])
+    return await _off_loop(_pin, request)
+
+
+def _pin(request: Request, form: dict[str, str], call: Call) -> Response:
     digits = form.get("Digits", "")
     if call.draft_id is None:
         return _ask(request, call, _line(request, call.lang, "phone_more"))
@@ -301,8 +362,10 @@ async def pin(request: Request):
 
 @router.post("/pause")
 async def pause(request: Request):
-    form = await _form(request)
-    call = _call(form["CallSid"])
+    return await _off_loop(_pause, request)
+
+
+def _pause(request: Request, form: dict[str, str], call: Call) -> Response:
     digit = form.get("Digits", "")
     if call.draft_id is None:
         return _ask(request, call, _line(request, call.lang, "phone_more"))

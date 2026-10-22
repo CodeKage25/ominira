@@ -18,7 +18,7 @@ from pathlib import Path
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
-from ominira import answers, drafting, gate, lines, phone_audio
+from ominira import answers, drafting, gate, lines, phone_audio, phone_callers
 from ominira.assistant import run_turn
 from ominira.core import get_core
 from ominira.database import SessionFactory
@@ -358,28 +358,8 @@ class Line:
                 pass
 
     def known_caller(self) -> tuple[Customer, str] | None:
-        if not self.caller:
-            return None
-        with SessionFactory() as db:
-            customer = db.scalars(select(Customer).where(Customer.phone == self.caller)).first()
-            if customer is None:
-                return None
-            db.expunge(customer)
-        return customer, get_core().profile(customer.core_ref).first_name
-
-    def open_account(self, number: str) -> tuple[str, str] | None:
-        core_ref = get_core().customer_for_account(number) if len(number) == 10 else None
-        if core_ref is None:
-            return None
-        with SessionFactory() as db:
-            customer = db.scalars(select(Customer).where(Customer.core_ref == core_ref)).first()
-            if customer is None:
-                return None
-            customer.lang = self.lang
-            if self.caller:
-                customer.phone = self.caller  # known by this number next time
-            db.commit()
-            return customer.id, get_core().profile(core_ref).first_name
+        customer = phone_callers.known(self.caller)
+        return None if customer is None else (customer, get_core().profile(customer.core_ref).first_name)
 
     def start_conversation(self, customer_id: str) -> None:
         with SessionFactory() as db:
@@ -419,14 +399,30 @@ class Line:
         await self.say(lines.say(self.lang, "phone_v_welcome"), barge=False)
         await self.line("phone_v_account")
         for _ in range(3):
-            found = await asyncio.to_thread(self.open_account, answers.digits(await self.hear(12)))
-            if found is not None:
-                customer_id, first = found
-                await asyncio.to_thread(self.start_conversation, customer_id)
-                await self.say(lines.say(self.lang, "phone_v_hi", first=first), lines.say(self.lang, "phone_v_what"))
-                return True
+            number = answers.digits(await self.hear(12))
+            if len(number) == 10:
+                return await self.prove(number)
             await self.say(lines.say(self.lang, "phone_no_account"), lines.say(self.lang, "phone_v_account"))
         return False
+
+    async def prove(self, number: str) -> bool:
+        """A stranger's account: nothing about it is said or changed until its Pulse PIN passes on this call."""
+        found = None
+        if await asyncio.to_thread(phone_callers.may_try, self.caller):
+            for _ in range(2):
+                block = await self.pulse_pin()
+                if block is not None:
+                    found = await self.busy(asyncio.to_thread(phone_callers.prove, self.caller, number, block,
+                                                              self.lang))
+                    break
+                await self.line("phone_not_heard")
+        if found is None:
+            await self.say(lines.say(self.lang, "phone_stranger"), barge=False)
+            return False
+        customer_id, first = found
+        await asyncio.to_thread(self.start_conversation, customer_id)
+        await self.say(lines.say(self.lang, "phone_v_hi", first=first), lines.say(self.lang, "phone_v_what"))
+        return True
 
     async def converse(self) -> None:
         if not await self.identify():
