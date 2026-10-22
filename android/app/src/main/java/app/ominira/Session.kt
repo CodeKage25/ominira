@@ -110,6 +110,9 @@ class Session(app: Application) : AndroidViewModel(app) {
     // Signed in this session: onboarding finished, or the Pulse PIN opened the app.
     var signedIn = false
 
+    // This phone signed up before: it opens on the Pulse PIN, not on onboarding.
+    val hasOwnAccount: Boolean get() = store.contains(K_TOKEN)
+
     private var watcher: Job? = null
 
     // While the app is open, money that lands is announced in the customer's language. Gateway only:
@@ -146,7 +149,18 @@ class Session(app: Application) : AndroidViewModel(app) {
 
     var micAsked = false
 
-    val customerName = "Ronke"
+    // The customer's first name, from the bank; kept so the PIN screen can greet them before it answers.
+    var customerName by mutableStateOf(store.getString(K_NAME, null).orEmpty())
+        private set
+
+    fun refreshName() {
+        val client = api
+        background.launch {
+            val name = client.firstName() ?: return@launch
+            customerName = name
+            store.edit().putString(K_NAME, name).apply()
+        }
+    }
 
     val roomy: Boolean get() = Mode.Plain in modes || Mode.Switch in modes
 
@@ -157,6 +171,7 @@ class Session(app: Application) : AndroidViewModel(app) {
     init {
         speaker.rate = speechRate
         checkHearing(lang)
+        if (hasOwnAccount) refreshName()
     }
 
     private fun checkHearing(value: Lang) {
@@ -252,7 +267,8 @@ class Session(app: Application) : AndroidViewModel(app) {
         // With its own customer, the phone just signs up again: resetting the shared mock bank would wipe
         // the other phone's customer in a two-phone demo. Only the demo customer resets it.
         val ownCustomer = store.contains(K_TOKEN)
-        store.edit().remove(K_TOKEN).apply()
+        store.edit().remove(K_TOKEN).remove(K_NAME).apply()
+        customerName = ""
         stopWatching()
         signedIn = false
         val fresh = newApi()
@@ -318,6 +334,7 @@ class Session(app: Application) : AndroidViewModel(app) {
     private companion object {
         const val K_GATEWAY = "gateway"
         const val K_TOKEN = "customerToken"
+        const val K_NAME = "customerName"
         const val K_LOOK = "look"
         const val K_LANG = "lang"
         const val K_MODES = "modes"

@@ -213,6 +213,9 @@ class GatewayOminiraApi(
         }
     }
 
+    override suspend fun firstName(): String? =
+        runCatching { call("GET", "/me/preferences").orTrouble().obj.optString("first_name").ifBlank { null } }.getOrNull()
+
     override suspend fun accounts(): List<Account> = orOffline({ fallback.accounts() }) {
         val a = call("GET", "/accounts").orTrouble().list
         List(a.length()) { i ->

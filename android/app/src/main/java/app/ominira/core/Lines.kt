@@ -32,11 +32,13 @@ object Lines {
             in 12..16 -> 1
             else -> 2
         }
+        // No name yet: the greeting alone.
+        val who = if (name.isBlank()) "." else ", $name."
         return when (lang) {
-            Lang.En, Lang.Pcm -> "Good ${listOf("morning", "afternoon", "evening")[part]}, $name."
-            Lang.Yo -> listOf("Ẹ káàárọ̀", "Ẹ káàsán", "Ẹ kúùrọ̀lẹ́")[part] + ", $name."
-            Lang.Ha -> listOf("Ina kwana", "Barka da rana", "Barka da yamma")[part] + ", $name."
-            Lang.Ig -> listOf("Ụtụtụ ọma", "Ehihie ọma", "Mgbede ọma")[part] + ", $name."
+            Lang.En, Lang.Pcm -> "Good ${listOf("morning", "afternoon", "evening")[part]}$who"
+            Lang.Yo -> listOf("Ẹ káàárọ̀", "Ẹ káàsán", "Ẹ kúùrọ̀lẹ́")[part] + who
+            Lang.Ha -> listOf("Ina kwana", "Barka da rana", "Barka da yamma")[part] + who
+            Lang.Ig -> listOf("Ụtụtụ ọma", "Ehihie ọma", "Mgbede ọma")[part] + who
         }
     }
 

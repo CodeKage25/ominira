@@ -33,6 +33,9 @@ interface OminiraApi {
     suspend fun unlock(pinBlock: String): Unlock
 
     suspend fun accounts(): List<Account>
+
+    // The name the app greets the customer by; null when the bank cannot be reached.
+    suspend fun firstName(): String?
     suspend fun balance(accountId: String): Balance
     // Newest first; direction is "in", "out" or null for both.
     suspend fun transactions(accountId: String, limit: Int, direction: String?): List<Txn>

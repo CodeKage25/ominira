@@ -302,7 +302,10 @@ class Words private constructor(val lang: Lang) {
     )
 
     // Unlock
-    fun yourPulsePin(name: String) = t("Your Pulse PIN, $name.", "Your Pulse PIN, $name.", "Pulse PIN yín, $name.", "Pulse PIN ɗinku, $name.", "Pulse PIN gị, $name.")
+    fun yourPulsePin(name: String): String {
+        val who = if (name.isBlank()) "." else ", $name."
+        return t("Your Pulse PIN$who", "Your Pulse PIN$who", "Pulse PIN yín$who", "Pulse PIN ɗinku$who", "Pulse PIN gị$who")
+    }
     val unlocked get() = t("Unlocked. Nobody saw a thing.", "E don open. Nobody see anything.", "Ó ti ṣí. Kò sí ẹni tó rí nǹkankan.", "An buɗe. Babu wanda ya ga komai.", "Emepela ya. Ọ dịghị onye hụrụ ihe ọ bụla.")
     val goToMyHome get() = t("Go to my home", "Carry me go my home", "Lọ sí ojú-ìwé ilé mi", "Je zuwa shafin gida na", "Gaa n'ihu ụlọ m")
     val pinCheckFailed get() = t(

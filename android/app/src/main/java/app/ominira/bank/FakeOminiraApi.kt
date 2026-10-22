@@ -168,6 +168,8 @@ class FakeOminiraApi(
         return Outcome.WrongPin(triesLeft, w.pinWrong(triesLeft))
     }
 
+    override suspend fun firstName(): String = "Ronke"
+
     override suspend fun accounts(): List<Account> {
         pause(150)
         return listOf(account.copy(balanceKobo = balanceKobo))

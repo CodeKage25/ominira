@@ -1,6 +1,7 @@
 package app.ominira.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -69,7 +70,8 @@ fun OminiraApp(session: Session) {
             nav.popBackStack()
         }
 
-        NavHost(navController = nav, startDestination = Route.LANGUAGE) {
+        val start = remember { if (session.hasOwnAccount) Route.UNLOCK else Route.LANGUAGE }
+        NavHost(navController = nav, startDestination = start) {
             composable(Route.LANGUAGE) {
                 LanguageScreen(session, fromSettings = false, onBack = null, onChosen = { nav.navigate(Route.WELCOME) })
             }
