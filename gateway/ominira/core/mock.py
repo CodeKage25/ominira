@@ -384,6 +384,11 @@ class MockZenith(ZenithCore):
         owner = db.get(MockCustomer, acct.customer_ref) if acct else None
         return owner.full_name.upper() if owner else None
 
+    def customer_for_account(self, account_number: str) -> str | None:
+        with self._sessions() as db:
+            acct = db.scalars(select(MockAccount).where(MockAccount.number == account_number.strip())).first()
+            return acct.customer_ref if acct else None
+
     def open_customer(self, full_name: str) -> str:
         with self._money_lock, self._sessions() as db:
             ref = "ZC-" + self._reference("", 10)

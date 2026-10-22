@@ -183,6 +183,10 @@ class ZenithCore(ABC):
     @abstractmethod
     def check_bvn(self, bvn: str, document: IdDocument) -> BvnCheck: ...
 
+    # The phone line: who owns this Zenith account number. None when nobody does.
+    @abstractmethod
+    def customer_for_account(self, account_number: str) -> str | None: ...
+
     # A new customer: their own account, card and an empty PIN until they choose one. Returns the core ref.
     @abstractmethod
     def open_customer(self, full_name: str) -> str: ...

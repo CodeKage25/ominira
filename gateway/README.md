@@ -222,6 +222,33 @@ The five lines sit in `LINES` at the top of the script for native speakers to ed
 uses its pinned voice, else the first catalogue voice for that language, else YarnGPT's default.
 The script prints each clip's size and length and stops with a clear message when the key is missing.
 
+## The phone line (Twilio)
+
+Any phone, no app: a customer calls the Twilio number and banks by voice. `ominira/routes/phone.py` takes
+the call and hands it to the same assistant and the same confirm gate as the app, so the fixed readback,
+the PIN, the limits, the scam pause and the co-approver all hold on a call.
+
+1. The five languages, each offered in its own words: press 1 to 5.
+2. The ten-digit Zenith account number on the keypad.
+3. The request, spoken. Twilio's recogniser (en-NG) hears English and Pidgin; for Yorùbá, Hausa and Igbo
+   the call records the request and YarnGPT transcribes it.
+4. The readback, then "press 1 to send", then the four-digit PIN on the keypad. A phone call is always a
+   call, so a large transfer to someone new always meets the scam pause.
+
+English and Pidgin are spoken by Twilio's voice; Yorùbá, Hausa and Igbo by YarnGPT, with the fixed prompts
+bundled in `ominira/static/phone` (`scripts/make_phone_clips.py`) and lines with a name or an amount made
+live. The keypad PIN is sealed the moment it arrives and goes to the core like the app's; a real line hands
+it to Zenith's HSM instead.
+
+Every request must carry Twilio's signature, checked with `TWILIO_AUTH_TOKEN`; without the token the line
+answers nothing. Set `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` on the service, and point the number's
+"A call comes in" webhook at `https://<service>/phone/voice` (HTTP POST). A call's state lives in the
+process for the call's few minutes, which is one reason the service runs as one instance.
+
+The demo number is a US Twilio number, so calls from Nigeria are international; a Nigerian number
+(Africa's Talking or Infobip) keeps the same flow. A Twilio trial account takes calls only from verified
+numbers and plays a short notice first.
+
 ## Deploy (Cloud Run)
 
 Project `united-strategy-472602-a5`, region `africa-south1`. From this folder:

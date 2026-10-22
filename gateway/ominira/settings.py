@@ -51,6 +51,10 @@ class Settings:
     yarngpt_base: str = field(default_factory=lambda: _env("YARNGPT_BASE", "https://api.yarngpt.ai"))
     yarngpt_voices: str = field(default_factory=lambda: _env("YARNGPT_VOICES", ""))
 
+    # The phone line: Twilio signs every request with the account's auth token.
+    twilio_account_sid: str = field(default_factory=lambda: _env("TWILIO_ACCOUNT_SID", ""))
+    twilio_auth_token: str = field(default_factory=lambda: _env("TWILIO_AUTH_TOKEN", ""))
+
     # Set MOCK_ADMIN_TOKEN on any public deployment.
     mock_admin: bool = field(default_factory=lambda: _flag("MOCK_ADMIN", True))
     mock_admin_token: str = field(default_factory=lambda: _env("MOCK_ADMIN_TOKEN", ""))
