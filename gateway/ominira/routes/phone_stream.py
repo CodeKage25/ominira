@@ -109,8 +109,9 @@ def speech(lang: str, text: str) -> bytes:
     except (yarngpt.SpeechUnavailable, ValueError) as err:
         log.warning("live speech on the prepare route failed: %s", err)
         try:
-            wav = yarngpt.render(said, yarngpt.voice_for(lang), clip_key(lang + said), output_format="wav", wait_s=20)
-            audio = phone_audio.wav_to_ulaw(wav)
+            fmt = "mp3" if shutil.which("ffmpeg") else "wav"
+            done = yarngpt.render(said, yarngpt.voice_for(lang), clip_key(lang + said), output_format=fmt, wait_s=20)
+            audio = phone_audio.mp3_to_ulaw(done) if fmt == "mp3" else phone_audio.wav_to_ulaw(done)
         except (yarngpt.SpeechUnavailable, ValueError) as err2:
             log.warning("live speech failed: %s", err2)
     if audio:
