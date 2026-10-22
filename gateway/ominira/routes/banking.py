@@ -127,7 +127,8 @@ _CLEARABLE = {"daily_limit_kobo", "pause_threshold_kobo"}
 
 
 def _preferences(c: Customer) -> dict:
-    return {"lang": c.lang, "modes": list(c.modes), "theme": c.theme, "speech_rate": c.speech_rate,
+    return {"first_name": get_core().profile(c.core_ref).first_name,
+            "lang": c.lang, "modes": list(c.modes), "theme": c.theme, "speech_rate": c.speech_rate,
             "pulse_gap_ms": c.pulse_gap_ms, "daily_limit_kobo": c.daily_limit_kobo,
             "pause_threshold_kobo": c.pause_threshold_kobo}
 

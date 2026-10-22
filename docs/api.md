@@ -216,6 +216,7 @@ their token gets `403 forbidden` from then on.
 `GET /v1/me/preferences`, `PUT /v1/me/preferences` (partial):
 `{"lang", "modes": ["voice"|"sign"|"switch"|"plain"], "theme": "system"|"light"|"dark"|"contrast",
 "speech_rate": 0.5-2.0, "pulse_gap_ms": 400-3000, "daily_limit_kobo", "pause_threshold_kobo"}`.
+Both answer with `"first_name"` too, read-only: the name the app greets the customer by.
 Changing `lang` changes the language of every later `say`.
 A change that weakens a protection needs `"pin_block"` in the same body: raising `pause_threshold_kobo`
 (or clearing it when it is below the ₦50,000 default), and raising or clearing `daily_limit_kobo`.

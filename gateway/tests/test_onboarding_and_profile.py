@@ -95,7 +95,7 @@ def test_a_good_pin_resets_the_count(client):
 
 def test_preferences_partial_update(client):
     before = client.get("/v1/me/preferences", headers=CUSTOMER).json()
-    assert before == {"lang": "en", "modes": ["voice"], "theme": "system", "speech_rate": 0.95, "pulse_gap_ms": 1000,
+    assert before == {"first_name": "Ronke", "lang": "en", "modes": ["voice"], "theme": "system", "speech_rate": 0.95, "pulse_gap_ms": 1000,
                       "daily_limit_kobo": None, "pause_threshold_kobo": None}
     after = client.put("/v1/me/preferences", headers=CUSTOMER, json={"theme": "contrast", "speech_rate": 1.2}).json()
     assert after == before | {"theme": "contrast", "speech_rate": 1.2}
