@@ -101,7 +101,7 @@ fun WelcomeScreen(session: Session, onTalk: () -> Unit, onRead: () -> Unit) {
         prompt.ask(listen = true)
     }
 
-    RemindWhileWaiting(session, waiting = true) {
+    RemindWhileWaiting(session, waiting = true, listening = { prompt.busy }) {
         session.sayIn(speakIn, if (session.understands) spoken.sayYes else spoken.tapToBegin)
     }
 

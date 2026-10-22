@@ -173,7 +173,7 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
     }
 
     // Waiting to start, or waiting for "is this you?".
-    RemindWhileWaiting(session, waiting = !started || details != null) {
+    RemindWhileWaiting(session, waiting = !started || details != null, listening = { prompt.busy }) {
         prompt.ask(if (details != null) confirmLine else if (touch) s.tapToStart else s.sayStartOrTap)
     }
 

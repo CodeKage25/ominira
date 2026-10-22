@@ -8,7 +8,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,6 +36,11 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -72,6 +76,7 @@ private class PulseCount {
     // Holding: letting go before zero has been felt is a slip, not a digit.
     var zeroFelt = false
     var lastTap = 0L
+    var pressedAt = 0L
     val digits = ArrayList<Int>(4)
 
     // Random start, so the moment of a tap tells an onlooker nothing.
@@ -106,13 +111,19 @@ fun PulsePad(
     practice: Boolean = false,
     zeroSound: Boolean = false,
     onPractice: (Int) -> Unit = {},
+    // Holding: let go before zero, or a touch too short to be a hold.
+    onTooSoon: () -> Unit = {},
 ) {
     val c = Om.color
     val context = LocalContext.current
     val pad = remember { PulseCount() }
+    // The gesture outlives recompositions: it reads these, never the values it started with.
     val practising by rememberUpdatedState(practice)
     val zeroAloud by rememberUpdatedState(zeroSound)
     val deliver by rememberUpdatedState(onDigits)
+    val practised by rememberUpdatedState(onPractice)
+    val tooSoon by rememberUpdatedState(onTooSoon)
+    val usable by rememberUpdatedState(enabled)
     val w = Om.words
 
     LaunchedEffect(pad.round, pad.running, gapMs) {
@@ -129,11 +140,21 @@ fun PulsePad(
                 else -> haptics.count()
             }
         }
+        // Earphones pulled out: not one tone may reach the loudspeaker. The next round goes by vibration.
+        fun earsGone(): Boolean {
+            if (!pad.inEars || Signals.wiredEarphones(context)) return false
+            pad.inEars = false
+            pad.running = false
+            haptics.stop()
+            return true
+        }
         // Tapping runs round after round; holding waits for the next press instead.
         if (pad.round > 1 && !hold) delay(700)
+        if (earsGone()) return@LaunchedEffect
         beat(pad.current)
         while (true) {
             delay(gapMs)
+            if (earsGone()) return@LaunchedEffect
             pad.current = (pad.current + 1) % 10
             if (pad.current == 0) pad.zeroFelt = true
             pad.beats += 1
@@ -144,9 +165,9 @@ fun PulsePad(
     // The count stops on the digit; tapping goes straight into the next round, holding waits for the next press.
     fun take(nextRound: Boolean) {
         haptics.lock()
-        if (practice) {
+        if (practising) {
             pad.running = false
-            onPractice(pad.current)
+            practised(pad.current)
             return
         }
         pad.digits.add(pad.current)
@@ -164,7 +185,7 @@ fun PulsePad(
     }
 
     fun tap() {
-        if (!enabled) return
+        if (!usable) return
         // A shaky second tap just after the first must not count as the next digit.
         val now = SystemClock.uptimeMillis()
         if (now - pad.lastTap < 400) return
@@ -177,16 +198,20 @@ fun PulsePad(
     }
 
     fun press() {
-        if (!enabled || pad.running) return
+        if (!usable || pad.running) return
+        pad.pressedAt = SystemClock.uptimeMillis()
         pad.newRound(context)
     }
 
-    // Lifted before zero was felt, or slid off the pad: the round is dropped, and a long buzz says so.
+    // Lifted before zero was felt, lifted within 400 ms, or the gesture was cancelled: the round is dropped,
+    // and a long buzz says so. A stray touch on a count that started at zero must not take a 0.
     fun release(lifted: Boolean) {
         if (!pad.running) return
-        if (!lifted || !pad.zeroFelt) {
+        val early = lifted && (!pad.zeroFelt || SystemClock.uptimeMillis() - pad.pressedAt < 400)
+        if (!lifted || early) {
             pad.running = false
             haptics.stop()
+            if (early) tooSoon()
             return
         }
         take(nextRound = false)
@@ -278,12 +303,32 @@ fun PulsePad(
                 .then(
                     if (hold) {
                         Modifier
-                            .pointerInput(enabled) {
+                            .pointerInput(Unit) {
                                 awaitEachGesture {
-                                    awaitFirstDown()
+                                    val down = awaitFirstDown(requireUnconsumed = false)
+                                    down.consume()
                                     press()
-                                    release(lifted = waitForUpOrCancellation() != null)
+                                    var lifted = false
+                                    while (true) {
+                                        val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                                        if (!change.pressed) {
+                                            // A cancelled gesture comes up already consumed.
+                                            lifted = !change.isConsumed
+                                            change.consume()
+                                            break
+                                        }
+                                        // A finger drifting through a long hold must not scroll the page.
+                                        change.consume()
+                                    }
+                                    release(lifted)
                                 }
+                            }
+                            // A keyboard or D-pad Enter is a tap, as it is in tap mode.
+                            .onKeyEvent { event ->
+                                val enter = event.key == Key.Enter || event.key == Key.NumPadEnter ||
+                                    event.key == Key.DirectionCenter || event.key == Key.Spacebar
+                                if (enter && event.type == KeyEventType.KeyUp) tap()
+                                enter
                             }
                             // TalkBack's double tap arrives as a click, not a press: it counts as tapping.
                             .semantics {

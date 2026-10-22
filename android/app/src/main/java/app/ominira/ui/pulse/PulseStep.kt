@@ -36,7 +36,7 @@ fun PulseCoach(session: Session, practising: Boolean, onPractising: (Boolean) ->
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         ActionButton(
             session.words.howDoesItWork,
-            onClick = { session.say(Lines.pulseExplain(session.voiceLang, session.pulseHold)) },
+            onClick = { session.say(Lines.pulseExplain(session.voiceLang, session.holdToPulse)) },
             modifier = Modifier.weight(1f),
             style = Emphasis.Secondary,
         )
@@ -45,7 +45,7 @@ fun PulseCoach(session: Session, practising: Boolean, onPractising: (Boolean) ->
             onClick = {
                 val next = !practising
                 onPractising(next)
-                if (next) session.say(Lines.practiceStart(session.voiceLang, session.pulseHold)) else session.speaker.stop()
+                if (next) session.say(Lines.practiceStart(session.voiceLang, session.holdToPulse)) else session.speaker.stop()
             },
             modifier = Modifier.weight(1f),
             style = Emphasis.Secondary,
@@ -112,16 +112,18 @@ fun PulseStep(
                 locked -> Unit
                 else -> {
                     PulseCoach(session, practising) { practising = it }
-                    key(attempt, practising) {
+                    val hold = session.holdToPulse
+                    key(attempt, practising, hold) {
                         PulsePad(
                             haptics = session.haptics,
                             gapMs = session.pulseGapMs,
                             showCount = showCount,
-                            hold = session.pulseHold,
+                            hold = hold,
                             onDigits = onDigits,
                             practice = practising,
                             zeroSound = session.zeroSound,
-                            onPractice = { d -> session.say(Lines.practiceResult(session.voiceLang, d, session.pulseHold)) },
+                            onPractice = { d -> session.say(Lines.practiceResult(session.voiceLang, d, hold)) },
+                            onTooSoon = { session.say(Lines.holdTooSoon(session.voiceLang)) },
                         )
                     }
                 }
