@@ -71,6 +71,7 @@ def live(client, monkeypatch):
     monkeypatch.setattr(phone_stream, "start_digit", lambda: 0)
     monkeypatch.setattr(phone_stream, "DIGIT_PAUSE_S", 0)
     monkeypatch.setattr(phone_stream, "DTMF_LAG_S", 0)
+    monkeypatch.setattr(phone_stream, "KEY_TONE_LEVEL", float("inf"))  # the fake caller sends no key tones
 
     def call(said: list[str], pin: list[int] = (), caller: str = "+2348030000001"):
         heard = list(said)

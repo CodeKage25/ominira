@@ -41,7 +41,8 @@ HEAR_S = 8.0
 # Jude reads English and Pidgin cleanly on a phone line; the others keep YarnGPT's choice.
 VOICES = {"en": "jude", "pcm": "jude"}
 DIGIT_PAUSE_S = 0.6  # between one digit's count and the next
-DTMF_LAG_S = 0.3  # how long after a key press Twilio's report of it arrives, about
+DTMF_LAG_S = 0.8  # how long after a key press Twilio's report of it arrives, when no tone was heard
+KEY_TONE_LEVEL = 2500.0  # a keypad tone is loud and sudden on the line
 
 # Tests set this to learn when the call starts listening.
 on_listen = None
@@ -191,6 +192,8 @@ class Line:
         self.listener = phone_audio.Listener()
         self.utterances: asyncio.Queue[bytes] = asyncio.Queue()
         self.presses: asyncio.Queue[float] = asyncio.Queue()
+        self.tones: list[float] = []  # when the last few loud sounds began on the caller's side
+        self.was_loud = False
         self.typed: list[str] = []  # keypad digits, for an account number typed instead of said
         self.typed_ten = asyncio.Event()
         self.began = asyncio.Event()
@@ -235,6 +238,12 @@ class Line:
                     if media.get("track", "inbound") != "inbound":
                         continue
                     began, said = self.listener.feed(base64.b64decode(media.get("payload", "")))
+                    # A key's tone reaches here well before Twilio's report of the key: note when one starts.
+                    loud = self.listener.last_level > KEY_TONE_LEVEL
+                    if loud and not self.was_loud:
+                        self.tones.append(self.loop.time())
+                        del self.tones[:-8]
+                    self.was_loud = loud
                     if began:
                         self.began.set()
                         if self.speaking and self.barge and not self.barged:
@@ -418,12 +427,17 @@ class Line:
                 pressed = await self.race(self.presses.get(), gap)
             except TimeoutError:
                 continue
-            # Twilio reports a key a moment after it is pressed: count from when it was pressed.
-            when = pressed - DTMF_LAG_S
+            # Twilio reports a key a moment after it is pressed: count from when it was pressed, which is when
+            # its tone began on the line if one was heard in the last 1.5 s, else an allowance for the delay.
+            began = self.marks.get(ticks[0][0], pressed) if ticks else pressed
+            tone = next((t for t in reversed(self.tones) if 0 <= pressed - t <= 1.5 and t >= began), None)
+            when = tone if tone is not None else pressed - DTMF_LAG_S
             playing = [(n, d) for n, d in ticks if self.marks.get(n, float("inf")) <= when]
             if not playing:
                 continue  # pressed before the count began
-            log.info("Pulse PIN press %d ms after its tick began", int((pressed - self.marks[playing[-1][0]]) * 1000))
+            log.info("Pulse PIN press reported %d ms after its tick began; its tone %s",
+                     int((pressed - self.marks[playing[-1][0]]) * 1000),
+                     f"{int((pressed - tone) * 1000)} ms before the report" if tone is not None else "not heard")
             await self.stream(phone_audio.GOT_IT)
             return playing[-1][1]
         return None

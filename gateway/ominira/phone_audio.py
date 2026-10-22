@@ -144,6 +144,7 @@ class Listener:
 
     def __init__(self, end_silence_ms: int = 700, max_ms: int = 12_000):
         self.floor = 300.0
+        self.last_level = 0.0
         self.end_frames = end_silence_ms // 20
         self.max_frames = max_ms // 20
         self.voiced_run = 0
@@ -158,6 +159,7 @@ class Listener:
     def feed(self, frame: bytes) -> tuple[bool, bytes | None]:
         """(speech just began, a finished utterance or None)."""
         loud = level(frame)
+        self.last_level = loud
         voiced = loud > self.threshold()
         if not voiced and not self.speaking:
             self.floor = 0.95 * self.floor + 0.05 * loud

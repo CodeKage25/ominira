@@ -59,7 +59,7 @@ class Settings:
     # On: the call streams live audio, all by voice. Off: the step-by-step call with the keypad.
     phone_stream: bool = field(default_factory=lambda: _flag("PHONE_STREAM", True))
     # Seconds between the Pulse PIN's ticks on a call.
-    phone_pulse_gap_s: float = field(default_factory=lambda: _float("PHONE_PULSE_GAP_S", 1.6))
+    phone_pulse_gap_s: float = field(default_factory=lambda: _float("PHONE_PULSE_GAP_S", 2.0))
 
     # Set MOCK_ADMIN_TOKEN on any public deployment.
     mock_admin: bool = field(default_factory=lambda: _flag("MOCK_ADMIN", True))
