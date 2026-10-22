@@ -182,3 +182,14 @@ def test_an_account_number_said_in_two_parts(live, client):
     live(["English", "two oh eight one two", "three four five six seven", "send twenty thousand to Tolu", "yes",
           "goodbye"], pin=[2, 0, 7, 5, 2, 0, 7, 5], caller="+2348032222222")
     assert balance(client) == before - 2_000_000
+
+
+def test_the_account_number_takes_the_first_ten_digit_answer(monkeypatch):
+    answers_by_model = {"default": "A-League 1234567", "phone_call": "2081234567"}
+    monkeypatch.setattr(phone_stream, "_google", lambda said, lang, model: answers_by_model[model])
+    monkeypatch.setattr(phone_stream, "transcribe", lambda said: "two oh eight")
+    assert phone_stream.transcribe_number(b"\xff" * 800) == "2081234567"
+    # Google unreachable: YarnGPT's transcript is read instead.
+    monkeypatch.setattr(phone_stream, "_google", lambda said, lang, model: None)
+    monkeypatch.setattr(phone_stream, "transcribe", lambda said: "two oight one two three four five six seven")
+    assert phone_stream.transcribe_number(b"\xff" * 800) == "2081234567"

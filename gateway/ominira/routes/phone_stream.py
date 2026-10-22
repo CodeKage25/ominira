@@ -6,6 +6,7 @@ against a count of ticks, so no digit is ever pressed or said. The same assistan
 
 import asyncio
 import base64
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import logging
@@ -26,7 +27,7 @@ from ominira.database import SessionFactory
 from ominira.problems import Problem
 from ominira.security import Caller
 from ominira.settings import settings
-from ominira.speech import yarngpt
+from ominira.speech import google_stt, yarngpt
 from ominira.tables import Conversation, Customer, Token
 
 log = logging.getLogger("ominira.phone")
@@ -136,6 +137,28 @@ def transcribe(said: bytes) -> str:
     except yarngpt.SpeechUnavailable as err:
         log.warning("phone listening failed: %s", err)
         return ""
+
+
+def _google(said: bytes, lang: str, model: str) -> str | None:
+    try:
+        return google_stt.recognize(said, lang, model)
+    except google_stt.Unavailable as err:
+        log.warning("Google speech unavailable: %s", err)
+        return None
+
+
+def transcribe_number(said: bytes) -> str:
+    """The digits of a spoken account number. Google's two models at once, the first ten-digit answer winning;
+    YarnGPT when neither gives ten. Blocking."""
+    with ThreadPoolExecutor(len(google_stt.MODELS)) as pool:
+        heard = list(pool.map(lambda m: _google(said, *m), google_stt.MODELS))
+    found = [answers.digits(h) for h in heard if h]
+    ten = [d for d in found if len(d) == 10]
+    if ten:
+        return ten[0]
+    found.append(answers.digits(transcribe(said)))
+    ten = [d for d in found if len(d) == 10]
+    return ten[0] if ten else max(found, key=len, default="")
 
 
 def start_digit() -> int:
@@ -330,12 +353,12 @@ class Line:
         digits = ""
         try:
             for _ in range(4):
-                said = await self.hear(12 if not digits else 4, stop=self.typed_ten)
+                said = await self.utterance(12 if not digits else 4, stop=self.typed_ten)
                 if self.typed_ten.is_set():
                     return "".join(self.typed)[:10]
                 if not said:
                     break
-                digits += answers.digits(said)
+                digits += await self.busy(asyncio.to_thread(transcribe_number, said))
                 if len(digits) >= 10:
                     break
         finally:
@@ -346,6 +369,11 @@ class Line:
     async def hear(self, timeout: float = HEAR_S, stop: asyncio.Event | None = None) -> str:
         """What the caller says next, as text; empty when they said nothing, it could not be understood, or
         `stop` was set first."""
+        said = await self.utterance(timeout, stop)
+        return (await self.busy(asyncio.to_thread(transcribe, said))).strip() if said else ""
+
+    async def utterance(self, timeout: float = HEAR_S, stop: asyncio.Event | None = None) -> bytes | None:
+        """The audio of what the caller says next; None when they said nothing or `stop` was set first."""
         if on_listen is not None:
             on_listen()
         if self.utterances.empty() and not self.listener.speaking:
@@ -355,18 +383,18 @@ class Line:
             try:
                 await self.race(asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED), timeout)
             except TimeoutError:
-                return ""
+                return None
             finally:
                 for w in waits:
                     w.cancel()
             if stop is not None and stop.is_set() or not self.began.is_set():
-                return ""
+                return None
         try:
             said = await self.race(self.utterances.get(), 15)
         except TimeoutError:
-            return ""
+            return None
         self.began.clear()
-        return (await self.busy(asyncio.to_thread(transcribe, said))).strip()
+        return said
 
     # -- the Pulse PIN --
 
