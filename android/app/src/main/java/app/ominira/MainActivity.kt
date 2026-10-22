@@ -1,6 +1,7 @@
 package app.ominira
 
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -17,6 +18,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // The screen stays on while the app is open: a customer listening or counting pulses is not touching it.
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         // TalkBack on: lines go to TalkBack, never a second voice.
         session.announcer = { line -> window.decorView.announceForAccessibility(line) }
         setContent {

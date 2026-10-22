@@ -250,8 +250,9 @@ class Speaker(context: Context, private val cloud: () -> CloudVoice?) : TextToSp
         }
     }
 
+    // Bundled clips count: a cloud voice resting after one failed call must not turn the app English.
     fun hasVoiceFor(lang: Lang): Boolean {
-        if (cloud()?.usable == true) return true
+        if (cloud()?.usable == true || clips.has(lang)) return true
         if (!engineOk) return false
         return tts.isLanguageAvailable(Locale.forLanguageTag(lang.tag)) >= TextToSpeech.LANG_AVAILABLE
     }

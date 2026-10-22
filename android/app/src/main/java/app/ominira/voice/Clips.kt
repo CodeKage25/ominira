@@ -65,6 +65,8 @@ object Clips {
 class ClipIndex(private val context: Context) {
     private val byLang = ConcurrentHashMap<Lang, Map<String, String>>()
 
+    fun has(lang: Lang): Boolean = byLang.getOrPut(lang) { load(lang) }.isNotEmpty()
+
     fun find(lang: Lang, line: String): String? =
         byLang.getOrPut(lang) { load(lang) }[ClipKey.of(line)]?.let { "audio/${lang.code}/$it" }
 
