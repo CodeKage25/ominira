@@ -36,7 +36,7 @@ fun PulseCoach(session: Session, practising: Boolean, onPractising: (Boolean) ->
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         ActionButton(
             session.words.howDoesItWork,
-            onClick = { session.say(Lines.pulseExplain(session.voiceLang)) },
+            onClick = { session.say(Lines.pulseExplain(session.voiceLang, session.pulseHold)) },
             modifier = Modifier.weight(1f),
             style = Emphasis.Secondary,
         )
@@ -45,7 +45,7 @@ fun PulseCoach(session: Session, practising: Boolean, onPractising: (Boolean) ->
             onClick = {
                 val next = !practising
                 onPractising(next)
-                if (next) session.say(Lines.practiceStart(session.voiceLang)) else session.speaker.stop()
+                if (next) session.say(Lines.practiceStart(session.voiceLang, session.pulseHold)) else session.speaker.stop()
             },
             modifier = Modifier.weight(1f),
             style = Emphasis.Secondary,
@@ -117,10 +117,11 @@ fun PulseStep(
                             haptics = session.haptics,
                             gapMs = session.pulseGapMs,
                             showCount = showCount,
+                            hold = session.pulseHold,
                             onDigits = onDigits,
                             practice = practising,
                             zeroSound = session.zeroSound,
-                            onPractice = { d -> session.say(Lines.practiceResult(session.voiceLang, d)) },
+                            onPractice = { d -> session.say(Lines.practiceResult(session.voiceLang, d, session.pulseHold)) },
                         )
                     }
                 }

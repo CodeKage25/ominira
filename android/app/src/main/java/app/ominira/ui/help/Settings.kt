@@ -86,6 +86,14 @@ fun SettingsScreen(session: Session, onBack: () -> Unit, onLanguage: () -> Unit,
             onSelect = { session.choosePulseGap(it) },
         )
 
+        Label(w.pulseHow)
+        Segments(
+            options = listOf(true to w.holdToCount, false to w.tapToCount),
+            selected = session.pulseHold,
+            onSelect = { session.choosePulseHold(it) },
+        )
+        Hint(w.pulseHowHint)
+
         Label(w.zeroSoundLabel)
         Segments(
             options = listOf(false to w.off, true to w.on),

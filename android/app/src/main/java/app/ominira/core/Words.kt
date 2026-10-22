@@ -606,6 +606,16 @@ class Words private constructor(val lang: Lang) {
     val normal get() = t("Normal", "Normal", "Bí ó ti yẹ", "Daidai", "Nkịtị")
     val faster get() = t("Faster", "Fast", "Kíákíá", "Da sauri", "Ọsọ ọsọ")
     val pulseSpeed get() = t("Pulse PIN speed", "Pulse PIN speed", "Ìyára Pulse PIN", "Saurin Pulse PIN", "Ọsọ Pulse PIN")
+    val pulseHow get() = t("Pulse PIN by", "Pulse PIN by", "Pulse PIN nípa", "Pulse PIN ta", "Pulse PIN site na")
+    val holdToCount get() = t("Hold to count", "Hold make e count", "Títẹ̀ mọ́lẹ̀", "Riƙewa", "Ijide")
+    val tapToCount get() = t("Tap to count", "Tap make e count", "Títẹ̀", "Taɓawa", "Ịpị")
+    val pulseHowHint get() = t(
+        "Hold: press and hold, feel the count, and let go at your digit. Tap: tap to start, then tap at your digit.",
+        "Hold: press am down, feel the count, leave am for your number. Tap: tap make e start, then tap for your number.",
+        "Títẹ̀ mọ́lẹ̀: ẹ tẹ̀ ẹ́ mọ́lẹ̀, ẹ fi ara mọ ìkà, kí ẹ sì fi sílẹ̀ ní nọ́ńbà yín. Títẹ̀: ẹ tẹ̀ ẹ́ láti bẹ̀rẹ̀, lẹ́yìn náà ẹ tẹ̀ ẹ́ ní nọ́ńbà yín.",
+        "Riƙewa: ku danna ku riƙe, ku ji ƙirgan, ku sake a lambarku. Taɓawa: ku taɓa don farawa, sannan ku taɓa a lambarku.",
+        "Ijide: pịa ma jide, nwee mmetụta ọgụgụ, hapụ na nọmba gị. Ịpị: pịa ka ịmalite, mgbe ahụ pịa na nọmba gị.",
+    )
     val zeroSoundLabel get() = t("Zero sound on the loudspeaker", "Zero sound for loudspeaker", "Ohùn òdo lórí sípíkà", "Sautin sifili a lasifika", "Ụda efu na ọkà okwu")
     val off get() = t("Off", "Off", "Pa á", "A kashe", "Gbanyụọ")
     val on get() = t("On", "On", "Tàn án", "A kunna", "Gbanye")
@@ -765,6 +775,44 @@ class Words private constructor(val lang: Lang) {
     val takeThisDigit get() = t("take this digit", "take this number", "gba nọ́ńbà yìí", "ɗauki wannan lamba", "were nọmba a")
     val startTheCount get() = t("Start the count", "Start the count", "Bẹ̀rẹ̀ ìkà", "Fara ƙirga", "Malite ọgụgụ")
     val tapAnywhereHere get() = t("Tap anywhere here", "Touch anywhere here", "Ẹ tẹ ibikíbi níbí", "Ku taɓa ko'ina a nan", "Pịa ebe ọ bụla ebe a")
+    // Hold to count: the count runs while the finger is down, and letting go takes the digit
+    val pressAndHold get() = t("Press and hold", "Press and hold", "Ẹ tẹ̀ ẹ́ mọ́lẹ̀", "Danna ku riƙe", "Pịa ma jide")
+    val letGoAtDigit get() = t("Let go at your digit", "Leave am for your number", "Ẹ fi sílẹ̀ ní nọ́ńbà yín", "Ku sake a lambarku", "Hapụ na nọmba gị")
+    val holdSpaceToStart get() = t(
+        "Press and hold the space below. The count runs while you hold.",
+        "Press the space below and hold am. The count go run as you dey hold.",
+        "Ẹ tẹ àyè ìsàlẹ̀ yìí mọ́lẹ̀. Ìkà yóò máa lọ níwọ̀n ìgbà tí ẹ bá tẹ̀ ẹ́ mọ́lẹ̀.",
+        "Ku danna sararin da ke ƙasa ku riƙe. Ƙirga yana gudana muddin kuna riƙewa.",
+        "Pịa ohere dị n'okpuru ma jide ya. Ọgụgụ na-aga ka ị na-ejide ya.",
+    )
+    val holdPracticeHint get() = t(
+        "Practice: hold, wait for the strong double buzz (zero), count to three, then let go. Nothing is sent.",
+        "Practice: hold am, wait for the strong double buzz (zero), count reach three, then leave am. Nothing go send.",
+        "Ìdánrawò: ẹ tẹ̀ ẹ́ mọ́lẹ̀, ẹ dúró de ìgbọ̀n méjì tó lágbára (òdo), ẹ ka dé mẹ́ta, lẹ́yìn náà ẹ fi sílẹ̀. Kò sí ohun tí yóò lọ.",
+        "Gwaji: ku riƙe, ku jira girgiza biyu mai ƙarfi (sifili), ku ƙirga zuwa uku, sannan ku sake. Ba a aika komai.",
+        "Omume: jide, chere mkpọtụ abụọ siri ike (efu), gụọ ruo atọ, mgbe ahụ hapụ. Ọ dịghị ihe a na-eziga.",
+    )
+    val holdEarsHint get() = t(
+        "Listen in your earphones. Let go at your digit. A higher, longer tick means zero.",
+        "Listen for your earphone. Leave am for your number. The higher, longer tick na zero.",
+        "Ẹ fetí sí ẹ̀rọ etí yín. Ẹ fi sílẹ̀ ní nọ́ńbà yín. Ìró tó ga jù, tó sì gùn jù ni òdo.",
+        "Ku saurara a belun kunnenku. Ku sake a lambarku. Ƙara mafi tsayi kuma mafi tsawo shine sifili.",
+        "Gee ntị na ekweisi ntị gị. Hapụ na nọmba gị. Ụda dị elu ma dị ogologo bụ efu.",
+    )
+    val holdCountHint get() = t(
+        "Let go when the count reaches your next digit. A strong double buzz means zero.",
+        "Leave am when the count reach your next number. Strong double buzz na zero.",
+        "Ẹ fi sílẹ̀ nígbà tí ìkà bá dé nọ́ńbà yín tó kàn. Ìgbọ̀n méjì tó lágbára túmọ̀ sí òdo.",
+        "Ku sake idan ƙirgan ya kai lambarku ta gaba. Girgiza biyu mai ƙarfi na nufin sifili.",
+        "Hapụ mgbe ọgụgụ ruru nọmba gị ọzọ. Mkpọtụ abụọ siri ike pụtara efu.",
+    )
+    val holdFeelHint get() = t(
+        "Feel the count. Let go at your digit. A strong double buzz means zero.",
+        "Feel the count. Leave am for your number. Strong double buzz na zero.",
+        "Ẹ fi ara mọ ìkà náà. Ẹ fi sílẹ̀ ní nọ́ńbà yín. Ìgbọ̀n méjì tó lágbára túmọ̀ sí òdo.",
+        "Ku ji ƙirgan. Ku sake a lambarku. Girgiza biyu mai ƙarfi na nufin sifili.",
+        "Nwee mmetụta ọgụgụ. Hapụ na nọmba gị. Mkpọtụ abụọ siri ike pụtara efu.",
+    )
     val pinSpoken get() = t(
         Lines.PIN_SPOKEN,
         "Abeg no ever talk your PIN for mouth. I no keep am. Your Pulse PIN na by feeling, for the screen.",

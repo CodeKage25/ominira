@@ -5,6 +5,10 @@ import android.os.SystemClock
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,12 +37,16 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -61,6 +69,8 @@ private class PulseCount {
     var beats by mutableIntStateOf(0)
     var taken by mutableIntStateOf(0)
     var inEars by mutableStateOf(false)
+    // Holding: letting go before zero has been felt is a slip, not a digit.
+    var zeroFelt = false
     var lastTap = 0L
     val digits = ArrayList<Int>(4)
 
@@ -70,6 +80,7 @@ private class PulseCount {
         inEars = Signals.wiredEarphones(context)
         start = s
         current = s
+        zeroFelt = s == 0
         beats = 0
         running = true
         round += 1
@@ -88,6 +99,8 @@ fun PulsePad(
     gapMs: Long,
     showCount: Boolean,
     onDigits: (List<Int>) -> Unit,
+    // Hold to count: press starts the count, letting go takes the digit. Off: tap to start, tap at the digit.
+    hold: Boolean = false,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     practice: Boolean = false,
@@ -116,26 +129,20 @@ fun PulsePad(
                 else -> haptics.count()
             }
         }
-        if (pad.round > 1) delay(700)
+        // Tapping runs round after round; holding waits for the next press instead.
+        if (pad.round > 1 && !hold) delay(700)
         beat(pad.current)
         while (true) {
             delay(gapMs)
             pad.current = (pad.current + 1) % 10
+            if (pad.current == 0) pad.zeroFelt = true
             pad.beats += 1
             beat(pad.current)
         }
     }
 
-    fun tap() {
-        if (!enabled) return
-        // A shaky second tap just after the first must not count as the next digit.
-        val now = SystemClock.uptimeMillis()
-        if (now - pad.lastTap < 400) return
-        pad.lastTap = now
-        if (!pad.running) {
-            pad.newRound(context)
-            return
-        }
+    // The count stops on the digit; tapping goes straight into the next round, holding waits for the next press.
+    fun take(nextRound: Boolean) {
         haptics.lock()
         if (practice) {
             pad.running = false
@@ -149,9 +156,40 @@ fun PulsePad(
             pad.forget()
             pad.running = false
             deliver(four)
-        } else {
+        } else if (nextRound) {
             pad.newRound(context)
+        } else {
+            pad.running = false
         }
+    }
+
+    fun tap() {
+        if (!enabled) return
+        // A shaky second tap just after the first must not count as the next digit.
+        val now = SystemClock.uptimeMillis()
+        if (now - pad.lastTap < 400) return
+        pad.lastTap = now
+        if (!pad.running) {
+            pad.newRound(context)
+            return
+        }
+        take(nextRound = true)
+    }
+
+    fun press() {
+        if (!enabled || pad.running) return
+        pad.newRound(context)
+    }
+
+    // Lifted before zero was felt, or slid off the pad: the round is dropped, and a long buzz says so.
+    fun release(lifted: Boolean) {
+        if (!pad.running) return
+        if (!lifted || !pad.zeroFelt) {
+            pad.running = false
+            haptics.stop()
+            return
+        }
+        take(nextRound = false)
     }
 
     val passed: Set<Int> = if (pad.running) (0 until pad.beats).map { (pad.start + it) % 10 }.toSet() else emptySet()
@@ -206,6 +244,11 @@ fun PulsePad(
         Text(
             when {
                 !enabled -> w.pinLocked
+                hold && !pad.running -> w.holdSpaceToStart
+                hold && practice -> w.holdPracticeHint
+                hold && pad.inEars -> w.holdEarsHint
+                hold && showCount -> w.holdCountHint
+                hold -> w.holdFeelHint
                 !pad.running -> w.tapSpaceToStart
                 practice -> w.practiceHint
                 pad.inEars -> w.earsHint
@@ -232,13 +275,36 @@ fun PulsePad(
                         style = Stroke(width = 2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(14f, 10f))),
                     )
                 }
-                .clickable(
-                    interactionSource = interaction,
-                    indication = null,
-                    enabled = enabled,
-                    role = Role.Button,
-                    onClickLabel = if (pad.running) w.takeThisDigit else w.startTheCount,
-                    onClick = { tap() },
+                .then(
+                    if (hold) {
+                        Modifier
+                            .pointerInput(enabled) {
+                                awaitEachGesture {
+                                    awaitFirstDown()
+                                    press()
+                                    release(lifted = waitForUpOrCancellation() != null)
+                                }
+                            }
+                            // TalkBack's double tap arrives as a click, not a press: it counts as tapping.
+                            .semantics {
+                                role = Role.Button
+                                onClick(if (pad.running) w.takeThisDigit else w.startTheCount) {
+                                    tap()
+                                    true
+                                }
+                                if (!enabled) disabled()
+                            }
+                            .focusable(enabled, interaction)
+                    } else {
+                        Modifier.clickable(
+                            interactionSource = interaction,
+                            indication = null,
+                            enabled = enabled,
+                            role = Role.Button,
+                            onClickLabel = if (pad.running) w.takeThisDigit else w.startTheCount,
+                            onClick = { tap() },
+                        )
+                    },
                 )
                 .padding(16.dp),
             contentAlignment = Alignment.Center,
@@ -252,7 +318,16 @@ fun PulsePad(
                         modifier = Modifier.clearAndSetSemantics { },
                     )
                 }
-                Text(if (pad.running) w.tapAnywhereHere else w.startTheCount, style = Om.type.label, color = c.bandText)
+                Text(
+                    when {
+                        hold && pad.running -> w.letGoAtDigit
+                        hold -> w.pressAndHold
+                        pad.running -> w.tapAnywhereHere
+                        else -> w.startTheCount
+                    },
+                    style = Om.type.label,
+                    color = c.bandText,
+                )
             }
         }
     }

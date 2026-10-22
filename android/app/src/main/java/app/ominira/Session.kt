@@ -92,6 +92,9 @@ class Session(app: Application) : AndroidViewModel(app) {
     // Off by default: a listener could count the PIN from the zero sound.
     var zeroSound by mutableStateOf(store.getBoolean(K_ZERO, false))
         private set
+    // Hold to count, let go at the digit; off is tap to start, tap at the digit.
+    var pulseHold by mutableStateOf(store.getBoolean(K_HOLD, true))
+        private set
     var captions by mutableStateOf(store.getBoolean(K_CAPTIONS, true))
         private set
 
@@ -213,6 +216,11 @@ class Session(app: Application) : AndroidViewModel(app) {
         store.edit().putBoolean(K_ZERO, value).apply()
     }
 
+    fun choosePulseHold(value: Boolean) {
+        pulseHold = value
+        store.edit().putBoolean(K_HOLD, value).apply()
+    }
+
     fun chooseCaptions(value: Boolean) {
         captions = value
         store.edit().putBoolean(K_CAPTIONS, value).apply()
@@ -284,7 +292,7 @@ class Session(app: Application) : AndroidViewModel(app) {
     fun pulseIntro(): String {
         val seen = store.getInt(K_PULSE_INTROS, 0)
         store.edit().putInt(K_PULSE_INTROS, seen + 1).apply()
-        return if (seen < 3) Lines.pulseExplain(voiceLang) else Lines.pulseShort(voiceLang)
+        return if (seen < 3) Lines.pulseExplain(voiceLang, pulseHold) else Lines.pulseShort(voiceLang, pulseHold)
     }
 
     fun greeting(language: Lang = lang): String = Lines.greeting(language, customerName, Calendar.getInstance().get(Calendar.HOUR_OF_DAY))
@@ -316,6 +324,7 @@ class Session(app: Application) : AndroidViewModel(app) {
         const val K_RATE = "rate"
         const val K_PULSE = "pulseGap"
         const val K_ZERO = "zeroSound"
+        const val K_HOLD = "pulseHold"
         const val K_CAPTIONS = "captions"
         const val K_SCAN = "scan"
         const val K_PULSE_INTROS = "pulseIntros"
