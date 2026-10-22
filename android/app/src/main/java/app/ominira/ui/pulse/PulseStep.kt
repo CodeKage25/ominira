@@ -7,6 +7,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import app.ominira.ui.kit.Grouping
+import app.ominira.ui.kit.DigitField
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -76,6 +79,10 @@ fun PulseStep(
     var showCount by rememberSaveable { mutableStateOf(Mode.Voice !in session.modes) }
     var practising by rememberSaveable { mutableStateOf(false) }
     var introduced by rememberSaveable { mutableStateOf(false) }
+    // Dev bypass, for moving fast in demos: the PIN typed instead of pulsed, silently. Not part of the product;
+    // the call's keypad shortcut is the same bypass. The digits are never saved with the screen.
+    var typing by rememberSaveable { mutableStateOf(false) }
+    var typed by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         // Once a visit: turning the phone rebuilds the screen but is not a new visit.
@@ -88,6 +95,18 @@ fun PulseStep(
         top = {
             if (onBack != null) IconAction(Glyphs.Back, backLabel, onBack)
             if (topStart != null) topStart() else Spacer(Modifier.weight(1f))
+            if (doneLine == null && !locked) {
+                ActionButton(
+                    if (typing) w.pulseInstead else w.typePin,
+                    onClick = {
+                        session.speaker.stop()
+                        typed = ""
+                        typing = !typing
+                    },
+                    style = Emphasis.Secondary,
+                    wide = false,
+                )
+            }
             ActionButton(
                 if (showCount) w.hideCount else w.showCount,
                 onClick = { showCount = !showCount },
@@ -110,6 +129,22 @@ fun PulseStep(
             when {
                 busy -> Text(w.checkingWithZenith, style = Om.type.bodyStrong, color = c.bandText)
                 locked -> Unit
+                typing -> DigitField(
+                    w.typePinLabel,
+                    typed,
+                    { now ->
+                        typed = now
+                        if (now.length == 4) {
+                            // Sealed by the caller at once, as a pulsed PIN is; nothing is kept here.
+                            val digits = now.map { it - '0' }
+                            typed = ""
+                            onDigits(digits)
+                        }
+                    },
+                    maxDigits = 4,
+                    grouping = Grouping.None,
+                    masked = true,
+                )
                 else -> {
                     PulseCoach(session, practising) { practising = it }
                     val hold = session.holdToPulse

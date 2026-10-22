@@ -27,6 +27,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
@@ -46,6 +47,7 @@ fun DigitField(
     error: String? = null,
     maxDigits: Int = 11,
     grouping: Grouping = Grouping.Fours,
+    masked: Boolean = false,
 ) {
     val c = Om.color
     var focused by remember { mutableStateOf(false) }
@@ -59,7 +61,7 @@ fun DigitField(
             textStyle = Om.type.digits.copy(color = c.text),
             cursorBrush = SolidColor(c.text),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-            visualTransformation = when (grouping) {
+            visualTransformation = if (masked) PasswordVisualTransformation() else when (grouping) {
                 Grouping.None -> VisualTransformation.None
                 Grouping.Fours -> SeparatedDigits { raw -> raw.chunked(4).joinToString(" ") }
                 Grouping.Thousands -> SeparatedDigits { raw -> raw.reversed().chunked(3).joinToString(",").reversed() }

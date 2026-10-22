@@ -777,6 +777,10 @@ class Words private constructor(val lang: Lang) {
     )
     val takeThisDigit get() = t("take this digit", "take this number", "gba nọ́ńbà yìí", "ɗauki wannan lamba", "were nọmba a")
     val startTheCount get() = t("Start the count", "Start the count", "Bẹ̀rẹ̀ ìkà", "Fara ƙirga", "Malite ọgụgụ")
+    // Dev bypass for demos: the PIN typed, silently, instead of pulsed
+    val typePin get() = t("Type PIN", "Type PIN", "Tẹ PIN", "Rubuta PIN", "Dee PIN")
+    val pulseInstead get() = t("Pulse instead", "Pulse am instead", "Ẹ pulse dípò", "Yi pulse maimakon", "Pulse kama")
+    val typePinLabel get() = t("Your four-digit PIN", "Your four-number PIN", "PIN oní-nọ́ńbà mẹ́rin yín", "PIN ɗinku mai lambobi huɗu", "PIN gị nwere nọmba anọ")
     val tapAnywhereHere get() = t("Tap anywhere here", "Touch anywhere here", "Ẹ tẹ ibikíbi níbí", "Ku taɓa ko'ina a nan", "Pịa ebe ọ bụla ebe a")
     // Hold to count: the count runs while the finger is down, and letting go takes the digit
     val pressAndHold get() = t("Press and hold", "Press and hold", "Ẹ tẹ̀ ẹ́ mọ́lẹ̀", "Danna ku riƙe", "Pịa ma jide")

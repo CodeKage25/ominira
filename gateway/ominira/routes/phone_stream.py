@@ -490,7 +490,7 @@ class Line:
             if digit is None:
                 return None
             if run == 0 and settings.phone_typed_pin and await self.typed_four(TYPED_WITHIN_S):
-                # Four keys in a moment: the PIN was typed, not pulsed.
+                # Dev bypass (PHONE_TYPED_PIN): four keys in a moment means the PIN was typed, not pulsed.
                 block = seal([int(d) for d in self.typed[:4]])
                 self.typed.clear()
                 return block

@@ -59,7 +59,8 @@ class Settings:
     # On: the call streams live audio, all by voice. Off: the step-by-step call with the keypad.
     phone_stream: bool = field(default_factory=lambda: _flag("PHONE_STREAM", True))
     # Seconds between the Pulse PIN's ticks on a call.
-    # A demo shortcut: on a call, the PIN may also be typed on the keypad, four keys at once.
+    # Dev bypass, for moving fast in demos: on a call, the PIN may also be typed on the keypad, four keys at
+    # once. Not part of the product (the app's "Type PIN" is the same bypass); set PHONE_TYPED_PIN=false to remove it.
     phone_typed_pin: bool = field(default_factory=lambda: _flag("PHONE_TYPED_PIN", True))
     phone_pulse_gap_s: float = field(default_factory=lambda: _float("PHONE_PULSE_GAP_S", 2.0))
 
