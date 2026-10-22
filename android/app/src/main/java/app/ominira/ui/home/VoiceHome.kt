@@ -86,6 +86,11 @@ fun VoiceHomeScreen(session: Session, actions: HomeActions) {
             BalancePanel(w.currentAccount, a.balanceKobo, onHear = { session.say(s.youHave(a.balanceKobo)) })
         }
         if (noMic) Notice(Tone.Info, w.noVoice, body = w.tapRequestBelow)
+        // By touch too: saved people, or someone new by account number.
+        Suggestion(w.sendMoney, Glyphs.Send) {
+            voice.cancel()
+            actions.send()
+        }
         Kicker(w.trySaying)
         // The request sent stays English: the bank inside the app reads English amounts.
         Suggestion(w.suggestSend, Glyphs.Send) { voice.hear("Send twenty thousand to Tolu") }
