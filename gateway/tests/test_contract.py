@@ -179,6 +179,8 @@ def test_walk_every_endpoint(client, yarn):
     _keys(_call(c, "GET", "/_mock/state", expect=200).json(), {"balances", "cards", "controls"})
     _keys(_call(c, "POST", "/_mock/controls", expect=200,
                 json={"profile": "fast", "banks_down": ["999992"], "next_transfer_code": "09"}).json(), {"controls"})
+    _keys(_call(c, "POST", "/_mock/pin", expect=200, json={"account_number": "2081234567", "pin": "1302"}).json(),
+          {"ok"})
     _keys(_call(c, "POST", "/_mock/reset", expect=200).json(), {"balances", "cards", "controls"})
 
 
