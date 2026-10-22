@@ -61,7 +61,7 @@ object Lines {
     }
 
     // Unreviewed drafts.
-    private fun pulseExplainDraft(lang: Lang): String = when (lang) {
+    private fun pulseExplainDraft(lang: Lang): String = PinTerm.local(lang, when (lang) {
         Lang.Yo -> "Pulse PIN yín ni ẹ ó fi ara mọ̀, kí ẹnikẹ́ni má baà rí i. Ẹ tẹ àárín ojú fóònù láti bẹ̀rẹ̀. " +
             "Fóònù yóò máa ka pẹ̀lú ìgbọ̀n jẹ́jẹ́, ìgbọ̀n kan fún nọ́ńbà kọ̀ọ̀kan, yóò sì máa bẹ̀rẹ̀ ní nọ́ńbà ọ̀tọ̀ ní gbogbo ìgbà. " +
             "Òdo ni ìgbọ̀n méjì tó lágbára, lẹ́yìn rẹ̀ ni ọ̀kan, lẹ́yìn náà méjì, bẹ́ẹ̀ bẹ́ẹ̀ lọ. " +
@@ -74,17 +74,17 @@ object Lines {
             "Ekwentị na-agụ site na mkpọtụ dị nro, otu mkpọtụ maka nọmba ọ bụla, ọ na-amalitekwa na nọmba dị iche oge ọ bụla. " +
             "Efu bụ mkpọtụ abụọ siri ike, mgbe ahụ otu, mgbe ahụ abụọ, wee gaa n'ihu. " +
             "Mgbe ọgụgụ ruru nọmba gị, pịa. Mee nke ahụ ugboro anọ."
-    }
+    })
 
-    fun pulseShort(lang: Lang): String = when (lang) {
+    fun pulseShort(lang: Lang): String = PinTerm.local(lang, when (lang) {
         Lang.Pcm -> "Your Pulse PIN. Tap make e start. Zero na the strong double buzz."
         Lang.Yo -> "Pulse PIN yín. Ẹ tẹ̀ ẹ́ láti bẹ̀rẹ̀. Òdo ni ìgbọ̀n méjì tó lágbára."
         Lang.Ha -> "Pulse PIN ɗinku. Ku taɓa don farawa. Sifili ita ce girgiza biyu mai ƙarfi."
         Lang.Ig -> "Pulse PIN gị. Pịa ka ịmalite. Efu bụ mkpọtụ abụọ siri ike."
         else -> "Your Pulse PIN. Tap to start. Zero is the strong double buzz."
-    }
+    })
 
-    fun practiceStart(lang: Lang): String = when (lang) {
+    fun practiceStart(lang: Lang): String = PinTerm.local(lang, when (lang) {
         Lang.Pcm -> "Make we practise. Nothing go send. Tap to start, wait for the strong double buzz, that one na zero, " +
             "then count one, two, three, and tap. Zero go also make small sound so you fit learn am."
         Lang.Yo -> "Ẹ jẹ́ ká dánrawò. Kò sí ohun tí yóò lọ. Ẹ tẹ̀ ẹ́ láti bẹ̀rẹ̀, ẹ dúró de ìgbọ̀n méjì tó lágbára, òdo nìyẹn, " +
@@ -95,7 +95,7 @@ object Lines {
             "mgbe ahụ gụọ otu, abụọ, atọ, wee pịa. Efu na-adakwa ụda mgbe ị na-eme omume."
         else -> "Let's practise. Nothing is sent. Tap to start, wait for the strong double buzz, that's zero, " +
             "then count one, two, three, and tap. Zero also makes a sound while you practise."
-    }
+    })
 
     fun practiceResult(lang: Lang, digit: Int): String {
         val word = Naira.words(digit.toLong())

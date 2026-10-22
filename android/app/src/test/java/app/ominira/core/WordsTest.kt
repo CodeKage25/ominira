@@ -47,7 +47,7 @@ class WordsTest {
     fun theBankInsideTheAppAnswersInTheCustomersLanguage() = runTest {
         val bank = FakeOminiraApi(latency = 0, lang = Lang.Yo)
         val draft = (bank.draftTransfer("py_tolu", 2_000_000) as Drafted.Made).draft
-        assertEquals(listOf("₦20,000.", "Sí Adebayo Tolulope.", "Zenith Bank, tí ó parí sí 4 4 7 1.", "Ẹ pulse PIN yín láti fi ránṣẹ́."), draft.readback.spoken)
+        assertEquals(listOf("₦20,000.", "Sí Adebayo Tolulope.", "Zenith Bank, tí ó parí sí 4 4 7 1.", "Ẹ pulse nọ́ńbà àṣírí yín láti fi ránṣẹ́."), draft.readback.spoken)
 
         val sent = bank.confirm(draft.id, draft.readbackHash, PinBlock.seal(listOf(2, 0, 7, 5)), callActive = false)
         assertEquals("Ó ti lọ. Tolu ti gbà á.", sent.say)
@@ -75,5 +75,25 @@ class WordsTest {
         assertEquals("Òní", Days.label(noon, ZoneOffset.UTC, today, Lang.Yo))
         assertEquals("Jiya", Days.label(today.minusDays(1).atTime(12, 0).toInstant(ZoneOffset.UTC).toString(), ZoneOffset.UTC, today, Lang.Ha))
         assertEquals("Today", Days.label(noon, ZoneOffset.UTC, today))
+    }
+
+    @Test
+    fun pinIsSaidInEachLanguagesOwnWords() {
+        assertEquals("Ẹ pulse nọ́ńbà àṣírí yín.", PinTerm.local(Lang.Yo, "Ẹ pulse PIN yín."))
+        assertEquals("Na gaba, lambar sirrinku ta Pulse.", PinTerm.local(Lang.Ha, "Na gaba, Pulse PIN ɗinku."))
+        assertEquals("Ku duba lambar sirrina.", PinTerm.local(Lang.Ha, "Ku duba PIN ɗina."))
+        assertEquals("Nke ọzọ, nọmba nzuzo Pulse gị.", PinTerm.local(Lang.Ig, "Nke ọzọ, Pulse PIN gị."))
+        assertEquals("Your Pulse PIN.", PinTerm.local(Lang.Pcm, "Your Pulse PIN."))
+        // Every Yorùbá, Hausa and Igbo line has lost the English word.
+        for (lang in listOf(Lang.Yo, Lang.Ha, Lang.Ig)) {
+            val left = lines(lang).filterValues { Regex("\\bPIN\\b").containsMatchIn(it) }.keys
+            assertTrue("$lang still says PIN: $left", left.isEmpty())
+        }
+    }
+
+    @Test
+    fun aVoiceSpellsWhatTheScreenShows() {
+        assertEquals("N.I.N. ending 5521. Your B.V.N. matches.", VoiceText.of("NIN ending 5521. Your BVN matches."))
+        assertEquals("Pinned", VoiceText.of("Pinned"))
     }
 }

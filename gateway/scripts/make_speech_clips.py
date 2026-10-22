@@ -57,6 +57,16 @@ _PICK = re.compile(r"\{ ([a-z]\w*) \}")
 _ALSO = {"isThisYou"}
 
 
+# Letters a voice must spell, as the app's VoiceText does: the screen keeps NIN, the voice says N.I.N.
+_SPELL = (("NIN", "N.I.N."), ("BVN", "B.V.N."))
+
+
+def voice_text(text: str) -> str:
+    for word, spelled in _SPELL:
+        text = re.sub(rf"\b{word}\b", spelled, text)
+    return text
+
+
 def clip_key(text: str) -> str:
     return hashlib.sha256(text.strip().encode("utf-8")).hexdigest()[:16]
 
@@ -153,6 +163,7 @@ def fetch(text: str, lang: str, voice: str | None) -> bytes:
 
 
 def make(text: str, lang: str, voice: str | None) -> bytes:
+    text = voice_text(text)
     try:
         return squeeze(fetch(text, lang, voice))
     except yarngpt.SpeechUnavailable as err:
@@ -178,6 +189,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--route", choices=("job", "prepare"), default="job",
                     help="job (default), or prepare: uses the live voice's 120 calls a day")
     ap.add_argument("--max-clips", type=int, default=1000, help="most clips this run makes (default 1000)")
+    ap.add_argument("--remake", help="regex: make these lines again even if their clip exists (e.g. after a voice_text change)")
     ap.add_argument("--dry-run", action="store_true", help="count what would be made, spend nothing")
     args = ap.parse_args(argv)
 
@@ -198,7 +210,9 @@ def main(argv: list[str] | None = None) -> int:
     for lang in args.only:
         record, index = wanted(rows, lang, spoken)
         folder = args.out / lang
-        missing = {k: t for k, t in record.items() if not (folder / f"{k}.mp3").exists()}
+        remake = re.compile(args.remake) if args.remake else None
+        missing = {k: t for k, t in record.items()
+                   if not (folder / f"{k}.mp3").exists() or (remake and remake.search(t))}
         chars = sum(len(t) for t in missing.values())
         print(f"{lang:3}  {len(record)} lines, {len(missing)} to make ({chars:,} characters)")
         if args.dry_run or stopped:

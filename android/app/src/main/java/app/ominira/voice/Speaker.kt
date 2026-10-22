@@ -8,6 +8,7 @@ import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import app.ominira.core.Lang
+import app.ominira.core.VoiceText
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -151,7 +152,7 @@ class Speaker(context: Context, private val cloud: () -> CloudVoice?) : TextToSp
         counter += 1
         val id = "om-$counter-line"
         afterLine[id] = then
-        tts.speak(line, TextToSpeech.QUEUE_FLUSH, null, id)
+        tts.speak(VoiceText.of(line), TextToSpeech.QUEUE_FLUSH, null, id)
     }
 
     // 0.95 is the app's normal rate; recorded voices play normal at 1.0.
@@ -160,7 +161,7 @@ class Speaker(context: Context, private val cloud: () -> CloudVoice?) : TextToSp
     private fun inCloud(voice: CloudVoice, ticket: Int, request: Request) {
         if (engineOk) tts.stop()
         // The cloud voice pauses at full stops, so end each line with one.
-        val text = request.lines.joinToString(" ") { line ->
+        val text = request.lines.map(VoiceText::of).joinToString(" ") { line ->
             if (line.endsWith(".") || line.endsWith("?") || line.endsWith("!")) line else "$line."
         }
         pool.execute {
@@ -237,7 +238,7 @@ class Speaker(context: Context, private val cloud: () -> CloudVoice?) : TextToSp
         request.lines.forEachIndexed { i, line ->
             val id = "om-$counter-$i"
             lastPhoneLine = id
-            tts.speak(line, if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, id)
+            tts.speak(VoiceText.of(line), if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, id)
             if (i < request.lines.lastIndex) tts.playSilentUtterance(request.gapMs, TextToSpeech.QUEUE_ADD, "$id-gap")
         }
     }

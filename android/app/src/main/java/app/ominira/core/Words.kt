@@ -7,9 +7,9 @@ class Words private constructor(val lang: Lang) {
     private fun t(en: String, pcm: String, yo: String, ha: String, ig: String): String = when (lang) {
         Lang.En -> en
         Lang.Pcm -> pcm
-        Lang.Yo -> yo
-        Lang.Ha -> ha
-        Lang.Ig -> ig
+        Lang.Yo -> PinTerm.local(lang, yo)
+        Lang.Ha -> PinTerm.local(lang, ha)
+        Lang.Ig -> PinTerm.local(lang, ig)
     }
 
     private val wordy: Boolean get() = lang == Lang.En || lang == Lang.Pcm
