@@ -38,7 +38,7 @@ class FakeTwilio:
             self.ws.send_text(json.dumps(message))
 
     def speak(self) -> None:
-        frames = [LOUD] * 10 + [QUIET] * 40
+        frames = [LOUD] * 10 + [QUIET] * 90
         for f in frames:
             self.send({"event": "media", "media": {"track": "inbound", "payload": base64.b64encode(f).decode()}})
 
@@ -172,3 +172,10 @@ def test_phone_audio_round_trip():
     listener = phone_audio.Listener(end_silence_ms=200)
     out = [listener.feed(LOUD) for _ in range(5)] + [listener.feed(QUIET) for _ in range(12)]
     assert any(began for began, _ in out) and any(said for _, said in out)
+
+
+def test_an_account_number_said_in_two_parts(live, client):
+    before = balance(client)
+    live(["English", "two oh eight one two", "three four five six seven", "send twenty thousand to Tolu", "yes",
+          "goodbye"], pin=[2, 0, 7, 5, 2, 0, 7, 5], caller="+2348032222222")
+    assert balance(client) == before - 2_000_000

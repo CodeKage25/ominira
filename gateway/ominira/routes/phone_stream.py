@@ -36,6 +36,9 @@ LANGS = ("en", "pcm", "yo", "ha", "ig")
 CLIPS = Path(__file__).resolve().parents[1] / "static" / "phone"
 TICKET_TTL_S = 60
 HEAR_S = 8.0
+# The call's voice for each language, for the bundled prompts and live lines alike, so a call keeps one voice.
+# Jude reads English and Pidgin cleanly on a phone line; the others keep YarnGPT's choice.
+VOICES = {"en": "jude", "pcm": "jude"}
 DIGIT_PAUSE_S = 0.6  # between one digit's count and the next
 
 # Tests set this to learn when the call starts listening.
@@ -80,6 +83,10 @@ def _voice_text(text: str) -> str:
     return text
 
 
+def voice(lang: str) -> str | None:
+    return VOICES.get(lang) or yarngpt.voice_for(lang)
+
+
 def has_clip(lang: str, text: str) -> bool:
     return (CLIPS / lang / f"{clip_key(text)}.ul").is_file()
 
@@ -87,8 +94,10 @@ def has_clip(lang: str, text: str) -> bool:
 def _fetch(said: str, lang: str) -> bytes:
     """MP3 when ffmpeg is here (about three times sooner), else WAV."""
     if shutil.which("ffmpeg"):
-        return phone_audio.mp3_to_ulaw(yarngpt.download(yarngpt.prepare(said, lang, output_format="mp3")["audio_url"]))
-    return phone_audio.wav_to_ulaw(yarngpt.download(yarngpt.prepare(said, lang, output_format="wav")["audio_url"]))
+        return phone_audio.mp3_to_ulaw(yarngpt.download(
+            yarngpt.prepare(said, lang, output_format="mp3", voice=voice(lang))["audio_url"]))
+    return phone_audio.wav_to_ulaw(yarngpt.download(
+        yarngpt.prepare(said, lang, output_format="wav", voice=voice(lang))["audio_url"]))
 
 
 def speech(lang: str, text: str) -> bytes:
@@ -110,7 +119,7 @@ def speech(lang: str, text: str) -> bytes:
         log.warning("live speech on the prepare route failed: %s", err)
         try:
             fmt = "mp3" if shutil.which("ffmpeg") else "wav"
-            done = yarngpt.render(said, yarngpt.voice_for(lang), clip_key(lang + said), output_format=fmt, wait_s=20)
+            done = yarngpt.render(said, voice(lang), clip_key(lang + said), output_format=fmt, wait_s=20)
             audio = phone_audio.mp3_to_ulaw(done) if fmt == "mp3" else phone_audio.wav_to_ulaw(done)
         except (yarngpt.SpeechUnavailable, ValueError) as err2:
             log.warning("live speech failed: %s", err2)
@@ -273,7 +282,7 @@ class Line:
         if not texts:
             return
         clips = await self.busy(asyncio.gather(*(asyncio.to_thread(speech, self.lang, t) for t in texts)))
-        audio = phone_audio.silence(300).join(c for c in clips if c)
+        audio = phone_audio.silence(450).join(c for c in clips if c)
         if not audio:
             return
         self.speaking, self.barge, self.barged = True, barge, False
@@ -304,6 +313,23 @@ class Line:
                 return await self.race(asyncio.shield(task), 1.2)
             except TimeoutError:
                 await self.stream(phone_audio.THINKING)
+
+    async def hear_number(self) -> str:
+        """An account number, said in groups with pauses between: longer pauses are allowed, and what is heard
+        is added up until there are ten digits or the caller stops."""
+        self.listener.end_frames = 1600 // 20
+        digits = ""
+        try:
+            for _ in range(4):
+                said = await self.hear(12 if not digits else 4)
+                if not said:
+                    break
+                digits += answers.digits(said)
+                if len(digits) >= 10:
+                    break
+        finally:
+            self.listener.end_frames = phone_audio.Listener().end_frames
+        return digits[:10] if len(digits) >= 10 else digits
 
     async def hear(self, timeout: float = HEAR_S) -> str:
         """What the caller says next, as text; empty when they said nothing or it could not be understood."""
@@ -398,7 +424,7 @@ class Line:
             self.speaking, self.barge, self.barged = True, True, False
             self.forget_speech()
             try:
-                await self.stream(phone_audio.silence(300).join(c for c in clips if c))
+                await self.stream(phone_audio.silence(1100).join(c for c in clips if c))
                 await self.race(await self.mark())
             finally:
                 self.speaking = self.barge = False
@@ -422,7 +448,7 @@ class Line:
         await self.say(lines.say(self.lang, "phone_v_welcome"), barge=False)
         await self.line("phone_v_account")
         for _ in range(3):
-            number = answers.digits(await self.hear(12))
+            number = await self.hear_number()
             if len(number) == 10:
                 return await self.prove(number)
             await self.say(lines.say(self.lang, "phone_no_account"), lines.say(self.lang, "phone_v_account"))
