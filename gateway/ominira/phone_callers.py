@@ -1,8 +1,11 @@
 """Who is on the phone line. A customer is known by the number they call from. Anyone else is a stranger until
 the account's Pulse PIN passes on the call, and hears the same whether or not the account number is real.
 
-A stranger may give a few account numbers an hour, and an account takes one stranger's PIN an hour, so the
-line can neither find out who banks here nor spend the customer's three tries at Zenith."""
+A stranger may give a few account numbers an hour, and an account takes two strangers' PINs an hour: one
+retry for a slip, never the three wrong tries that lock the account at Zenith. So the line can neither find
+out who banks here nor lock the customer out."""
+
+import logging
 
 from sqlalchemy import select
 
@@ -13,8 +16,10 @@ from ominira.problems import Problem
 from ominira.tables import Customer, Token
 
 HOUR_S = 3600
-ACCOUNTS_PER_HOUR = 5
-PINS_PER_HOUR = 1
+ACCOUNTS_PER_HOUR = 10
+PINS_PER_HOUR = 2
+
+log = logging.getLogger("ominira.phone")
 
 
 def known(caller: str) -> Customer | None:
@@ -54,6 +59,7 @@ def prove(caller: str, number: str, pin_block: str, lang: str) -> tuple[str, str
     None for every failure, so a wrong PIN and a made-up account sound the same."""
     found = owner(number)
     if found is None:
+        log.info("phone caller: no customer has that account number")  # the caller hears the same either way
         return None
     key = f"phone_pin:{found.id}"
     with SessionFactory() as db:
@@ -61,8 +67,13 @@ def prove(caller: str, number: str, pin_block: str, lang: str) -> tuple[str, str
         token = db.scalars(select(Token).where(Token.customer_id == customer.id, Token.role == "customer")).first()
         try:
             ratelimit.allow(key, PINS_PER_HOUR, window_s=HOUR_S)
-            pin.require(customer, token.token if token else customer.id, pin_block, purpose="phone_caller")
         except Problem:
+            log.info("phone caller: this account's PIN tries for the hour are used up")
+            return None
+        try:
+            pin.require(customer, token.token if token else customer.id, pin_block, purpose="phone_caller")
+        except Problem as problem:
+            log.info("phone caller: PIN refused (%s)", problem.code)
             return None
         ratelimit.forget(key)
         customer.lang = lang

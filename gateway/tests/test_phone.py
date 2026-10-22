@@ -115,31 +115,33 @@ def test_a_made_up_account_sounds_like_a_real_one(line):
     assert "registered phone number" in refused and "<Hangup/>" in refused
 
 
-def test_strangers_get_one_pin_try_an_hour_so_the_customer_is_not_locked_out(line, client):
-    line("/phone/language", Digits=1, From=STRANGER)
-    line("/phone/account", Digits="2081234567", From=STRANGER)
-    wrong = line("/phone/caller", Digits="1111", From=STRANGER)
-    assert "registered phone number" in wrong and "<Hangup/>" in wrong and "Ronke" not in wrong
-    assert pin_tries_left(client) == 2
-    # Another number, even with the right PIN: the account has had its stranger's try this hour.
+def test_strangers_get_two_pin_tries_an_hour_so_the_customer_is_not_locked_out(line, client):
+    for n, caller in enumerate((STRANGER, "+2348037777777")):
+        line("/phone/language", Digits=1, CallSid=f"CW{n}", From=caller)
+        line("/phone/account", Digits="2081234567", CallSid=f"CW{n}", From=caller)
+        wrong = line("/phone/caller", Digits="1111", CallSid=f"CW{n}", From=caller)
+        assert "registered phone number" in wrong and "<Hangup/>" in wrong and "Ronke" not in wrong
+    assert pin_tries_left(client) == 1
+    # A third number, even with the right PIN: the account has had its two strangers' tries this hour,
+    # so a third wrong one can never lock Ronke out.
     other = "+2348038888888"
     line("/phone/language", Digits=1, CallSid="CA2", From=other)
     line("/phone/account", Digits="2081234567", CallSid="CA2", From=other)
     assert "registered phone number" in line("/phone/caller", Digits="2075", CallSid="CA2", From=other)
-    assert pin_tries_left(client) == 2 and _ronke() == (RONKE_PHONE, "en")
+    assert pin_tries_left(client) == 1 and _ronke() == (RONKE_PHONE, "en")
     # Ronke from her own number is unaffected.
     line("/phone/language", Digits=1, CallSid="CA3")
     assert "Hello Ronke." in line("/phone/account", Digits="2081234567", CallSid="CA3")
 
 
-def test_a_stranger_may_try_five_account_numbers_an_hour(line):
-    for i in range(5):
+def test_a_stranger_may_try_ten_account_numbers_an_hour(line):
+    for i in range(10):
         line("/phone/language", Digits=1, CallSid=f"CA{i}", From=STRANGER)
         assert 'action="/phone/caller"' in line("/phone/account", Digits=f"200000000{i}", CallSid=f"CA{i}",
                                                 From=STRANGER)
     line("/phone/language", Digits=1, CallSid="CA9", From=STRANGER)
-    sixth = line("/phone/account", Digits="2081234567", CallSid="CA9", From=STRANGER)
-    assert "registered phone number" in sixth and "<Hangup/>" in sixth and 'action="/phone/caller"' not in sixth
+    eleventh = line("/phone/account", Digits="2081234567", CallSid="CA9", From=STRANGER)
+    assert "registered phone number" in eleventh and "<Hangup/>" in eleventh and 'action="/phone/caller"' not in eleventh
 
 
 def test_the_slow_work_of_a_call_runs_off_the_event_loop(line, monkeypatch):
