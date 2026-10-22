@@ -28,7 +28,8 @@ def payees(db: Session, customer: Customer) -> list[Payee]:
 
 def balance(customer: Customer) -> dict:
     acct = get_core().accounts(customer.core_ref)[0]
-    return {"account": acct.name, "balance_kobo": acct.balance_kobo, "balance_words": amounts.spoken(acct.balance_kobo)}
+    return {"account": acct.name, "balance_kobo": acct.balance_kobo,
+            "balance_words": amounts.spoken(acct.balance_kobo, customer.lang)}
 
 
 def balance_line(customer: Customer) -> str:
@@ -36,8 +37,9 @@ def balance_line(customer: Customer) -> str:
 
 
 def recent(customer: Customer, limit: int = 5) -> list[dict]:
-    return [{"who": t.who, "amount_words": amounts.spoken(t.amount_kobo), "direction": "in" if t.incoming else "out",
-             "at": t.at} for t in get_core().transactions(customer.core_ref, limit)]
+    return [{"who": t.who, "amount_words": amounts.spoken(t.amount_kobo, customer.lang),
+             "direction": "in" if t.incoming else "out", "at": t.at}
+            for t in get_core().transactions(customer.core_ref, limit)]
 
 
 def money_in_this_week(customer: Customer) -> str:
@@ -49,9 +51,9 @@ def money_in_this_week(customer: Customer) -> str:
         return lines.say(customer.lang, "came_in_none")
     total = sum(t.amount_kobo for t in came_in)
     people = len({t.who for t in came_in})
-    spoken = amounts.spoken(total)
-    return lines.say(customer.lang, "came_in", amount=spoken[0].upper() + spoken[1:], count=amounts.words(people),
-                     people="person" if people == 1 else "people")
+    lang = customer.lang
+    return lines.say(lang, "came_in", amount=amounts.sentence(total, lang)[:-1], count=amounts.words(people, lang),
+                     people=lines.say(lang, "person" if people == 1 else "people"))
 
 
 def cards(customer: Customer) -> list[dict]:
