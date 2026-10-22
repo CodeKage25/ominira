@@ -14,6 +14,8 @@ os.environ.update({
     "MOCK_ADMIN_TOKEN": "",
     "ANTHROPIC_API_KEY": "",
     "YARNGPT_API_KEY": "",
+    "YARNGPT_API_KEY2": "",
+    "YARNGPT_API_KEY3": "",
     "YARNGPT_VOICES": "",
 })
 

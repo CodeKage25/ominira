@@ -48,8 +48,9 @@ class Settings:
     idempotency_secret: str = field(default_factory=lambda: _env("IDEMPOTENCY_SECRET", "") or secrets.token_hex(32))
 
     yarngpt_api_key: str = field(default_factory=lambda: _env("YARNGPT_API_KEY", ""))
-    # Tried when the first key is out of calls or credit for the day.
+    # Tried in turn when the key before is out of calls or credit for the day.
     yarngpt_api_key2: str = field(default_factory=lambda: _env("YARNGPT_API_KEY2", ""))
+    yarngpt_api_key3: str = field(default_factory=lambda: _env("YARNGPT_API_KEY3", ""))
     yarngpt_base: str = field(default_factory=lambda: _env("YARNGPT_BASE", "https://api.yarngpt.ai"))
     yarngpt_voices: str = field(default_factory=lambda: _env("YARNGPT_VOICES", ""))
 
