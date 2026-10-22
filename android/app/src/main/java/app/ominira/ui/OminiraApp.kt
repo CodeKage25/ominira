@@ -1,6 +1,7 @@
 package app.ominira.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.navigation.NavHostController
@@ -92,6 +93,10 @@ fun OminiraApp(session: Session) {
 
         // One microphone for every screen after onboarding.
         val voice = rememberVoiceHost(session)
+        DisposableEffect(voice) {
+            session.volumeMic = { voice.listenNow() }
+            onDispose { session.volumeMic = null }
+        }
         voice.place = { placeOf(nav.currentBackStackEntry?.destination?.route) }
         voice.go = { command ->
             when (command) {

@@ -1,6 +1,7 @@
 package app.ominira
 
 import android.os.Bundle
+import android.view.KeyEvent
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -32,6 +33,16 @@ class MainActivity : ComponentActivity() {
             }
             OminiraApp(session)
         }
+    }
+
+    // Volume down starts listening once the app has its microphone; volume up still sets the volume.
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        val mic = session.volumeMic
+        if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN && mic != null) {
+            if (event.repeatCount == 0) mic()
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
     }
 
     override fun onResume() {

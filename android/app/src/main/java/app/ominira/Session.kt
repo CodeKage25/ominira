@@ -142,6 +142,9 @@ class Session(app: Application) : AndroidViewModel(app) {
     // Open while the shared voice host listens; money in waits for it to close.
     val micOpen = MutableStateFlow(false)
 
+    // Volume down opens the microphone on any screen after onboarding: a button found without looking.
+    var volumeMic: (() -> Unit)? = null
+
     private var watcher: Job? = null
 
     // While the app is open, money that lands is announced in the customer's language. Gateway only:
