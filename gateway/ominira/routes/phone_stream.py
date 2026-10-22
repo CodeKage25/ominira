@@ -150,18 +150,34 @@ def _google(said: bytes, lang: str, model: str) -> str | None:
         return None
 
 
-def transcribe_number(said: bytes) -> str:
-    """The digits of a spoken account number. Google's two models at once, the first ten-digit answer winning;
-    YarnGPT when neither gives ten. Blocking."""
+def transcribe_number(said: bytes) -> list[str]:
+    """What each recogniser heard of a spoken account number, as digits, likeliest first: Google's two models at
+    once, and YarnGPT too when neither gives ten or eleven digits. Blocking."""
     with ThreadPoolExecutor(len(google_stt.MODELS)) as pool:
         heard = list(pool.map(lambda m: _google(said, *m), google_stt.MODELS))
     found = [answers.digits(h) for h in heard if h]
-    ten = [d for d in found if len(d) == 10]
-    if ten:
-        return ten[0]
-    found.append(answers.digits(transcribe(said)))
-    ten = [d for d in found if len(d) == 10]
-    return ten[0] if ten else max(found, key=len, default="")
+    if not any(len(d) in (10, 11) for d in found):
+        found.append(answers.digits(transcribe(said)))
+    return sorted((d for d in found if d), key=lambda d: (len(d) != 10, len(d) != 11))
+
+
+def number_variants(digits: str) -> list[str]:
+    """Ten-digit readings of what was heard. Eleven digits usually means a doubled digit heard three times
+    ("two zero zero five" as 2 0 0 0 5), so one of a run is dropped first."""
+    if len(digits) == 10:
+        return [digits]
+    if len(digits) != 11:
+        return []
+    out = [digits[:i] + digits[i + 1:] for i in range(1, 11) if digits[i] == digits[i - 1]]
+    out += [digits[:10], digits[1:]]
+    return list(dict.fromkeys(out))
+
+
+def account_for(heard: list[str]) -> str:
+    """The first reading that is someone's account, else the first ten-digit reading. The PIN must still pass,
+    so trying readings tells a stranger nothing. Blocking."""
+    readings = [v for d in heard for v in number_variants(d)]
+    return next((v for v in readings if phone_callers.owner(v) is not None), readings[0] if readings else "")
 
 
 def start_digit() -> int:
@@ -357,7 +373,7 @@ class Line:
             except TimeoutError:
                 await self.stream(phone_audio.THINKING)
 
-    async def hear_number(self) -> str:
+    async def hear_number(self) -> list[str]:
         """An account number, said in groups with pauses between: longer pauses are allowed, and what is heard
         is added up until there are ten digits or the caller stops."""
         self.listener.end_frames = 1600 // 20
@@ -368,16 +384,20 @@ class Line:
             for _ in range(4):
                 said = await self.utterance(12 if not digits else 4, stop=self.typed_ten)
                 if self.typed_ten.is_set():
-                    return "".join(self.typed)[:10]
+                    return ["".join(self.typed)[:10]]
                 if not said:
                     break
-                digits += await self.busy(asyncio.to_thread(transcribe_number, said))
+                heard = await self.busy(asyncio.to_thread(transcribe_number, said))
+                if not digits and any(len(d) in (10, 11) for d in heard):
+                    log.info("account number on a call: %s digits heard", "/".join(str(len(d)) for d in heard))
+                    return heard
+                digits += heard[0] if heard else ""
                 if len(digits) >= 10:
                     break
         finally:
             self.listener.end_frames = phone_audio.Listener().end_frames
         log.info("account number on a call: %d digits heard", len(digits))  # how many, never which
-        return digits[:10] if len(digits) >= 10 else digits
+        return [digits]
 
     async def hear(self, timeout: float = HEAR_S, stop: asyncio.Event | None = None) -> str:
         """What the caller says next, as text; empty when they said nothing, it could not be understood, or
@@ -540,7 +560,7 @@ class Line:
         await self.say(lines.say(self.lang, "phone_v_welcome"), barge=False)
         await self.line("phone_v_account")
         for _ in range(3):
-            number = await self.hear_number()
+            number = await self.busy(asyncio.to_thread(account_for, await self.hear_number()))
             if len(number) == 10:
                 return await self.prove(number)
             await self.say(lines.say(self.lang, "phone_no_account"), lines.say(self.lang, "phone_v_account"))

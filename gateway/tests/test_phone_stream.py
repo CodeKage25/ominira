@@ -191,11 +191,17 @@ def test_the_account_number_takes_the_first_ten_digit_answer(monkeypatch):
     answers_by_model = {"default": "A-League 1234567", "phone_call": "2081234567"}
     monkeypatch.setattr(phone_stream, "_google", lambda said, lang, model: answers_by_model[model])
     monkeypatch.setattr(phone_stream, "transcribe", lambda said: "two oh eight")
-    assert phone_stream.transcribe_number(b"\xff" * 800) == "2081234567"
+    assert phone_stream.transcribe_number(b"\xff" * 800)[0] == "2081234567"
     # Google unreachable: YarnGPT's transcript is read instead.
     monkeypatch.setattr(phone_stream, "_google", lambda said, lang, model: None)
     monkeypatch.setattr(phone_stream, "transcribe", lambda said: "two oight one two three four five six seven")
-    assert phone_stream.transcribe_number(b"\xff" * 800) == "2081234567"
+    assert phone_stream.transcribe_number(b"\xff" * 800) == ["2081234567"]
+
+
+def test_a_doubled_zero_heard_three_times_still_finds_the_account(client):
+    # Google's phone model heard Kemi-style "two zero zero five ..." as 2 0 0 0 5: Ronke's number with one 0 too many.
+    assert phone_stream.account_for(["20081234567"]) == "2081234567"
+    assert phone_stream.account_for(["123"]) == ""
 
 
 def test_a_typed_pin_works_on_a_call(live, client, monkeypatch):
