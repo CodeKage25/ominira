@@ -273,6 +273,7 @@ Recordings: 1 KB to 4 MB, any `audio/*` type. `say` is limited to 90 a minute an
 |---|---|
 | `GET /_mock/state` | `{"controls", "balances": [{"account_id", "last4", "balance_kobo"}], "cards": [{"id", "last4", "status"}], "pin_tries_left": {ref: n}}` |
 | `POST /_mock/reset` | back to the demo world, and the controls back to `ZENITH_PROFILE`; answers as `state` |
+| `POST /_mock/pin` `{"account_number": "2005679947", "pin": "1302"}` | a demo account's new PIN, under the rules for choosing one; `422 pin_weak` for an easy one |
 | `POST /_mock/controls` `{"profile": "realistic"\|"fast"\|"flaky", "banks_down": ["999992"], "next_transfer_code": "09"}` | steer the mock core; answers as `state` |
 
 Optional control fields: `next_transfer_timeout` (`"after_send"`: the next transfer goes through but

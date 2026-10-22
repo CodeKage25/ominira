@@ -83,3 +83,12 @@ def test_a_name_alone_opens_the_account(client):
     client.post(f"/v1/onboarding/{sid}/bvn-check")
     token = client.post(f"/v1/onboarding/{sid}/complete").json()["token"]
     assert client.get("/v1/me/preferences", headers={"Authorization": f"Bearer {token}"}).json()["first_name"] == "Kemi"
+
+
+def test_rehearsal_can_give_a_demo_account_a_new_pin(client, monkeypatch):
+    from ominira.settings import settings
+    monkeypatch.setattr(settings, "mock_admin_token", "")
+    assert client.post("/_mock/pin", json={"account_number": "2081234567", "pin": "1234"}).status_code == 422
+    assert client.post("/_mock/pin", json={"account_number": "2081234567", "pin": "1302"}).json() == {"ok": True}
+    d = make_draft(client, amount_kobo=100_000, bank_code="057", account_number="2044714471")
+    assert confirm(client, d, _seal("1302")).json()["status"] == "executed"

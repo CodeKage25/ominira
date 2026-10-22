@@ -51,6 +51,23 @@ def reset():
     return core.snapshot()
 
 
+class PinIn(BaseModel):
+    account_number: str = Field(pattern=r"^\d{10}$")
+    pin: str = Field(pattern=r"^\d{4}$")
+
+
+@router.post("/pin")
+def set_pin(body: PinIn):
+    """Rehearsal only: give a demo account a new PIN, under the same rules as choosing one."""
+    core = mock_core()
+    ref = core.customer_for_account(body.account_number)
+    if ref is None:
+        raise Problem(404, "not_found", "No such account")
+    if not core.set_pin(ref, "demo-" + "".join(str(9 - int(d)) for d in body.pin)):
+        raise Problem(422, "pin_weak", "That PIN is too easy to guess")
+    return {"ok": True}
+
+
 @router.post("/controls")
 def controls(body: ControlsIn):
     core = mock_core()
