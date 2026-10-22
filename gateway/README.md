@@ -43,7 +43,7 @@ they need no network. `TEST_DATABASE_URL=postgresql+psycopg://...` runs the same
 | `ominira/core/mock.py` | The mock core and its rehearsal controls |
 | `ominira/assistant/` | `guard.py` (spoken PIN, masking), `rules.py`, `claude.py`, `toolbox.py` |
 | `ominira/speech/yarngpt.py` | YarnGPT client: speak (ticket links) and listen (transcripts) |
-| `ominira/lines.py` | Every line a customer hears, in English and Pidgin |
+| `ominira/lines.py`, `amounts.py` | Every line a customer hears, and amounts in words, in all five languages |
 | `ominira/audit_log.py` | Hash-chained audit log |
 | `ominira/idempotency.py` | `Idempotency-Key` replay, 24 hours, per token |
 | `ominira/routes/` | The HTTP endpoints, one file per area |
@@ -61,17 +61,31 @@ they need no network. `TEST_DATABASE_URL=postgresql+psycopg://...` runs the same
 | Card | `cd_1`, ending 8830 |
 | Limits | ₦1,000,000 per transfer, ₦5,000,000 a day |
 | Tokens | `demo-customer` (Ronke's phone), `demo-approver` (Funmi), `demo-assistant` (the assistant's read-and-draft identity) |
+| The saved people | Each is a customer too, so money sent to them lands: ₦250,000, PIN **2 0 7 5**, Ronke saved as a payee, no co-approver |
 
-The app's placeholder PIN block for 2 0 7 5 is `demo-7924` (each digit becomes 9 minus the digit). A new sign-up chooses its own PIN with `POST /v1/onboarding/{id}/pin`; the mock core refuses one digit four times, a run up or down, and a repeated pair. `POST /v1/onboarding/{id}/bvn-check` stands in for the NIBSS lookup the customer consents to, and always matches.
+| Person | Token | Language | Account |
+|---|---|---|---|
+| Tolu (Adebayo Tolulope) | `demo-tolu` | Yorùbá | Zenith Bank 057, 2044714471 |
+| Mama (Adeyemi Folake) | `demo-mama` | Yorùbá | GTBank 058, 0123450213 |
+| Musa (Musa Ibrahim) | `demo-musa` | Hausa | OPay 999992, 8031447710 |
+| Aisha (Bello Aisha) | `demo-aisha` | Hausa | UBA 033, 2150987654 |
+| Emeka (Nwosu Emeka) | `demo-emeka` | Igbo | Zenith Bank 057, 2234567890 |
+| Chika (Okonkwo Chika) | `demo-chika` | Igbo | Access Bank 044, 0691234567 |
+
+The app's placeholder PIN block for 2 0 7 5 is `demo-7924` (each digit becomes 9 minus the digit). A new sign-up chooses its own PIN with `POST /v1/onboarding/{id}/pin`, once, after `complete`; the mock core refuses one digit four times, a run up or down, and a repeated pair. `POST /v1/onboarding/{id}/bvn-check` stands in for the NIBSS lookup the customer consents to, and always matches.
 
 Accounts with special behaviour on the mock rails: ten identical digits (07, invalid); any number
 ending `0006`, or UBA `2109876543` (06, dormant); BVN `12345678901` (someone else's). Any other
 10-digit number at a listed bank gets a consistent generated name, as a real name enquiry would.
+A transfer to an account the mock holds, at any bank, debits one side and credits the other in the
+same database transaction.
 
 ## Things to try
 
 - **Happy path:** "send twenty thousand to Tolu", confirm with the PIN, and hear "Sent. Tolu has it."
 - **Two turns:** "send money to Tolu", then "twenty thousand". Pidgin works too: "abeg send 20k give Tolu".
+- **Other languages:** as Tolu (`demo-tolu`), "Elo lo wa ninu account mi". As Ronke in Hausa, "aika dubu
+  ashirin zuwa ga Musa", then sign in as `demo-musa` and hear what came in.
 - **Scam pause:** ₦50,000 or more to Musa with `call_active: true` gives `409 pause_required`.
   `stop` cancels and flags Musa; `chose_myself` adds "Zenith will never call you to move money..."
 - **Co-approver:** anything above ₦50,000 gives `202 approval_required`. Open
@@ -177,10 +191,10 @@ is set, with read-only tools plus draft creation (there is no confirm tool at al
 or a slow answer (`CLAUDE_TIMEOUT_S`, default 8) falls back to the rule parser for that turn. The
 default model is `CLAUDE_MODEL=claude-sonnet-5-5`.
 
-Lines follow the customer's `lang` preference on the very next call. English and Pidgin are
-written; Yorùbá, Hausa and Igbo fall back to English until a native speaker has written them. A few
-assistant prompts ("How much should I send to Tolu?", the help line, "came in this week") are still
-English only and need Pidgin copy.
+Lines follow the customer's `lang` preference on the very next call, amounts included ("naira dubu
+ashirin"). English and Pidgin are reviewed copy; Yorùbá, Hausa and Igbo lines and number words are
+unreviewed drafts until native speakers check them. The rule parser understands sending, the
+balance, money in and blocking the card in all five, with or without tone marks.
 
 ## Speech (YarnGPT)
 
