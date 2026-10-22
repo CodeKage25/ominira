@@ -25,8 +25,9 @@ def test_onboarding_happy_path(client):
     assert done["token"] != "demo-customer"
     acct = client.get("/v1/accounts", headers={"Authorization": f"Bearer {done['token']}"}).json()[0]
     assert acct["balance_kobo"] == 10_000_000 and len(acct["number"]) == 10
-    # Completing twice gives the same customer back.
-    assert client.post(f"/v1/onboarding/{sid}/complete").json() == done
+    # The token is handed out once.
+    again = client.post(f"/v1/onboarding/{sid}/complete")
+    assert again.status_code == 409 and again.json()["code"] == "onboarding_closed"
 
 
 def test_selfie_without_digits_passes(client):
@@ -123,9 +124,10 @@ def test_language_changes_every_later_say(client):
     assert confirm(client, d).json()["say"] == "E don go. Tolu don get am."
 
 
-def test_yoruba_hausa_igbo_fall_back_to_english_for_now(client):
+def test_yoruba_balance_is_in_yoruba_words(client):
     client.put("/v1/me/preferences", headers=CUSTOMER, json={"lang": "yo"})
-    assert client.get("/v1/accounts/ac_1/balance", headers=CUSTOMER).json()["say"].startswith("You have ")
+    said = client.get("/v1/accounts/ac_1/balance", headers=CUSTOMER).json()["say"]
+    assert said == "Ẹ ní náírà ẹgbẹ̀rún ẹgbẹ̀rin ó lé méjìlélógójì, ó lé ọ̀ọ́dúnrún nínú àkáǹtì yín."
 
 
 def test_customers_own_pause_threshold(client):
