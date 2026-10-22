@@ -53,7 +53,7 @@ SPENT_REST_S = 1800
 
 def _keys() -> list[str]:
     """Configured keys, a key that just ran out tried last: each refusal costs a round trip."""
-    keys = [k for k in (settings.yarngpt_api_key, settings.yarngpt_api_key2, settings.yarngpt_api_key3) if k]
+    keys = [k for k in (settings.yarngpt_api_key, *settings.yarngpt_more_keys) if k]
     now = time.monotonic()
     return sorted(keys, key=lambda k: _spent_until.get(k, 0) > now)
 
