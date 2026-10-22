@@ -48,12 +48,18 @@ class Settings:
     idempotency_secret: str = field(default_factory=lambda: _env("IDEMPOTENCY_SECRET", "") or secrets.token_hex(32))
 
     yarngpt_api_key: str = field(default_factory=lambda: _env("YARNGPT_API_KEY", ""))
+    # Tried when the first key is out of calls or credit for the day.
+    yarngpt_api_key2: str = field(default_factory=lambda: _env("YARNGPT_API_KEY2", ""))
     yarngpt_base: str = field(default_factory=lambda: _env("YARNGPT_BASE", "https://api.yarngpt.ai"))
     yarngpt_voices: str = field(default_factory=lambda: _env("YARNGPT_VOICES", ""))
 
     # The phone line: Twilio signs every request with the account's auth token.
     twilio_account_sid: str = field(default_factory=lambda: _env("TWILIO_ACCOUNT_SID", ""))
     twilio_auth_token: str = field(default_factory=lambda: _env("TWILIO_AUTH_TOKEN", ""))
+    # On: the call streams live audio, all by voice. Off: the step-by-step call with the keypad.
+    phone_stream: bool = field(default_factory=lambda: _flag("PHONE_STREAM", True))
+    # Seconds between the Pulse PIN's ticks on a call.
+    phone_pulse_gap_s: float = field(default_factory=lambda: _float("PHONE_PULSE_GAP_S", 1.3))
 
     # Set MOCK_ADMIN_TOKEN on any public deployment.
     mock_admin: bool = field(default_factory=lambda: _flag("MOCK_ADMIN", True))

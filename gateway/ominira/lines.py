@@ -218,6 +218,89 @@ _COPY: dict[str, dict[str, str]] = {
         "ha": "Na gode da kuka yi banki da Zenith. Sai an jima.",
         "ig": "Daalụ maka iji Zenith. Ka ọ dị.",
     },
+    # The live call: everything by voice, except the Pulse PIN's four key presses.
+    "phone_v_welcome": {
+        "en": "Welcome to Zenith, with Òmìnira. Zenith will never call you. If someone told you to call, hang up now.",
+        "pcm": "Welcome to Zenith, with Òmìnira. Zenith no go ever call you. If person tell you make you call, cut the call now.",
+        "yo": "Ẹ kú àbọ̀ sí Zenith, pẹ̀lú Òmìnira. Zenith kò ní pè yín láé. Tí ẹnìkan bá ní kí ẹ pè, ẹ gé ìpè báyìí.",
+        "ha": "Barka da zuwa Zenith, tare da Òmìnira. Zenith ba za ta taɓa kiran ku ba. Idan wani ya ce ku kira, ku katse yanzu.",
+        "ig": "Nnọọ na Zenith, ya na Òmìnira. Zenith agaghị akpọ gị ma ọlị. Ọ bụrụ na mmadụ gwara gị kpọọ, kwụsị oku ugbu a.",
+    },
+    "phone_v_menu_en": {"en": "For English, say English."},
+    "phone_v_menu_pcm": {"en": "For Pidgin, say Pidgin.", "pcm": "For Pidgin, talk Pidgin."},
+    "phone_v_menu_yo": {"en": "Fún Yorùbá, ẹ sọ Yorùbá.", "yo": "Fún Yorùbá, ẹ sọ Yorùbá."},
+    "phone_v_menu_ha": {"en": "Don Hausa, ku ce Hausa.", "ha": "Don Hausa, ku ce Hausa."},
+    "phone_v_menu_ig": {"en": "Maka Igbo, kwuo Igbo.", "ig": "Maka Igbo, kwuo Igbo."},
+    "phone_v_account": {
+        "en": "Please say your ten-digit Zenith account number.",
+        "pcm": "Abeg talk your ten-digit Zenith account number.",
+        "yo": "Ẹ jọ̀ọ́ ẹ sọ nọ́ńbà àkáǹtì Zenith yín oní-nọ́ńbà mẹ́wàá.",
+        "ha": "Don Allah ku faɗi lambar asusunku ta Zenith mai lambobi goma.",
+        "ig": "Biko kwuo nọmba akaụntụ Zenith gị nwere nọmba iri.",
+    },
+    "phone_v_hi": {"en": "Hello {first}.", "pcm": "How far {first}.", "yo": "Ẹ n lẹ {first}.", "ha": "Sannu {first}.",
+                   "ig": "Nnọọ {first}."},
+    "phone_v_what": {
+        "en": "What would you like to do? You can say: send money to Tolu, or what is my balance.",
+        "pcm": "Wetin you wan do? You fit talk: send money give Tolu, or how much I get.",
+        "yo": "Kí ni ẹ fẹ́ ṣe? Ẹ lè sọ pé: fi owó ránṣẹ́ sí Tolu, tàbí èló ni mo ní.",
+        "ha": "Me kuke so ku yi? Kuna iya cewa: aika kuɗi ga Tolu, ko nawa nake da shi.",
+        "ig": "Gịnị ka ị chọrọ ime? Ị nwere ike ikwu: ziga Tolu ego, ma ọ bụ ego ole ka m nwere.",
+    },
+    "phone_v_confirm": {
+        "en": "Say yes to send it, or no to stop.",
+        "pcm": "Talk yes make e go, or no make we stop.",
+        "yo": "Ẹ sọ bẹ́ẹ̀ni láti fi ránṣẹ́, tàbí rárá láti dá a dúró.",
+        "ha": "Ku ce eh don aikawa, ko a'a don dakatarwa.",
+        "ig": "Kwuo ee ka i ziga ya, ma ọ bụ mba ka ịkwụsị ya.",
+    },
+    "phone_v_pin": {
+        "en": "Now your Pulse PIN. I will count with ticks, from a different number each time. The high double tick "
+              "is zero. When the count reaches your digit, press any key. Do that four times.",
+        "pcm": "Now your Pulse PIN. I go count with tick, from different number every time. The high double tick na "
+               "zero. When the count reach your number, press any key. Do am four times.",
+        "yo": "Báyìí, Pulse PIN yín. Màá ka pẹ̀lú ìró kékeré, láti nọ́ńbà ọ̀tọ̀ ní gbogbo ìgbà. Ìró gíga méjì ni òdo. "
+              "Nígbà tí ìkà bá dé nọ́ńbà yín, ẹ tẹ bọ́tìnnì èyíkéyìí. Ẹ ṣe bẹ́ẹ̀ nígbà mẹ́rin.",
+        "ha": "Yanzu Pulse PIN ɗinku. Zan ƙirga da ƙara, ina farawa daga lamba daban kowane lokaci. Ƙara biyu mai "
+              "tsayi ita ce sifili. Idan ƙirgan ya kai lambarku, ku danna kowane maɓalli. Ku yi haka sau huɗu.",
+        "ig": "Ugbu a Pulse PIN gị. Aga m agụ site na ụda, na-amalite na nọmba dị iche oge ọ bụla. Ụda abụọ dị elu bụ "
+              "efu. Mgbe ọgụgụ ruru nọmba gị, pịa bọtịnụ ọ bụla. Mee nke ahụ ugboro anọ.",
+    },
+    "phone_v_pin_short": {
+        "en": "Your Pulse PIN. Press any key at your digit.",
+        "pcm": "Your Pulse PIN. Press any key for your number.",
+        "yo": "Pulse PIN yín. Ẹ tẹ bọ́tìnnì èyíkéyìí ní nọ́ńbà yín.",
+        "ha": "Pulse PIN ɗinku. Ku danna kowane maɓalli a lambarku.",
+        "ig": "Pulse PIN gị. Pịa bọtịnụ ọ bụla na nọmba gị.",
+    },
+    "phone_v_pause": {
+        "en": "Say yes to stop it. Say no if you chose this yourself.",
+        "pcm": "Talk yes make we stop am. Talk no if na you choose am by yourself.",
+        "yo": "Ẹ sọ bẹ́ẹ̀ni láti dá a dúró. Ẹ sọ rárá tí ẹ̀yin fúnra yín ló yàn án.",
+        "ha": "Ku ce eh don dakatar da shi. Ku ce a'a idan ku da kanku kuka zaɓa.",
+        "ig": "Kwuo ee ka ịkwụsị ya. Kwuo mba ma ọ bụ gị n'onwe gị họọrọ ya.",
+    },
+    "phone_v_more": {
+        "en": "Anything else? Speak now, or say goodbye.",
+        "pcm": "Anything again? Talk now, or talk bye bye.",
+        "yo": "Ṣé nǹkan mìíràn wà? Ẹ sọ̀rọ̀ báyìí, tàbí ẹ sọ ó dàbọ̀.",
+        "ha": "Akwai wani abu kuma? Ku yi magana yanzu, ko ku ce sai an jima.",
+        "ig": "Ọ dị ihe ọzọ? Kwuo okwu ugbu a, ma ọ bụ kwuo ka ọ dị.",
+    },
+    "phone_v_cancelled": {
+        "en": "Stopped. Nothing was sent.",
+        "pcm": "I don stop am. Nothing go.",
+        "yo": "Mo ti dá a dúró. Kò sí ohun tí ó lọ.",
+        "ha": "An dakatar. Ba a aika komai ba.",
+        "ig": "Akwụsịla m ya. Ọ dịghị ihe e zigara.",
+    },
+    "phone_v_still_there": {
+        "en": "Are you still there?",
+        "pcm": "You still dey there?",
+        "yo": "Ṣé ẹ ṣì wà níbẹ̀?",
+        "ha": "Kuna nan har yanzu?",
+        "ig": "Ị ka nọ ebe ahụ?",
+    },
     # English only so far: waiting for Pidgin copy.
     "ask_who": {"en": "Who are you sending to? Say a name, like {names}."},
     "ask_amount": {"en": "How much should I send to {nick}?"},

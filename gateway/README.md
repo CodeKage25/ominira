@@ -224,21 +224,31 @@ The script prints each clip's size and length and stops with a clear message whe
 
 ## The phone line (Twilio)
 
-Any phone, no app: a customer calls the Twilio number and banks by voice. `ominira/routes/phone.py` takes
-the call and hands it to the same assistant and the same confirm gate as the app, so the fixed readback,
-the PIN, the limits, the scam pause and the co-approver all hold on a call.
+Any phone, no app: a customer calls the Twilio number and banks by voice. The call goes to the same
+assistant and the same confirm gate as the app, so the fixed readback, the PIN, the limits, the scam pause
+and the co-approver all hold on a call.
 
-1. The five languages, each offered in its own words: press 1 to 5.
-2. The ten-digit Zenith account number on the keypad.
-3. The request, spoken. Twilio's recogniser (en-NG) hears English and Pidgin; for Yorùbá, Hausa and Igbo
-   the call records the request and YarnGPT transcribes it.
-4. The readback, then "press 1 to send", then the four-digit PIN on the keypad. A phone call is always a
-   call, so a large transfer to someone new always meets the scam pause.
+**The live call** (`PHONE_STREAM=true`, `ominira/routes/phone_stream.py`). `/phone/voice` answers with a
+one-time ticket for a WebSocket, and Twilio streams the call's audio both ways. Everything is by voice:
 
-English and Pidgin are spoken by Twilio's voice; Yorùbá, Hausa and Igbo by YarnGPT, with the fixed prompts
-bundled in `ominira/static/phone` (`scripts/make_phone_clips.py`) and lines with a name or an amount made
-live. The keypad PIN is sealed the moment it arrives and goes to the core like the app's; a real line hands
-it to Zenith's HSM instead.
+1. The five languages, each offered in its own words: say the language.
+2. The account number, said aloud. The caller's number is then remembered, so the next call starts at 3.
+3. The request. The Gateway finds where the caller stops speaking and YarnGPT transcribes it, in all five
+   languages. A caller can talk over a prompt; the readback and the PIN instructions they must hear out.
+4. The readback, then "say yes to send it". Then the Pulse PIN: the call counts with ticks from a random
+   start, a high double tick for zero, and the caller presses any key when the count reaches each digit.
+   The digit is the tick that had begun playing (Twilio reports each tick's start as a mark), so which key
+   is pressed tells nobody anything. A phone call is always a call, so a large transfer to someone new
+   always meets the scam pause, answered by voice.
+
+Speech is YarnGPT's voice: the fixed prompts are bundled as 8 kHz μ-law in `ominira/static/phone`
+(`scripts/make_phone_clips.py`, needs ffmpeg) and play at once; lines with a name or an amount are made
+live. `YARNGPT_API_KEY2`, if set, is tried when the first key is out of calls or credit. Cloud Run's request
+timeout must cover a call (`--timeout=3600`).
+
+**The step-by-step call** (`PHONE_STREAM=false`, `ominira/routes/phone.py`): the same flow with the keypad
+for the language, the account number, yes or no and a four-digit PIN, Twilio's voice for English and Pidgin,
+and recordings sent to YarnGPT for Yorùbá, Hausa and Igbo. Kept as the fallback.
 
 Every request must carry Twilio's signature, checked with `TWILIO_AUTH_TOKEN`; without the token the line
 answers nothing. Set `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` on the service, and point the number's

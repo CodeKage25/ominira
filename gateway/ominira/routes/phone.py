@@ -114,8 +114,13 @@ def _line(request: Request, lang: str, key: str, **values) -> str:
 
 @router.post("/voice")
 async def voice(request: Request):
-    """A new call: the five languages, each offered in its own words."""
-    await _form(request)
+    """A new call. Live: the call's audio streams to /phone/stream. Otherwise the five languages, by keypad."""
+    form = await _form(request)
+    if settings.phone_stream:
+        from ominira.routes.phone_stream import ticket_for
+        url = f"wss://{request.url.netloc}/phone/stream"
+        ticket = ticket_for(form.get("From", ""))
+        return _twiml(f'<Connect><Stream url="{escape(url)}"><Parameter name="ticket" value="{ticket}"/></Stream></Connect>')
     menu = "".join(_line(request, lang, f"phone_menu_{lang}") for lang in LANGS)
     return _twiml(f'<Gather numDigits="1" action="/phone/language" timeout="8">{menu}</Gather>',
                   '<Redirect method="POST">/phone/voice</Redirect>')

@@ -13,6 +13,7 @@ TOKEN = "test-twilio-token"
 def line(client, monkeypatch):
     monkeypatch.setattr(settings, "twilio_auth_token", TOKEN)
     monkeypatch.setattr(settings, "assistant", "rules")
+    monkeypatch.setattr(settings, "phone_stream", False)  # the step-by-step call; the live one is test_phone_stream
     phone._calls.clear()
 
     def post(path: str, **form) -> str:

@@ -43,11 +43,19 @@ def enabled() -> bool:
     return settings.speech_enabled
 
 
-def _client(timeout: float) -> httpx.Client:
+# Out of calls or credit on this key: the next key may still have some.
+_SPENT = {"RATE_LIMITED", "QUOTA_EXCEEDED", "http_402", "http_429"}
+
+
+def _keys() -> list[str]:
+    return [k for k in (settings.yarngpt_api_key, settings.yarngpt_api_key2) if k]
+
+
+def _client(timeout: float, key: str | None = None) -> httpx.Client:
     if not enabled():
         raise SpeechUnavailable("not_configured", "YARNGPT_API_KEY is not set")
     return httpx.Client(base_url=settings.yarngpt_base, timeout=timeout, transport=transport,
-                        headers={"Authorization": f"Bearer {settings.yarngpt_api_key}"})
+                        headers={"Authorization": f"Bearer {key or settings.yarngpt_api_key}"})
 
 
 def _json(response: httpx.Response) -> dict | list:
@@ -67,11 +75,16 @@ def _json(response: httpx.Response) -> dict | list:
 
 
 def _call(timeout: float, fn):
-    try:
-        with _client(timeout) as client:
-            return fn(client)
-    except httpx.HTTPError as exc:
-        raise SpeechUnavailable("network", str(exc)) from exc
+    keys = _keys() or [None]
+    for i, key in enumerate(keys):
+        try:
+            with _client(timeout, key) as client:
+                return fn(client)
+        except httpx.HTTPError as exc:
+            raise SpeechUnavailable("network", str(exc)) from exc
+        except SpeechUnavailable as err:
+            if err.code not in _SPENT or i == len(keys) - 1:
+                raise
 
 
 def voices() -> list[dict]:

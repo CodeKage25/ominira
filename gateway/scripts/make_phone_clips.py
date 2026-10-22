@@ -1,15 +1,19 @@
-"""Make the phone line's fixed prompts in Yorùbá, Hausa and Igbo, so a call only uses live YarnGPT for
-lines with a name or an amount in them. English and Pidgin are spoken by Twilio's voice.
+"""Make the phone line's fixed prompts, so a call only uses live YarnGPT for lines with a name or an amount.
 
     set -a; . ../.env; set +a
     uv run python scripts/make_phone_clips.py            # job route
     uv run python scripts/make_phone_clips.py --route prepare
 
-Writes ominira/static/phone/<lang>/<key>.mp3, named as the phone line looks them up. Existing clips are kept.
+Writes ominira/static/phone/<lang>/<key>.ul, 8 kHz μ-law for the live call, in all five languages, and
+<key>.mp3 in Yorùbá, Hausa and Igbo for the step-by-step call (English and Pidgin there are Twilio's voice).
+Needs ffmpeg. Existing clips are kept; an .ul is made from its .mp3 when there is one.
 """
 
 import argparse
+import shutil
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -21,34 +25,69 @@ from ominira.settings import settings  # noqa: E402
 from ominira.speech import yarngpt  # noqa: E402
 
 OUT = Path(__file__).resolve().parents[1] / "ominira" / "static" / "phone"
+LANGS = ("en", "pcm", "yo", "ha", "ig")
+MP3_LANGS = ("yo", "ha", "ig")
+
+
+def prompts(lang: str) -> set[str]:
+    """Fixed lines only: one with {first} has a name in it. A menu line is said only in its own language."""
+    out = set()
+    for key in lines.keys():
+        if not key.startswith("phone_") or "{" in lines._COPY[key].get(lang, lines._COPY[key]["en"]):
+            continue
+        if "_menu_" in key and not key.endswith("_" + lang):
+            continue
+        if key.startswith("phone_menu_") or key in ("phone_account", "phone_confirm", "phone_pin",
+                                                    "phone_pause_keys", "phone_record_hint", "phone_hello"):
+            # The keypad call's own lines: only its Yorùbá, Hausa and Igbo clips are needed.
+            if lang not in MP3_LANGS:
+                continue
+        out.add(lines.say(lang, key))
+    return out
+
+
+def to_ulaw(mp3: bytes) -> bytes:
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / "in.mp3"
+        src.write_bytes(mp3)
+        done = subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(src), "-ar", "8000", "-ac", "1",
+                               "-f", "mulaw", "-"], capture_output=True)
+    if done.returncode != 0 or not done.stdout:
+        raise RuntimeError(done.stderr.decode()[:200])
+    return done.stdout
 
 
 def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--route", choices=("job", "prepare"), default="job")
+    ap.add_argument("--only", nargs="*", default=list(LANGS), choices=LANGS)
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
+    if not shutil.which("ffmpeg"):
+        raise SystemExit("ffmpeg is needed on the PATH.")
     clips.ROUTE = args.route
     if not args.dry_run and not settings.yarngpt_api_key:
         raise SystemExit("YARNGPT_API_KEY is not set.")
     failed = 0
-    for lang in ("yo", "ha", "ig"):
-        # Fixed lines only: one with {first} has a name in it.
-        texts = {lines.say(lang, key) for key in lines.keys()
-                 if key.startswith("phone_") and lang in lines._COPY[key] and "{" not in lines._COPY[key][lang]}
+    for lang in args.only:
         folder = OUT / lang
-        missing = {clips.clip_key(t): t for t in texts if not (folder / f"{clips.clip_key(t)}.mp3").exists()}
+        texts = {clips.clip_key(t): t for t in prompts(lang)}
+        missing = {k: t for k, t in texts.items() if not (folder / f"{k}.ul").exists()}
         print(f"{lang}  {len(texts)} prompts, {len(missing)} to make")
-        if args.dry_run:
+        if args.dry_run or not missing:
             continue
         folder.mkdir(parents=True, exist_ok=True)
         voice, _ = clips.choose_voice(lang)
         for key, text in missing.items():
+            mp3_path = folder / f"{key}.mp3"
             try:
-                (folder / f"{key}.mp3").write_bytes(clips.make(text, lang, voice))
+                mp3 = mp3_path.read_bytes() if mp3_path.exists() else clips.make(text, lang, voice)
+                if lang in MP3_LANGS and not mp3_path.exists():
+                    mp3_path.write_bytes(mp3)
+                (folder / f"{key}.ul").write_bytes(to_ulaw(mp3))
                 print(f"     made  {text[:60]}")
-            except yarngpt.SpeechUnavailable as err:
+            except (yarngpt.SpeechUnavailable, RuntimeError) as err:
                 failed += 1
                 print(f"     FAILED {err}  {text[:60]}")
     return 1 if failed else 0
