@@ -246,7 +246,11 @@ and the co-approver all hold on a call.
 one-time ticket for a WebSocket, and Twilio streams the call's audio both ways. Everything is by voice:
 
 1. The five languages, each offered in its own words: say the language.
-2. The account number, said aloud. The caller's number is then remembered, so the next call starts at 3.
+2. A caller whose number is a customer's starts at 3. Anyone else says an account number and then pulses
+   its PIN; until the PIN passes they hear nothing about the account and nothing changes, and a made-up
+   number sounds the same as a real one. Once it passes, the caller's number is remembered, so the next
+   call starts at 3. A stranger's number may give five account numbers an hour, and an account takes one
+   stranger's PIN an hour, so nobody can learn who banks here or spend the customer's three PIN tries.
 3. The request. The Gateway finds where the caller stops speaking and YarnGPT transcribes it, in all five
    languages. A caller can talk over a prompt; the readback and the PIN instructions they must hear out.
 4. The readback, then "say yes to send it". Then the Pulse PIN: the call counts with ticks from a random
@@ -262,7 +266,9 @@ timeout must cover a call (`--timeout=3600`).
 
 **The step-by-step call** (`PHONE_STREAM=false`, `ominira/routes/phone.py`): the same flow with the keypad
 for the language, the account number, yes or no and a four-digit PIN, Twilio's voice for English and Pidgin,
-and recordings sent to YarnGPT for Yorùbá, Hausa and Igbo. Kept as the fallback.
+and recordings sent to YarnGPT for Yorùbá, Hausa and Igbo. The account number goes straight to the
+customer only from their own number; from any other, the account's PIN is asked first, as on the live call.
+Kept as the fallback.
 
 Every request must carry Twilio's signature, checked with `TWILIO_AUTH_TOKEN`; without the token the line
 answers nothing. Set `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` on the service, and point the number's
