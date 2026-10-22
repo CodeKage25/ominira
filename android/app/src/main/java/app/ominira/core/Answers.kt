@@ -8,8 +8,9 @@ object Answers {
     private val yesWords = setOf(
         // English
         "yes", "yeah", "yea", "yep", "yup", "ok", "okay", "sure", "correct", "right", "alright", "please", "aye",
+        "allow", "agree", "accept",
         // Pidgin
-        "oya", "ehen", "ehn",
+        "oya", "ehen", "ehn", "gree",
         // Yorùbá
         "beeni", "bee", "daadaa",
         // Hausa ("to" left out: it is usually the English word)
@@ -17,7 +18,9 @@ object Answers {
         // Igbo
         "ee", "ehh",
     )
-    private val yesPhrases = listOf("na so", "e correct", "go on", "go ahead", "that is right", "that's right", "talk me through")
+    private val yesPhrases = listOf("na so", "e correct", "go on", "go ahead", "that is right", "that's right", "talk me through",
+        // Agreeing, as said to the consent question. Whole phrases: the "I don't agree" forms differ by one small word.
+        "mo gba", "o dara", "na yarda", "na amince", "ekwere m", "a kwere m", "o di mma")
 
     private val noWords = setOf(
         // English
@@ -31,7 +34,8 @@ object Answers {
         // Igbo
         "mba",
     )
-    private val noPhrases = listOf("read it myself", "read and tap", "i'll read", "i will read", "by myself", "no o")
+    private val noPhrases = listOf("read it myself", "read and tap", "i'll read", "i will read", "by myself", "no o",
+        "mi o gba", "n o gba", "ko dara", "ban yarda", "ban amince", "ekweghi m", "o dighi mma")
 
     // Then yo, ha and ig: the words the screens ask for.
     private val startWords = setOf("start", "ready", "begin", "go", "now", "proceed", "continue", "oya", "bere", "fara", "malite")

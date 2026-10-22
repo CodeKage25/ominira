@@ -179,7 +179,7 @@ fun SonarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
     }
 
     RemindWhileWaiting(session, waiting = phase == 0 && !started) {
-        session.say(if (session.answersByTouch) s.tapToStart else s.sayStartOrTap)
+        prompt.ask(if (session.answersByTouch) s.tapToStart else s.sayStartOrTap)
     }
 
     Page(

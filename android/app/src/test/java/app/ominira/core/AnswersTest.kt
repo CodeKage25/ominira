@@ -10,14 +10,17 @@ class AnswersTest {
 
     @Test
     fun yesInEveryLanguage() {
-        for (yes in listOf("Yes", "yes please", "Okay", "Na so", "Ehen", "Oya", "Bẹ́ẹ̀ni", "beeni", "Eh", "Toh", "Ee", "That's right")) {
+        for (yes in listOf("Yes", "yes please", "Okay", "Na so", "Ehen", "Oya", "Bẹ́ẹ̀ni", "beeni", "Eh", "Toh", "Ee", "That's right",
+                "Allow", "I allow it", "I agree", "I gree",
+                "Mo gbà", "Ó dára", "Na yarda", "Na amince", "Ekwere m", "Ọ dị mma")) {
             assertTrue(yes, Answers.isYes(yes))
         }
     }
 
     @Test
     fun noInEveryLanguage() {
-        for (no in listOf("No", "Nope", "Rárá", "Bẹ́ẹ̀kọ́", "A'a", "A’a", "Mba", "No, I'd rather read it myself", "Read and tap")) {
+        for (no in listOf("No", "Nope", "Rárá", "Bẹ́ẹ̀kọ́", "A'a", "A’a", "Mba", "No, I'd rather read it myself", "Read and tap",
+                "Mi ò gbà", "Ban yarda ba", "Ban amince ba", "Ekweghị m")) {
             assertTrue(no, Answers.isNo(no))
             assertFalse(no, Answers.isYes(no))
         }
