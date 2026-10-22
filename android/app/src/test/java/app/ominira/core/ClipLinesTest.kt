@@ -34,6 +34,14 @@ class ClipLinesTest {
                 Row("Lines.pulseShort", true, Lang.entries.associateWith { Lines.pulseShort(it) }),
                 Row("Lines.practiceStart", true, Lang.entries.associateWith { Lines.practiceStart(it) }),
                 Row("Lines.practiceDone", true, Lang.entries.associateWith { Lines.practiceResult(it, 3) }),
+            ) +
+            // Camera directions take arguments, so they are listed one by one: they must play at once, offline.
+            Aim.entries.flatMap { aim ->
+                listOf(false, true).map { card ->
+                    Row("aim.${aim.name}.${if (card) "card" else "face"}", true, Lang.entries.associateWith { Words.of(it).aim(aim, card) })
+                }
+            } +
+            listOf(
                 // Said in the language just picked, never as an English twin.
                 Row("LanguagePrompts.chosen", false, Lang.entries.associateWith { LanguagePrompts.chosen(it) }),
             )
