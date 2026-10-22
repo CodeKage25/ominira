@@ -34,6 +34,15 @@ class ClipLinesTest {
                 Row("Lines.pulseShort", true, Lang.entries.associateWith { Lines.pulseShort(it) }),
                 Row("Lines.practiceStart", true, Lang.entries.associateWith { Lines.practiceStart(it) }),
                 Row("Lines.practiceDone", true, Lang.entries.associateWith { Lines.practiceResult(it, 3) }),
+            ) +
+            // The demo customers' greetings, morning, afternoon and evening: a name cannot be bundled in general,
+            // but these play with no network on stage.
+            listOf("Ronke", "Kemi", "Tolulope").flatMap { name ->
+                listOf(8, 14, 20).map { hour ->
+                    Row("Lines.greeting.$name.$hour", true, Lang.entries.associateWith { Lines.greeting(it, name, hour) })
+                }
+            } +
+            listOf(
                 Row("Lines.pulseExplainHold", true, Lang.entries.associateWith { Lines.pulseExplain(it, hold = true) }),
                 Row("Lines.pulseShortHold", true, Lang.entries.associateWith { Lines.pulseShort(it, hold = true) }),
                 Row("Lines.practiceStartHold", true, Lang.entries.associateWith { Lines.practiceStart(it, hold = true) }),
