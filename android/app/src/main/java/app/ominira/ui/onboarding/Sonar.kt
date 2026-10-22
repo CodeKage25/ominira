@@ -88,6 +88,8 @@ fun SonarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
             phase = 4
             Tones.play(880.0, 400)
             session.haptics.lock()
+            // A fast lock must not cut off the line still playing: let it finish first.
+            session.speaker.awaitQuiet()
             session.say(s.sayTheseNumbers, digits.joinToString(", "))
             val live = runCatching { session.api.sendSelfie(id, digits) }.getOrDefault(true)
             delay(4_000)

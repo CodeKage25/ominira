@@ -140,6 +140,8 @@ fun IdByEarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
             }
             details = id
             misses = 0
+            // A fast lock must not cut off the line still playing: let it finish first.
+            session.speaker.awaitQuiet()
             if (session.talksFirst) prompt.ask(*idLines(s, id), confirmLine) else session.say(*idLines(s, id))
         }
     }
