@@ -172,13 +172,7 @@ class GatewayOminiraApi(
         }
 
     override suspend fun readIdDocument(sessionId: String, read: IdDetails?): IdDetails = orOffline({ fallback.readIdDocument(sessionId, read) }) {
-        // Only what is known: a name said or typed comes with no card details.
-        val body = read?.let { r ->
-            JSONObject().put("full_name", r.fullName).apply {
-                if (r.ninLast4.isNotBlank()) put("nin_last4", r.ninLast4)
-                if (r.bornOn.isNotBlank()) put("born_on", r.bornOn)
-            }
-        }
+        val body = read?.let { JSONObject().put("full_name", it.fullName).put("nin_last4", it.ninLast4).put("born_on", it.bornOn) }
         val o = call("POST", "/onboarding/$sessionId/id-document", body, auth = false).orTrouble().obj
         IdDetails(o.getString("full_name"), o.text("nin_last4"), o.text("born_on"))
     }

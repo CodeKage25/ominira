@@ -58,7 +58,7 @@ The full account, including how we used AI to build Òmìnira and the risks stil
 |---|---|---|---|
 | Understanding a request ("send twenty thousand to Tolu") | Claude (Anthropic) | Gateway | The request as text, with account numbers and BVNs masked |
 | Speech to text and text to speech, five languages | YarnGPT | YarnGPT's API, called by the Gateway | The customer's voice, or the line to be spoken |
-| Framing the selfie | ML Kit face detection | On the phone, bundled | Camera frames, which never leave the phone |
+| Framing the selfie and reading the ID card | ML Kit face detection and text recognition | On the phone, bundled | Camera frames, which never leave the phone |
 | Hearing a spoken account number on a phone call | Google Speech-to-Text | Google Cloud, called by the Gateway with its own service account | That one utterance. Google's optional data logging is off, so the audio is not kept |
 
 **AI never moves money.** Claude's tools can read a balance, list saved people, look up a name, and prepare a transfer or a card block as a draft. Only the customer's own confirm, with their Pulse PIN, can carry a draft out, through the confirm gate's checks in a fixed order. A model that misunderstands, or is talked into something, can at most prepare a draft the customer then hears and refuses.
@@ -71,7 +71,7 @@ The full account, including how we used AI to build Òmìnira and the risks stil
 - Account numbers and BVNs are replaced with labels such as ACCOUNT_1 before a request reaches Claude, and what is stored for each turn is the masked text.
 
 **Less data leaves the phone.**
-- The selfie is framed on the phone. The app sends only the four liveness digits the customer said back, and the name they said or typed. It never sends an image, and no ID card is asked for.
+- The selfie and the ID card are read on the phone. The app sends the four liveness digits the customer said back, and the name, the last four NIN digits and the date of birth. It never sends an image.
 - The live phone call keeps no audio. Each spoken turn is sent to YarnGPT to be transcribed (the account number to Google Speech-to-Text, which reads digits more reliably over a phone line) and is not stored by the Gateway. The log records how many digits of an account number were heard, never which.
 
 **Protection against scams.**
@@ -127,7 +127,7 @@ The full demo path is in [`android/README.md`](android/README.md) and the script
 
 ## What is simulated
 
-There is no live banking at the hackathon. The Zenith core is a mock that behaves like the real rails (NIP response codes, delays, in-progress transfers, failures on demand) and is swapped for the Zenith sandbox in one place. The selfie uses the phone's real camera, framed on the phone with ML Kit. The customer's name is said or typed, standing in for the name a real bank reads from the BVN record. The liveness check behind the selfie, the NIBSS BVN lookup, the sign-language video call and device passkeys are placeholders. The full list is in each README, and what does not work yet is in [`docs/known-issues.md`](docs/known-issues.md).
+There is no live banking at the hackathon. The Zenith core is a mock that behaves like the real rails (NIP response codes, delays, in-progress transfers, failures on demand) and is swapped for the Zenith sandbox in one place. The selfie and the ID card use the phone's real cameras, read on the phone with ML Kit; the liveness and document checks behind them, the NIBSS BVN lookup, the sign-language video call and device passkeys are placeholders. The full list is in each README, and what does not work yet is in [`docs/known-issues.md`](docs/known-issues.md).
 
 ## Credits
 

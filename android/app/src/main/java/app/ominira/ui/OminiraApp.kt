@@ -22,13 +22,13 @@ import app.ominira.ui.money.BalanceScreen
 import app.ominira.ui.money.BlockCardScreen
 import app.ominira.ui.money.SendMoneyScreen
 import app.ominira.ui.onboarding.BvnScreen
+import app.ominira.ui.onboarding.IdByEarScreen
 import app.ominira.ui.onboarding.LanguageScreen
 import app.ominira.ui.onboarding.SetPinScreen
 import app.ominira.ui.onboarding.SonarScreen
 import app.ominira.ui.onboarding.UnlockScreen
 import app.ominira.ui.onboarding.WaysInScreen
 import app.ominira.ui.onboarding.WelcomeScreen
-import app.ominira.ui.onboarding.YourNameScreen
 import app.ominira.ui.theme.OminiraTheme
 import app.ominira.voice.LocalVoice
 import app.ominira.voice.rememberVoiceHost
@@ -38,7 +38,7 @@ object Route {
     const val WELCOME = "welcome"
     const val WAYS_IN = "ways-in"
     const val SONAR = "sonar"
-    const val NAME = "name"
+    const val ID = "id"
     const val BVN = "bvn"
     const val UNLOCK = "unlock"
     const val SET_PIN = "set-pin"
@@ -121,8 +121,8 @@ fun OminiraApp(session: Session) {
                     WelcomeScreen(session, onTalk = { nav.navigate(Route.SONAR) }, onRead = { nav.navigate(Route.WAYS_IN) })
                 }
                 composable(Route.WAYS_IN) { WaysInScreen(session, onNext = { nav.navigate(Route.SONAR) }) }
-                composable(Route.SONAR) { SonarScreen(session, onBack = { back() }, onNext = { nav.navigate(Route.NAME) }) }
-                composable(Route.NAME) { YourNameScreen(session, onBack = { back() }, onNext = { nav.navigate(Route.BVN) }) }
+                composable(Route.SONAR) { SonarScreen(session, onBack = { back() }, onNext = { nav.navigate(Route.ID) }) }
+                composable(Route.ID) { IdByEarScreen(session, onBack = { back() }, onNext = { nav.navigate(Route.BVN) }) }
                 composable(Route.BVN) { BvnScreen(session, onBack = { back() }, onNext = { nav.navigate(Route.SET_PIN) }) }
                 // A new customer chooses their own PIN, so they go home from here, not through sign in.
                 composable(Route.SET_PIN) {
