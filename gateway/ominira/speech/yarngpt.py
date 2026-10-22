@@ -47,8 +47,15 @@ def enabled() -> bool:
 _SPENT = {"RATE_LIMITED", "QUOTA_EXCEEDED", "http_402", "http_429"}
 
 
+_spent_until: dict[str, float] = {}
+SPENT_REST_S = 1800
+
+
 def _keys() -> list[str]:
-    return [k for k in (settings.yarngpt_api_key, settings.yarngpt_api_key2) if k]
+    """Configured keys, a key that just ran out tried last: each refusal costs a round trip."""
+    keys = [k for k in (settings.yarngpt_api_key, settings.yarngpt_api_key2) if k]
+    now = time.monotonic()
+    return sorted(keys, key=lambda k: _spent_until.get(k, 0) > now)
 
 
 def _client(timeout: float, key: str | None = None) -> httpx.Client:
@@ -83,6 +90,8 @@ def _call(timeout: float, fn):
         except httpx.HTTPError as exc:
             raise SpeechUnavailable("network", str(exc)) from exc
         except SpeechUnavailable as err:
+            if err.code in _SPENT and key:
+                _spent_until[key] = time.monotonic() + SPENT_REST_S
             if err.code not in _SPENT or i == len(keys) - 1:
                 raise
 

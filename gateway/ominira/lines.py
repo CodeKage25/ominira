@@ -499,8 +499,13 @@ _COPY: dict[str, dict[str, str]] = {
         "ha": "Don Allah ku faɗi lambar asusunku ta Zenith mai lambobi goma.",
         "ig": "Biko kwuo nọmba akaụntụ Zenith gị nwere nọmba iri.",
     },
-    "phone_v_hi": {"en": "Hello {first}.", "pcm": "How far {first}.", "yo": "Ẹ n lẹ {first}.", "ha": "Sannu {first}.",
-                   "ig": "Nnọọ {first}."},
+    "phone_v_hi": {
+        "en": "Hello {first}, welcome back to Zenith.",
+        "pcm": "How far {first}, welcome back to Zenith.",
+        "yo": "Ẹ n lẹ {first}, ẹ kú àbọ̀ padà sí Zenith.",
+        "ha": "Sannu {first}, barka da dawowa Zenith.",
+        "ig": "Nnọọ {first}, nnọọ ọzọ na Zenith.",
+    },
     "phone_v_what": {
         "en": "What would you like to do? You can say: send money to Tolu, or what is my balance.",
         "pcm": "Wetin you wan do? You fit talk: send money give Tolu, or how much I get.",

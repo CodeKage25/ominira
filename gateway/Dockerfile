@@ -2,6 +2,8 @@
 FROM python:3.12-slim
 
 RUN pip install --no-cache-dir uv==0.11.32
+# ffmpeg turns YarnGPT's MP3 into the live call's 8 kHz μ-law: MP3 arrives about three times sooner than WAV.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /srv
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never

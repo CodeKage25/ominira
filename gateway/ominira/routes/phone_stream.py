@@ -10,6 +10,7 @@ import hashlib
 import json
 import logging
 import secrets
+import shutil
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
@@ -79,6 +80,17 @@ def _voice_text(text: str) -> str:
     return text
 
 
+def has_clip(lang: str, text: str) -> bool:
+    return (CLIPS / lang / f"{clip_key(text)}.ul").is_file()
+
+
+def _fetch(said: str, lang: str) -> bytes:
+    """MP3 when ffmpeg is here (about three times sooner), else WAV."""
+    if shutil.which("ffmpeg"):
+        return phone_audio.mp3_to_ulaw(yarngpt.download(yarngpt.prepare(said, lang, output_format="mp3")["audio_url"]))
+    return phone_audio.wav_to_ulaw(yarngpt.download(yarngpt.prepare(said, lang, output_format="wav")["audio_url"]))
+
+
 def speech(lang: str, text: str) -> bytes:
     """Phone audio for one line: a bundled clip, else YarnGPT live (the daily calls, then credits). Blocking."""
     path = CLIPS / lang / f"{clip_key(text)}.ul"
@@ -93,7 +105,7 @@ def speech(lang: str, text: str) -> bytes:
     said = _voice_text(text)
     audio = b""
     try:
-        audio = phone_audio.wav_to_ulaw(yarngpt.download(yarngpt.prepare(said, lang, output_format="wav")["audio_url"]))
+        audio = _fetch(said, lang)
     except (yarngpt.SpeechUnavailable, ValueError) as err:
         log.warning("live speech on the prepare route failed: %s", err)
         try:
@@ -246,7 +258,17 @@ class Line:
     async def say(self, *texts: str, barge: bool = True) -> None:
         """Say lines in the caller's language, then wait until they have played. With barge, the caller may
         talk over them; without, anything said meanwhile is dropped."""
-        texts = tuple(t for t in texts if t and t.strip())
+        # Lines with no clip go to YarnGPT together: one request is quicker, and a short line alone is refused.
+        merged: list[str] = []
+        live_last = False
+        for t in (t.strip() for t in texts if t and t.strip()):
+            live = not has_clip(self.lang, t)
+            if live and live_last:
+                merged[-1] += " " + t
+            else:
+                merged.append(t)
+            live_last = live
+        texts = tuple(merged)
         if not texts:
             return
         clips = await self.busy(asyncio.gather(*(asyncio.to_thread(speech, self.lang, t) for t in texts)))

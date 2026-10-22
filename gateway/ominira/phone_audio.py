@@ -2,6 +2,8 @@
 
 import io
 import math
+import shutil
+import subprocess
 import sys
 import wave
 from array import array
@@ -85,6 +87,17 @@ def wav_to_ulaw(wav: bytes) -> bytes:
             out.append(sum(chunk) // len(chunk))
         s = array("h", out)
     return encode(_pcm(s))
+
+
+def mp3_to_ulaw(mp3: bytes) -> bytes:
+    """Needs ffmpeg; ValueError without it or on bad audio."""
+    if not shutil.which("ffmpeg"):
+        raise ValueError("no ffmpeg")
+    done = subprocess.run(["ffmpeg", "-v", "error", "-i", "pipe:0", "-ar", str(RATE), "-ac", "1", "-f", "mulaw",
+                           "pipe:1"], input=mp3, capture_output=True, timeout=30)
+    if done.returncode != 0 or not done.stdout:
+        raise ValueError(done.stderr.decode(errors="replace")[:200])
+    return done.stdout
 
 
 def ulaw_to_wav(ulaw: bytes, rate: int = 16000) -> bytes:
