@@ -67,6 +67,7 @@ class Session(app: Application) : AndroidViewModel(app) {
                     store.edit().putString(K_TOKEN, it).remove(K_PERSON).apply()
                     personKey = null
                 },
+                customerLang = { lang },
             )
         }
         else FakeOminiraApi(lang = Lang.fromCode(store.getString(K_LANG, null)) ?: Lang.En)
@@ -108,6 +109,8 @@ class Session(app: Application) : AndroidViewModel(app) {
     // Hold to count, let go at the digit; off is tap to start, tap at the digit.
     var pulseHold by mutableStateOf(store.getBoolean(K_HOLD, true))
         private set
+    // TalkBack's double tap is a tap: holding is only offered without it.
+    val holdToPulse: Boolean get() = pulseHold && !screenReaderOn()
     var captions by mutableStateOf(store.getBoolean(K_CAPTIONS, true))
         private set
 
@@ -394,10 +397,16 @@ class Session(app: Application) : AndroidViewModel(app) {
         speaker.speak(lang, lines.toList())
     }
 
+    // Holding is explained in full at least once, even to someone who learned tapping first.
     fun pulseIntro(): String {
+        val hold = holdToPulse
         val seen = store.getInt(K_PULSE_INTROS, 0)
-        store.edit().putInt(K_PULSE_INTROS, seen + 1).apply()
-        return if (seen < 3) Lines.pulseExplain(voiceLang, pulseHold) else Lines.pulseShort(voiceLang, pulseHold)
+        val heldBefore = store.getInt(K_HOLD_INTROS, 0)
+        val edit = store.edit().putInt(K_PULSE_INTROS, seen + 1)
+        if (hold) edit.putInt(K_HOLD_INTROS, heldBefore + 1)
+        edit.apply()
+        val full = seen < 3 || (hold && heldBefore == 0)
+        return if (full) Lines.pulseExplain(voiceLang, hold) else Lines.pulseShort(voiceLang, hold)
     }
 
     fun greeting(language: Lang = lang): String = Lines.greeting(language, customerName, Calendar.getInstance().get(Calendar.HOUR_OF_DAY))
@@ -436,5 +445,6 @@ class Session(app: Application) : AndroidViewModel(app) {
         const val K_CAPTIONS = "captions"
         const val K_SCAN = "scan"
         const val K_PULSE_INTROS = "pulseIntros"
+        const val K_HOLD_INTROS = "holdIntros"
     }
 }

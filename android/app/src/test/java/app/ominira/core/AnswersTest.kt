@@ -10,7 +10,7 @@ class AnswersTest {
 
     @Test
     fun yesInEveryLanguage() {
-        for (yes in listOf("Yes", "yes please", "Okay", "Na so", "Ehen", "Oya", "Bẹ́ẹ̀ni", "beeni", "Eh", "Toh", "Ee", "That's right",
+        for (yes in listOf("Yes", "yes please", "Okay", "Na so", "Ehen", "Oya", "Bẹ́ẹ̀ni", "beeni", "Eh", "Toh", "Ee", "Ee, ee", "That's right",
                 "Allow", "I allow it", "I agree", "I gree",
                 "Mo gbà", "Ó dára", "Na yarda", "Na amince", "Ekwere m", "Ọ dị mma")) {
             assertTrue(yes, Answers.isYes(yes))
@@ -21,6 +21,43 @@ class AnswersTest {
     fun noInEveryLanguage() {
         for (no in listOf("No", "Nope", "Rárá", "Bẹ́ẹ̀kọ́", "A'a", "A’a", "Mba", "No, I'd rather read it myself", "Read and tap",
                 "Mi ò gbà", "Ban yarda ba", "Ban amince ba", "Ekweghị m")) {
+            assertTrue(no, Answers.isNo(no))
+            assertFalse(no, Answers.isYes(no))
+        }
+    }
+
+    @Test
+    fun aNoBuiltOnAYesWordIsStillNo() {
+        for (no in listOf("Bẹ́ẹ̀ kọ́", "bee ko", "beeko", "Rara", "A a", "Aʼa", "a'a", "Babu", "Mba", "No o")) {
+            assertTrue(no, Answers.isNo(no))
+            assertFalse(no, Answers.isYes(no))
+            assertFalse(no, Answers.isStart(no))
+        }
+    }
+
+    @Test
+    fun sureWithANoInsideIsYes() {
+        for (yes in listOf("No wahala", "no wahala o", "No problem", "No shaking", "No qualms", "Babu matsala")) {
+            assertFalse(yes, Answers.isNo(yes))
+            assertTrue(yes, Answers.isYes(yes))
+        }
+        assertTrue(Answers.isNo("No, no problem for me to read it myself"))
+    }
+
+    @Test
+    fun eachLanguageSaysYesAndNo() {
+        val pairs = listOf(
+            "Yes" to "No",
+            "Oya" to "Abeg no",
+            "Bẹ́ẹ̀ni" to "Bẹ́ẹ̀ kọ́",
+            "Bẹ́ẹ̀ ni" to "Rárá",
+            "Eh" to "A'a",
+            "Na'am" to "Babu",
+            "Ee" to "Mba",
+        )
+        for ((yes, no) in pairs) {
+            assertTrue(yes, Answers.isYes(yes))
+            assertFalse(yes, Answers.isNo(yes))
             assertTrue(no, Answers.isNo(no))
             assertFalse(no, Answers.isYes(no))
         }
