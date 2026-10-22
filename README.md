@@ -46,6 +46,47 @@ Android app  ──HTTPS──>  Gateway  ──>  Zenith core (a mock now, the 
 | [`gateway/`](gateway/) | The service between the app and the bank | Python, FastAPI, SQLAlchemy, uv |
 | [`docs/api.md`](docs/api.md) | The API contract both sides build to | |
 
+## Responsible use of AI
+
+Òmìnira serves people who are often targeted by fraud and who may not be able to check a screen. So the AI is kept to understanding and speaking, and everything that touches money stays in plain, tested code.
+
+**Where AI is used**
+
+| What | Model | Where it runs | What it sees |
+|---|---|---|---|
+| Understanding a request ("send twenty thousand to Tolu") | Claude (Anthropic) | Gateway | The request as text, with account numbers and BVNs masked |
+| Speech to text and text to speech, five languages | YarnGPT | YarnGPT's API, called by the Gateway | The customer's voice, or the line to be spoken |
+| Framing the selfie and reading the ID card | ML Kit face detection and text recognition | On the phone, bundled | Camera frames, which never leave the phone |
+
+**AI never moves money.** Claude's tools can read a balance, list saved people, look up a name, and prepare a transfer or a card block as a draft. Only the customer's own confirm, with their Pulse PIN, can carry a draft out, through the confirm gate's checks in a fixed order. A model that misunderstands, or is talked into something, can at most prepare a draft the customer then hears and refuses.
+
+**The customer hears facts, not model wording.** The readback before money moves (who, which bank, the last four digits, the amount) is built from the bank's own name enquiry, in fixed wording. The server refuses a confirm unless the customer heard the current readback.
+
+**The model never sees secrets.**
+- The Pulse PIN is never spoken, typed or shown. It is sealed on the phone the moment it is entered and goes only to the bank.
+- If a customer starts to say a PIN aloud, the turn is stopped before any model sees it, and the customer is told never to say it.
+- Account numbers and BVNs are replaced with labels such as ACCOUNT_1 before a request reaches Claude, and what is stored for each turn is the masked text.
+
+**Less data leaves the phone.**
+- The selfie and the ID card are read on the phone. The app sends the four liveness digits the customer said back, and the name, the last four NIN digits and the date of birth. It never sends an image.
+- The live phone call keeps no audio. Each spoken turn is sent to YarnGPT to be transcribed and is not stored by the Gateway.
+
+**Protection against scams.**
+- A large transfer to someone new during a phone call pauses and asks whether someone is telling the customer to do this. A phone call to the bank's own line always counts as a call.
+- A trusted co-approver can be required for large transfers. They approve or decline on their own phone and never see the PIN or touch the money.
+- Switching any protection off needs the PIN.
+
+**It works without the AI.** If Claude is unavailable or not configured, a keyword parser takes the request in all five languages, and each turn records which one answered. Without YarnGPT, the app speaks with the phone's own voice and bundled clips.
+
+**Accountability.** Every draft, confirm, refusal, pause and approval is written to an append-only, hash-chained audit log.
+
+**Known limits**
+- Speech recognition is less accurate for some accents, for noisy lines and for Yorùbá, Hausa and Igbo. The readback and the yes or no that follows are there to catch a mishearing before money moves.
+- The Yorùbá, Hausa and Igbo wording is our draft and has not yet been reviewed by native speakers. That review is planned before any pilot.
+- The voices are synthetic.
+- The selfie's liveness check and the document check are placeholders. A real deployment needs certified checks and the bank's own review.
+- The step-by-step phone line kept as a fallback records Yorùbá, Hausa and Igbo requests on Twilio before transcribing them. The live call does not.
+
 ## Run it
 
 **Gateway**
