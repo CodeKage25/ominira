@@ -8,11 +8,15 @@ import threading
 import pytest
 
 from ominira import answers, phone_audio
+from ominira.database import SessionFactory
+from ominira.demo_world import CUSTOMER_ID
 from ominira.routes import phone, phone_stream
 from ominira.settings import settings
-from tests.conftest import balance
+from ominira.tables import Customer
+from tests.conftest import balance, pin_tries_left
 
 TOKEN = "test-twilio-token"
+PIN = [2, 0, 7, 5]
 LOUD = phone_audio.tone(500, 20, 0.4)
 QUIET = phone_audio.silence(20)
 
@@ -93,19 +97,20 @@ def live(client, monkeypatch):
 
 def test_a_whole_call_by_voice(live, client):
     before = balance(client)
+    # A number the bank does not know: the account's PIN first, then the transfer's.
     live(["English", "two oh eight one two three four five six seven", "send twenty thousand to Tolu", "yes",
-          "goodbye"], pin=[2, 0, 7, 5])
+          "goodbye"], pin=PIN + PIN)
     assert balance(client) == before - 2_000_000
 
 
 def test_saying_no_sends_nothing(live, client):
     before = balance(client)
-    live(["Pidgin", "2081234567", "send twenty thousand to Tolu", "no", "bye"])
+    live(["Pidgin", "2081234567", "send twenty thousand to Tolu", "no", "bye"], pin=PIN)
     assert balance(client) == before
 
 
 def test_a_known_number_skips_the_account(live, client):
-    live(["English", "2081234567", "goodbye"], caller="+2348031111111")
+    live(["English", "2081234567", "goodbye"], pin=PIN, caller="+2348031111111")
     before = balance(client)
     # Next call from the same number: straight to the request.
     live(["send twenty thousand to Tolu", "yes", "goodbye"], pin=[2, 0, 7, 5], caller="+2348031111111")
@@ -114,8 +119,36 @@ def test_a_known_number_skips_the_account(live, client):
 
 def test_a_wrong_pin_moves_nothing(live, client):
     before = balance(client)
-    live(["English", "2081234567", "send twenty thousand to Tolu", "yes", "goodbye"], pin=[1, 1, 1, 1])
+    live(["English", "2081234567", "send twenty thousand to Tolu", "yes", "goodbye"], pin=PIN + [1, 1, 1, 1])
     assert balance(client) == before
+
+
+def _spoken(monkeypatch) -> list[str]:
+    said: list[str] = []
+    monkeypatch.setattr(phone_stream, "speech", lambda lang, text: said.append(text) or phone_audio.silence(40))
+    return said
+
+
+def _ronke() -> tuple[str, str]:
+    with SessionFactory() as db:
+        customer = db.get(Customer, CUSTOMER_ID)
+        return customer.phone, customer.lang
+
+
+def test_a_stranger_with_the_wrong_pin_hears_nothing_and_changes_nothing(live, client, monkeypatch):
+    spoken = _spoken(monkeypatch)
+    before = _ronke()
+    live(["Yoruba", "2081234567"], pin=[1, 1, 1, 1])
+    assert not any("Ronke" in s for s in spoken)
+    assert any("forúkọ sílẹ̀" in s for s in spoken)  # the Yorùbá "call from your registered number"
+    assert _ronke() == before and pin_tries_left(client) == 2
+
+
+def test_a_made_up_account_on_the_live_line_ends_the_same_way(live, monkeypatch):
+    spoken = _spoken(monkeypatch)
+    live(["English", "1234567890"], pin=PIN)
+    assert any(s.startswith("Now your Pulse PIN") for s in spoken)
+    assert any("registered phone number" in s for s in spoken) and not any("Hello" in s for s in spoken)
 
 
 def test_a_stream_without_a_ticket_is_refused(client):

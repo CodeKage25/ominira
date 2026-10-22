@@ -2,11 +2,16 @@
 
 import pytest
 
+from ominira.database import SessionFactory
+from ominira.demo_world import CUSTOMER_ID
 from ominira.routes import phone
 from ominira.settings import settings
-from tests.conftest import balance
+from ominira.tables import Customer
+from tests.conftest import balance, pin_tries_left
 
 TOKEN = "test-twilio-token"
+RONKE_PHONE = "+2348031234567"
+STRANGER = "+2348039999999"
 
 
 @pytest.fixture
@@ -17,7 +22,7 @@ def line(client, monkeypatch):
     phone._calls.clear()
 
     def post(path: str, **form) -> str:
-        form = {"CallSid": "CA1", **{k: str(v) for k, v in form.items()}}
+        form = {"CallSid": "CA1", "From": RONKE_PHONE, **{k: str(v) for k, v in form.items()}}
         signature = phone._signature("http://testserver" + path, form)
         r = client.post(path, data=form, headers={"X-Twilio-Signature": signature})
         assert r.status_code == 200, r.text
@@ -77,9 +82,82 @@ def test_a_wrong_pin_asks_again_and_moves_nothing(line, client):
     assert balance(client) == before
 
 
-def test_an_unknown_account_is_asked_for_again(line):
+def test_a_short_account_number_is_asked_for_again(line):
     line("/phone/language", Digits=1)
-    assert "I could not find that account." in line("/phone/account", Digits="1234567890")
+    assert "I could not find that account." in line("/phone/account", Digits="12345")
+
+
+def _ronke() -> tuple[str, str]:
+    with SessionFactory() as db:
+        customer = db.get(Customer, CUSTOMER_ID)
+        return customer.phone, customer.lang
+
+
+def test_a_stranger_hears_nothing_until_the_pin_passes_then_is_known(line):
+    line("/phone/language", Digits=3, From=STRANGER)
+    asked = line("/phone/account", Digits="2081234567", From=STRANGER)
+    assert "Ronke" not in asked and 'action="/phone/caller"' in asked
+    assert _ronke() == (RONKE_PHONE, "en")  # nothing changed yet
+    hello = line("/phone/caller", Digits="2075", From=STRANGER)
+    assert "Ronke" in hello and "<Record " in hello
+    assert _ronke() == (STRANGER, "yo")
+    # The next call from that number is known: straight to Ronke, no PIN first.
+    line("/phone/language", Digits=1, CallSid="CA2", From=STRANGER)
+    assert "Hello Ronke." in line("/phone/account", Digits="2081234567", CallSid="CA2", From=STRANGER)
+
+
+def test_a_made_up_account_sounds_like_a_real_one(line):
+    line("/phone/language", Digits=1, From=STRANGER)
+    real = line("/phone/account", Digits="2081234567", From=STRANGER)
+    line("/phone/language", Digits=1, CallSid="CA2", From=STRANGER)
+    assert line("/phone/account", Digits="1234567890", CallSid="CA2", From=STRANGER) == real
+    refused = line("/phone/caller", Digits="2075", CallSid="CA2", From=STRANGER)
+    assert "registered phone number" in refused and "<Hangup/>" in refused
+
+
+def test_strangers_get_one_pin_try_an_hour_so_the_customer_is_not_locked_out(line, client):
+    line("/phone/language", Digits=1, From=STRANGER)
+    line("/phone/account", Digits="2081234567", From=STRANGER)
+    wrong = line("/phone/caller", Digits="1111", From=STRANGER)
+    assert "registered phone number" in wrong and "<Hangup/>" in wrong and "Ronke" not in wrong
+    assert pin_tries_left(client) == 2
+    # Another number, even with the right PIN: the account has had its stranger's try this hour.
+    other = "+2348038888888"
+    line("/phone/language", Digits=1, CallSid="CA2", From=other)
+    line("/phone/account", Digits="2081234567", CallSid="CA2", From=other)
+    assert "registered phone number" in line("/phone/caller", Digits="2075", CallSid="CA2", From=other)
+    assert pin_tries_left(client) == 2 and _ronke() == (RONKE_PHONE, "en")
+    # Ronke from her own number is unaffected.
+    line("/phone/language", Digits=1, CallSid="CA3")
+    assert "Hello Ronke." in line("/phone/account", Digits="2081234567", CallSid="CA3")
+
+
+def test_a_stranger_may_try_five_account_numbers_an_hour(line):
+    for i in range(5):
+        line("/phone/language", Digits=1, CallSid=f"CA{i}", From=STRANGER)
+        assert 'action="/phone/caller"' in line("/phone/account", Digits=f"200000000{i}", CallSid=f"CA{i}",
+                                                From=STRANGER)
+    line("/phone/language", Digits=1, CallSid="CA9", From=STRANGER)
+    sixth = line("/phone/account", Digits="2081234567", CallSid="CA9", From=STRANGER)
+    assert "registered phone number" in sixth and "<Hangup/>" in sixth and 'action="/phone/caller"' not in sixth
+
+
+def test_the_slow_work_of_a_call_runs_off_the_event_loop(line, monkeypatch):
+    import asyncio
+
+    from ominira.assistant import run_turn
+
+    def turn(*args, **kwargs):
+        with pytest.raises(RuntimeError):
+            asyncio.get_running_loop()  # a worker thread has none
+        seen.append(True)
+        return run_turn(*args, **kwargs)
+    seen: list[bool] = []
+    monkeypatch.setattr(phone, "run_turn", turn)
+    line("/phone/language", Digits=1)
+    line("/phone/account", Digits="2081234567")
+    line("/phone/heard", SpeechResult="what is my balance")
+    assert seen == [True]
 
 
 def test_yoruba_prompts_are_in_yoruba(line):

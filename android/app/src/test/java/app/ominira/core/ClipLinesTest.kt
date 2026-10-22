@@ -37,6 +37,7 @@ class ClipLinesTest {
                 Row("Lines.pulseExplainHold", true, Lang.entries.associateWith { Lines.pulseExplain(it, hold = true) }),
                 Row("Lines.pulseShortHold", true, Lang.entries.associateWith { Lines.pulseShort(it, hold = true) }),
                 Row("Lines.practiceStartHold", true, Lang.entries.associateWith { Lines.practiceStart(it, hold = true) }),
+                Row("Lines.holdTooSoon", true, Lang.entries.associateWith { Lines.holdTooSoon(it) }),
             ) +
             // Camera directions take arguments, so they are listed one by one: they must play at once, offline.
             Aim.entries.flatMap { aim ->

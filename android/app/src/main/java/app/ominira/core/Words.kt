@@ -1121,6 +1121,94 @@ class Words private constructor(val lang: Lang) {
     )
     val pauseFull get() = "$pauseQuestion " + t("Nothing has been sent.", "Nothing don comot.", "Kò sí owó tó tíì lọ.", "Ba a aika komai ba tukuna.", "Ọ dịbeghị ihe e zigara.")
 
+    // Gateway answers with no line of their own
+    val couldNotPrepareBlock get() = t(
+        "I could not prepare blocking that card. Nothing has changed.",
+        "I no fit prepare to block that card. Nothing don change.",
+        "Mi ò lè ṣètò láti dí káàdì yẹn. Kò sí ohun tó yí padà.",
+        "Ban iya shirya toshe wannan katin ba. Babu abin da ya canza.",
+        "Enweghị m ike ịkwadebe igbochi kaadị ahụ. Ọ dịghị ihe gbanwere.",
+    )
+    val changedNothingSent get() = t(
+        "Something changed since I read it to you. Nothing was sent.",
+        "Something don change since I read am give you. Nothing comot.",
+        "Nǹkan kan ti yí padà láti ìgbà tí mo kà á fún yín. Kò sí owó tó lọ.",
+        "Wani abu ya canza tun da na karanta muku. Ba a aika komai ba.",
+        "Ihe gbanwere kemgbe m gụọrọ gị ya. Ọ dịghị ihe e zigara.",
+    )
+    val didNotGoThrough get() = t(
+        "That did not go through. Nothing was sent.",
+        "E no go through. Nothing comot.",
+        "Kò ṣeé ṣe. Kò sí owó tó lọ.",
+        "Hakan bai yiwu ba. Ba a aika komai ba.",
+        "Ọ gaghị nke ọma. Ọ dịghị ihe e zigara.",
+    )
+    val bankBusy get() = t(
+        "The bank is busy. Nothing was sent. Try again in a minute.",
+        "The bank dey busy. Nothing comot. Try again after one minute.",
+        "Báǹkì ń ṣiṣẹ́ lọ́wọ́. Kò sí owó tó lọ. Ẹ tún gbìyànjú lẹ́yìn ìṣẹ́jú kan.",
+        "Banki yana da aiki sosai. Ba a aika komai ba. Ku sake gwadawa bayan minti ɗaya.",
+        "Ụlọ akụ nọ n'ọrụ. Ọ dịghị ihe e zigara. Nwaa ọzọ mgbe nkeji gachara.",
+    )
+    val bankDidNotTake get() = t(
+        "The bank did not take it. Nothing was sent. You can try again.",
+        "The bank no collect am. Nothing comot. You fit try again.",
+        "Báǹkì kò gbà á. Kò sí owó tó lọ. Ẹ lè tún gbìyànjú.",
+        "Banki bai karɓa ba. Ba a aika komai ba. Kuna iya sake gwadawa.",
+        "Ụlọ akụ anabataghị ya. Ọ dịghị ihe e zigara. Ị nwere ike ịnwa ọzọ.",
+    )
+    val stillWithApprover get() = t(
+        "Waiting for your approver. Nothing has moved yet.",
+        "We dey wait for your approver. Nothing don move yet.",
+        "À ń dúró de ẹni tó ń fọwọ́ sí i. Kò sí owó tó tíì lọ.",
+        "Ana jiran mai amincewa. Ba a motsa komai ba tukuna.",
+        "Anyị na-eche onye na-akwado. Ọ dịbeghị ihe gara.",
+    )
+    val approvedSent get() = t("Approved and sent.", "Dem don approve am, e don go.", "Wọ́n ti fọwọ́ sí i, ó sì ti lọ.", "An amince kuma an aika.", "Akwadola ya, ezigakwala ya.")
+    val approverSaidNo get() = t(
+        "Your approver said no. Nothing was sent.",
+        "Your approver talk no. Nothing comot.",
+        "Ẹni tó ń fọwọ́ sí i sọ pé rárá. Kò sí owó tó lọ.",
+        "Mai amincewa ya ce a'a. Ba a aika komai ba.",
+        "Onye na-akwado kwuru mba. Ọ dịghị ihe e zigara.",
+    )
+    val approvalExpired get() = t(
+        "Your approver did not answer in time. Nothing was sent.",
+        "Your approver no answer on time. Nothing comot.",
+        "Ẹni tó ń fọwọ́ sí i kò dáhùn lásìkò. Kò sí owó tó lọ.",
+        "Mai amincewa bai amsa a kan lokaci ba. Ba a aika komai ba.",
+        "Onye na-akwado azaghị n'oge. Ọ dịghị ihe e zigara.",
+    )
+    val approverUnreachable get() = t(
+        "I cannot reach the bank to hear your approver's answer. Do not send it again. Check your balance in a few minutes.",
+        "I no fit reach the bank to hear wetin your approver talk. No send am again. Check your balance after some minutes.",
+        "Mi ò lè dé ọ̀dọ̀ báǹkì láti gbọ́ èsì ẹni tó ń fọwọ́ sí i. Ẹ má tún fi ránṣẹ́ mọ́. Ẹ yẹ owó inú àkáǹtì yín wò ní ìṣẹ́jú díẹ̀.",
+        "Ban iya isa ga banki don jin amsar mai amincewa ba. Kada ku sake aikawa. Ku duba kuɗin asusunku bayan 'yan mintuna.",
+        "Enweghị m ike iru ụlọ akụ ịnụ azịza onye na-akwado. Ezigala ya ọzọ. Lelee ego dị na akaụntụ gị n'ime nkeji ole na ole.",
+    )
+    // Money may have moved: these never say nothing was sent.
+    val unsureSent get() = t(
+        "I could not tell if it went through. Do not send it again. Check your balance in a minute.",
+        "I no sure if e don go. No send am again. Check your balance after one minute.",
+        "Mi ò mọ̀ bóyá ó ti lọ. Ẹ má tún fi ránṣẹ́ mọ́. Ẹ yẹ owó inú àkáǹtì yín wò lẹ́yìn ìṣẹ́jú kan.",
+        "Ban tabbata ko ya tafi ba. Kada ku sake aikawa. Ku duba kuɗin asusunku bayan minti ɗaya.",
+        "Amaghị m ma ọ gara. Ezigala ya ọzọ. Lelee ego dị na akaụntụ gị mgbe nkeji gachara.",
+    )
+    val unsureDone get() = t(
+        "I could not tell if it went through. Do not do it again. Check again in a minute.",
+        "I no sure if e don go through. No do am again. Check again after one minute.",
+        "Mi ò mọ̀ bóyá ó ti ṣẹlẹ̀. Ẹ má tún ṣe é mọ́. Ẹ tún yẹ̀ ẹ́ wò lẹ́yìn ìṣẹ́jú kan.",
+        "Ban tabbata ko ya yiwu ba. Kada ku sake yi. Ku sake duba bayan minti ɗaya.",
+        "Amaghị m ma o mere. Emela ya ọzọ. Lelee ọzọ mgbe nkeji gachara.",
+    )
+    val stillWorking get() = t(
+        "The bank is still working on it. Do not do it again. Check again in a few minutes.",
+        "The bank still dey work on am. No do am again. Check again after some minutes.",
+        "Báǹkì ṣì ń ṣiṣẹ́ lé e lórí. Ẹ má tún ṣe é mọ́. Ẹ tún yẹ̀ ẹ́ wò ní ìṣẹ́jú díẹ̀.",
+        "Banki yana kan aikinsa har yanzu. Kada ku sake yi. Ku sake duba bayan 'yan mintuna.",
+        "Ụlọ akụ ka na-arụ ọrụ na ya. Emela ya ọzọ. Lelee ọzọ n'ime nkeji ole na ole.",
+    )
+
     // Voice dock and the commands it answers on the phone
     val speak get() = t("Speak", "Talk", "Sọ̀rọ̀", "Yi magana", "Kwuo okwu")
     val nothingToRepeat get() = t("I have not said anything yet.", "I never talk anything yet.", "Mi ò tíì sọ nǹkankan.", "Ban faɗi komai ba tukuna.", "Ekwubeghị m ihe ọ bụla.")

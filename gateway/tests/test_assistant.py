@@ -51,6 +51,48 @@ def test_ordinary_turns_are_not_pins(text):
     assert not guard.spoken_pin(text)
 
 
+@pytest.mark.parametrize("text,is_pin", [
+    ("my PIN is 2,075", True),
+    ("my pin is 2.075", True),
+    ("PIN2075", True),
+    ("my pin is twenty seventy five", True),
+    ("My P.I.N. is 2075", True),
+    ("pin of 2075", True),
+    ("the PIN, which I will tell you now, is 2075", True),
+    ("lambar sirrina 2075", True),
+    ("nọmba nzuzo m bụ 2075", True),
+    ("pin 2075", True),
+    ("send Tolu 2000, I will pulse my pin", False),
+    ("send Tolu 2500. My pin?", False),
+    ("2000 to Tolu, I'll pulse the pin", False),
+    ("send 20,000 to Tolu", False),
+    ("₦2,075 to Mama", False),
+])
+def test_spoken_pin_edge_cases(text, is_pin):
+    assert guard.spoken_pin(text) is is_pin
+    masked, _ = guard.mask(text)
+    assert ("[PIN]" in masked) is is_pin
+
+
+@pytest.mark.parametrize("text,label", [
+    ("01234 50213", "ACCOUNT_1"),
+    ("0123 456789", "ACCOUNT_1"),
+    ("012345 0213", "ACCOUNT_1"),
+    ("22212 345678", "[BVN]"),
+    ("zero one two three four five 0213", "ACCOUNT_1"),
+    ("0 1 2 3 4 5 0 2 1 3", "ACCOUNT_1"),
+    ("0123-450-213", "ACCOUNT_1"),
+])
+def test_numbers_in_uneven_chunks_are_masked(text, label):
+    masked, _ = guard.mask(f"send it to {text} please")
+    assert masked == f"send it to {label} please"
+
+
+@pytest.mark.parametrize("text", ["send 20000 to Tolu", "20,000", "1,500,000 naira", "send 2000 and 5000"])
+def test_amounts_are_not_masked(text):
+    assert guard.mask(text) == (text, {})
+
+
 def test_spoken_pin_stops_the_turn_before_any_model(client, monkeypatch):
     settings.assistant, settings.anthropic_api_key = "claude", "test-key"
     monkeypatch.setattr(claude, "make_client", lambda: pytest.fail("the model must not be called"))

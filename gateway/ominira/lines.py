@@ -413,6 +413,16 @@ _COPY: dict[str, dict[str, str]] = {
         "ha": "Ban sami wannan asusun ba. Don Allah ku sake gwadawa.",
         "ig": "Achọtaghị m akaụntụ ahụ. Biko nwaa ọzọ.",
     },
+    "phone_stranger": {
+        "en": "I can't open that account on this call. Please call from your registered phone number, or use the app.",
+        "pcm": "I no fit open that account for this call. Abeg call from the phone number wey you register, or use "
+               "the app.",
+        "yo": "Mi ò lè ṣí àkáǹtì yẹn lórí ìpè yìí. Ẹ jọ̀ọ́ ẹ pè láti nọ́ńbà fóònù tí ẹ forúkọ sílẹ̀, tàbí ẹ lo áàpù.",
+        "ha": "Ba zan iya buɗe wannan asusun a wannan kiran ba. Don Allah ku kira daga lambar wayar da kuka yi "
+              "rajista, ko ku yi amfani da manhajar.",
+        "ig": "Enweghị m ike imeghe akaụntụ ahụ na oku a. Biko kpọọ site na nọmba ekwentị i debanyere, ma ọ bụ jiri "
+              "ngwa ahụ.",
+    },
     "phone_hello": {
         "en": "Hello {first}. What would you like to do? You can say: send money to Tolu, or what is my balance.",
         "pcm": "How far {first}. Wetin you wan do? You fit talk: send money give Tolu, or how much I get.",

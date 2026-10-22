@@ -28,6 +28,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class Ears internal constructor() {
+    // From opening the mic until the answer, or nothing, is handed back.
+    @Volatile var busy = false
+        internal set
     internal var open: () -> Unit = {}
     internal var close: () -> Unit = {}
 
@@ -64,7 +67,9 @@ fun rememberEars(
 ): Ears {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val ears = remember { Ears() }
     val heard by rememberUpdatedState<(String?) -> Unit>({ text ->
+        ears.busy = false
         // Debug builds only, and never digits: a PIN said aloud must not reach the log.
         if (BuildConfig.DEBUG) {
             Log.d("OminiraEars", "heard: " + if (text != null && Answers.digits(text).isNotEmpty()) "(digits hidden)" else text)
@@ -72,7 +77,6 @@ fun rememberEars(
         onHeard(text)
     })
     val warned by rememberUpdatedState(onWarned)
-    val ears = remember { Ears() }
     val hold = remember { Hold() }
     DisposableEffect(hold) { onDispose { hold.release() } }
 
@@ -170,6 +174,7 @@ fun rememberEars(
                     when {
                         words == null -> heard(null)
                         words.pinSpoken -> {
+                            ears.busy = false
                             session.say(words.say ?: session.spoken.pinSpoken)
                             warned()
                         }
@@ -192,6 +197,7 @@ fun rememberEars(
     }
 
     ears.open = {
+        ears.busy = true
         // Never record the app's own voice.
         session.speaker.stop()
         when {
@@ -205,6 +211,9 @@ fun rememberEars(
             else -> systemBox()
         }
     }
-    ears.close = { hold.release() }
+    ears.close = {
+        ears.busy = false
+        hold.release()
+    }
     return ears
 }

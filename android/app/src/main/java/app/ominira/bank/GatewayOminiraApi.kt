@@ -30,6 +30,7 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 private class GatewayTrouble(message: String) : IOException(message)
 
@@ -40,6 +41,8 @@ class GatewayOminiraApi(
     private val fallback: OminiraApi = FakeOminiraApi(),
     // The new customer's own token, once onboarding gives it: the phone keeps it.
     private val onToken: (String) -> Unit = {},
+    // The customer's language, for the lines the phone fills in when the Gateway gives none.
+    private val customerLang: () -> Lang = { Lang.En },
 ) : OminiraApi {
 
     private val base = baseUrl.trim().trimEnd('/')
@@ -53,6 +56,11 @@ class GatewayOminiraApi(
     @Volatile private var accountId: String? = null
     @Volatile private var conversationId: String? = null
     @Volatile private var syncedLang: Lang? = null
+
+    private val words: Words get() = Words.of(customerLang())
+    private val kinds = ConcurrentHashMap<String, DraftKind>()
+    // The readback hash the customer last confirmed, per draft.
+    private val heardHashes = ConcurrentHashMap<String, String>()
 
     private class Reply(val status: Int, val body: Any?) {
         val ok: Boolean get() = status in 200..299
@@ -224,8 +232,8 @@ class GatewayOminiraApi(
     override suspend fun unlock(pinBlock: String): Unlock = orOffline({ fallback.unlock(pinBlock) }) {
         val r = call("POST", "/auth/unlock", JSONObject().put("pin_block", pinBlock))
         when {
-            r.ok -> Unlock.Open(r.say("Welcome back."))
-            r.code == "pin_incorrect" -> Unlock.Wrong(r.obj.optInt("tries_left", 0), r.say("That PIN did not match."))
+            r.ok -> Unlock.Open(r.say(words.welcomeBack))
+            r.code == "pin_incorrect" -> r.obj.optInt("tries_left", 0).let { Unlock.Wrong(it, r.say(pinWrongLine(it))) }
             else -> throw GatewayTrouble("HTTP ${r.status} ${r.code}")
         }
     }
@@ -341,7 +349,7 @@ class GatewayOminiraApi(
         }
         if (r.status >= 500 && r.code.isBlank()) throw GatewayTrouble("HTTP ${r.status}")
         if (!r.ok) {
-            val line = r.say("Sorry, could you say that again?")
+            val line = r.say(words.couldNotDo)
             Turn(text, line, line, "gateway", null)
         } else {
             val o = r.obj
@@ -367,18 +375,18 @@ class GatewayOminiraApi(
 
     override suspend fun draftTransfer(payeeId: String, amountKobo: Long): Drafted {
         val body = JSONObject().put("kind", "transfer").put("amount_kobo", amountKobo).put("payee_id", payeeId).put("source", "app")
-        return drafting(body, "I could not prepare that transfer. Nothing was sent.")
+        return drafting(body, words.couldNotPrepare)
     }
 
     override suspend fun draftTransferToAccount(bankCode: String, accountNumber: String, amountKobo: Long): Drafted {
         val body = JSONObject().put("kind", "transfer").put("amount_kobo", amountKobo)
             .put("bank_code", bankCode).put("account_number", accountNumber).put("source", "app")
-        return drafting(body, "I could not prepare that transfer. Nothing was sent.")
+        return drafting(body, words.couldNotPrepare)
     }
 
     override suspend fun draftCardBlock(cardId: String): Drafted {
         val body = JSONObject().put("kind", "card_block").put("card_id", cardId).put("source", "app")
-        return drafting(body, "I could not prepare blocking that card. Nothing has changed.")
+        return drafting(body, words.couldNotPrepareBlock)
     }
 
     // Money is drafted by the Gateway or not at all, even when the session has gone offline.
@@ -386,9 +394,9 @@ class GatewayOminiraApi(
         made(call("POST", "/drafts", body), line)
     } catch (e: IOException) {
         if (Reach.unreachable(e)) goOffline(e)
-        Drafted.Refused(Drafted.UNREACHABLE, UNREACHABLE)
+        Drafted.Refused(Drafted.UNREACHABLE, words.cannotReachBank)
     } catch (e: JSONException) {
-        Drafted.Refused(Drafted.UNREACHABLE, UNREACHABLE)
+        Drafted.Refused(Drafted.UNREACHABLE, words.cannotReachBank)
     }
 
     private fun made(r: Reply, line: String): Drafted = when {
@@ -410,6 +418,7 @@ class GatewayOminiraApi(
 
     override suspend fun confirm(draftId: String, readbackHash: String, pinBlock: String, callActive: Boolean): Outcome {
         val body = JSONObject().put("readback_hash", readbackHash).put("pin_block", pinBlock).put("call_active", callActive)
+        heardHashes[draftId] = readbackHash
         // Reuse this key only to resend a lost answer: the Gateway replays it.
         val key = UUID.randomUUID().toString()
         var r: Reply? = null
@@ -435,9 +444,11 @@ class GatewayOminiraApi(
 
     private suspend fun gateAnswer(r: Reply, draftId: String): Outcome {
         return when {
-            r.status == 200 -> Outcome.Sent(r.obj.text("reference"), r.say("Sent."))
-            r.status == 202 && r.obj.text("status") == "awaiting_approval" || r.code == "approval_required" ->
-                Outcome.NeedsApproval(r.obj.text("approver").ifBlank { "your approver" }, r.say("I have asked your approver. Nothing moves until they say yes."))
+            r.status == 200 -> Outcome.Sent(r.obj.text("reference"), r.say(words.sentShort))
+            r.status == 202 && r.obj.text("status") == "awaiting_approval" || r.code == "approval_required" -> {
+                val approver = r.obj.text("approver").ifBlank { words.yourApprover }
+                Outcome.NeedsApproval(approver, r.say(words.approvalWait(approver)))
+            }
             r.status == 202 -> settle(draftId)
             else -> problem(r, draftId)
         }
@@ -448,33 +459,41 @@ class GatewayOminiraApi(
         val code = r.code
         val o = r.obj
         return when (code) {
-            "pin_incorrect" -> Outcome.WrongPin(o.optInt("tries_left", 0), r.say("That PIN did not match."))
-            "pause_required" -> Outcome.Paused(r.say(PAUSE))
+            "pin_incorrect" -> o.optInt("tries_left", 0).let { Outcome.WrongPin(it, r.say(pinWrongLine(it))) }
+            "pause_required" -> Outcome.Paused(r.say(words.pauseFull))
             "readback_mismatch" -> {
                 val rb = o.optJSONObject("readback")
                 val hash = o.text("readback_hash")
                 if (rb != null && hash.isNotBlank()) {
-                    Outcome.HearAgain(readbackFrom(rb), hash, r.say("Something changed since I read it to you. Please listen again."))
+                    Outcome.HearAgain(readbackFrom(rb), hash, r.say(words.readbackChanged))
                 } else {
-                    Outcome.NotSent(code, true, r.say("Something changed since I read it to you. Nothing was sent."))
+                    Outcome.NotSent(code, true, r.say(words.changedNothingSent))
                 }
             }
-            "already_executed" -> Outcome.Sent(o.text("reference"), r.say("That was already sent. Nothing more was sent."))
+            "already_executed" -> Outcome.Sent(o.text("reference"), r.say(words.alreadyDone))
             "processing" -> settle(draftId)
-            "draft_closed" -> Outcome.Stopped(r.say("That request is closed. Nothing was sent."))
-            "draft_expired", "approval_expired" -> Outcome.Expired(r.say("That request timed out. Nothing was sent."))
-            "bank_unavailable", "rate_limited" -> Outcome.NotSent(code, true, r.say("The bank is busy. Nothing was sent. Try again in a minute."))
+            "draft_closed" -> Outcome.Stopped(r.say(words.requestClosed))
+            "draft_expired" -> Outcome.Expired(r.say(words.expired))
+            "approval_expired" -> Outcome.Expired(r.say(words.approvalExpired))
+            "bank_unavailable", "rate_limited" -> Outcome.NotSent(code, true, r.say(words.bankBusy))
             "limit_exceeded", "insufficient_funds", "failed", "invalid_amount", "invalid_account",
             "account_dormant", "unknown_bank", "payee_not_found", "card_not_found", "already_blocked",
             "not_found", "forbidden", "unauthorized", "invalid_request", "idempotency_key_reused" ->
-                Outcome.NotSent(code, false, r.say("That did not go through. Nothing was sent."))
+                Outcome.NotSent(code, false, r.say(words.didNotGoThrough))
             else -> when {
                 // A proxy page or unknown 5xx is not the gate's answer: treat as lost.
                 r.status >= 500 -> afterLostAnswer(draftId)
-                else -> Outcome.NotSent(code.ifBlank { "http_${r.status}" }, false, r.say("That did not go through. Nothing was sent."))
+                else -> Outcome.NotSent(code.ifBlank { "http_${r.status}" }, false, r.say(words.didNotGoThrough))
             }
         }
     }
+
+    private fun pinWrongLine(triesLeft: Int): String = if (triesLeft > 0) words.pinWrong(triesLeft) else words.pinLockedFull
+
+    // A card block is no transfer: an unknown kind gets the plain lines.
+    private fun unsure(draftId: String): String = if (kinds[draftId] == DraftKind.Transfer) words.unsureSent else words.unsureDone
+
+    private fun onItsWay(draftId: String): String = if (kinds[draftId] == DraftKind.Transfer) words.onItsWay else words.stillWorking
 
     private suspend fun afterLostAnswer(draftId: String): Outcome {
         var o: JSONObject? = null
@@ -483,18 +502,18 @@ class GatewayOminiraApi(
             o = peek(draftId)
             if (o != null) break
         }
-        val seen = o ?: return Outcome.Unsure(UNSURE)
+        val seen = o ?: return Outcome.Unsure(unsure(draftId))
         val say = seen.text("say")
         return when (DraftStatus.fromWire(seen.text("status"))) {
-            DraftStatus.Executed -> Outcome.Sent(seen.text("reference"), say.ifBlank { "Sent." })
-            DraftStatus.AwaitingApproval -> Outcome.NeedsApproval("your approver", say.ifBlank { "Waiting for your approver. Nothing has moved yet." })
+            DraftStatus.Executed -> Outcome.Sent(seen.text("reference"), say.ifBlank { words.sentShort })
+            DraftStatus.AwaitingApproval -> Outcome.NeedsApproval(words.yourApprover, say.ifBlank { words.stillWithApprover })
             DraftStatus.Processing -> settle(draftId)
-            DraftStatus.Paused -> Outcome.Paused(PAUSE)
-            DraftStatus.Cancelled -> Outcome.Stopped(say.ifBlank { "Cancelled. Nothing was sent." })
-            DraftStatus.Expired -> Outcome.Expired(say.ifBlank { "That request timed out. Nothing was sent." })
-            DraftStatus.Failed -> Outcome.NotSent("failed", false, say.ifBlank { "That did not go through. Nothing was sent." })
+            DraftStatus.Paused -> Outcome.Paused(words.pauseFull)
+            DraftStatus.Cancelled -> Outcome.Stopped(say.ifBlank { words.cancelled })
+            DraftStatus.Expired -> Outcome.Expired(say.ifBlank { words.expired })
+            DraftStatus.Failed -> Outcome.NotSent("failed", false, say.ifBlank { words.didNotGoThrough })
             // The gate may still be working, and its last `say` may be stale.
-            DraftStatus.AwaitingConfirm, null -> Outcome.Unsure(UNSURE)
+            DraftStatus.AwaitingConfirm, null -> Outcome.Unsure(unsure(draftId))
         }
     }
 
@@ -504,33 +523,63 @@ class GatewayOminiraApi(
             val o = peek(draftId) ?: return@repeat // a dropped check proves nothing
             val say = o.text("say")
             when (DraftStatus.fromWire(o.text("status"))) {
-                DraftStatus.Executed -> return Outcome.Sent(o.text("reference"), say.ifBlank { "Sent." })
+                DraftStatus.Executed -> return Outcome.Sent(o.text("reference"), say.ifBlank { words.sentShort })
                 DraftStatus.Processing -> Unit
-                DraftStatus.AwaitingConfirm -> return backWithCustomer(o, "The bank did not take it. Nothing was sent. You can try again.")
-                DraftStatus.Cancelled -> return Outcome.Stopped(say.ifBlank { "Cancelled. Nothing was sent." })
-                DraftStatus.Expired -> return Outcome.Expired(say.ifBlank { "That request timed out. Nothing was sent." })
-                DraftStatus.AwaitingApproval -> return Outcome.NeedsApproval("your approver", say.ifBlank { "Waiting for your approver." })
-                DraftStatus.Failed, DraftStatus.Paused, null ->
-                    return Outcome.NotSent("failed", false, say.ifBlank { "That did not go through. Nothing was sent." })
+                DraftStatus.AwaitingConfirm -> return backWithCustomer(draftId, o, words.bankDidNotTake)
+                DraftStatus.Paused -> return Outcome.Paused(say.ifBlank { words.pauseFull })
+                DraftStatus.Cancelled -> return Outcome.Stopped(say.ifBlank { words.cancelled })
+                DraftStatus.Expired -> return Outcome.Expired(say.ifBlank { words.expired })
+                DraftStatus.AwaitingApproval -> return Outcome.NeedsApproval(words.yourApprover, say.ifBlank { words.stillWithApprover })
+                DraftStatus.Failed -> return Outcome.NotSent("failed", false, say.ifBlank { words.didNotGoThrough })
+                null -> return Outcome.Unsure(unsure(draftId))
             }
         }
-        return Outcome.Unsure(ON_ITS_WAY)
+        return Outcome.Unsure(onItsWay(draftId))
     }
 
     override suspend fun answerPause(draftId: String, stop: Boolean): Outcome {
-        val r = try {
-            call("POST", "/drafts/$draftId/pause-answer", JSONObject().put("answer", if (stop) "stop" else "chose_myself"))
-        } catch (e: IOException) {
-            return Outcome.NotSent("unreachable", true, UNREACHABLE) // a pause answer never moves money
-        } catch (e: JSONException) {
-            return Outcome.NotSent("unreachable", true, UNREACHABLE)
+        val body = JSONObject().put("answer", if (stop) "stop" else "chose_myself")
+        // Same key for the resend: a lost answer is replayed, not refused as not paused.
+        val key = UUID.randomUUID().toString()
+        var r: Reply? = null
+        for (attempt in 0 until 2) {
+            r = try {
+                call("POST", "/drafts/$draftId/pause-answer", body, key = key)
+            } catch (e: IOException) {
+                null
+            } catch (e: JSONException) {
+                null
+            }
+            val lost = r == null || (r.status >= 500 && r.code.isBlank())
+            if (!lost) break
+            if (attempt == 0) delay(1_500)
         }
+        // A pause answer never moves money.
+        val answer = r ?: return Outcome.NotSent("unreachable", true, words.cannotReachBank)
         return when {
-            r.ok && r.obj.text("status") == "cancelled" -> Outcome.Stopped(r.say("Stopped. Your money is safe. Nothing was sent."))
-            r.ok -> Outcome.Resumed(r.say("Okay. Pulse your PIN again to send it."))
-            r.code == "draft_closed" -> Outcome.Stopped(r.say("That request is closed. Nothing was sent."))
-            r.code == "draft_expired" -> Outcome.Expired(r.say("That request timed out. Nothing was sent."))
-            else -> Outcome.NotSent(r.code.ifBlank { "failed" }, r.status >= 500, r.say("That did not go through. Nothing was sent."))
+            answer.ok && answer.obj.text("status") == "cancelled" -> Outcome.Stopped(answer.say(words.stoppedSafeNothingSent))
+            answer.ok -> Outcome.Resumed(answer.say(words.pulseAgain))
+            answer.code == "not_paused" -> afterPauseAnswer(draftId, stop)
+            answer.code == "draft_closed" -> Outcome.Stopped(answer.say(words.requestClosed))
+            answer.code == "draft_expired" -> Outcome.Expired(answer.say(words.expired))
+            else -> Outcome.NotSent(answer.code.ifBlank { "failed" }, answer.status >= 500, answer.say(words.didNotGoThrough))
+        }
+    }
+
+    // An earlier answer may have landed after all: carry on from where the draft really is.
+    private suspend fun afterPauseAnswer(draftId: String, stop: Boolean): Outcome {
+        val o = peek(draftId) ?: return Outcome.NotSent("unreachable", true, words.cannotReachBank)
+        val say = o.text("say")
+        return when (DraftStatus.fromWire(o.text("status"))) {
+            DraftStatus.AwaitingConfirm -> if (stop) cancel(draftId) else Outcome.Resumed(words.pulseAgain)
+            DraftStatus.Paused -> Outcome.Paused(say.ifBlank { words.pauseFull })
+            DraftStatus.Cancelled -> Outcome.Stopped(say.ifBlank { if (stop) words.stoppedSafeNothingSent else words.cancelled })
+            DraftStatus.Expired -> Outcome.Expired(say.ifBlank { words.expired })
+            DraftStatus.AwaitingApproval -> Outcome.NeedsApproval(words.yourApprover, say.ifBlank { words.stillWithApprover })
+            DraftStatus.Processing -> settle(draftId)
+            DraftStatus.Executed -> Outcome.Sent(o.text("reference"), say.ifBlank { words.sentShort })
+            DraftStatus.Failed -> Outcome.NotSent("failed", false, say.ifBlank { words.didNotGoThrough })
+            null -> Outcome.NotSent("unreachable", true, words.cannotReachBank)
         }
     }
 
@@ -538,54 +587,62 @@ class GatewayOminiraApi(
         val r = try {
             call("POST", "/drafts/$draftId/cancel")
         } catch (e: IOException) {
-            return Outcome.NotSent("unreachable", true, CANNOT_CANCEL)
+            return Outcome.NotSent("unreachable", true, words.cancelFailed)
         } catch (e: JSONException) {
-            return Outcome.NotSent("unreachable", true, CANNOT_CANCEL)
+            return Outcome.NotSent("unreachable", true, words.cancelFailed)
         }
         return when {
-            r.ok -> Outcome.Stopped(r.say("Cancelled. Nothing was sent."))
-            r.code == "already_executed" -> Outcome.Sent(r.obj.text("reference"), r.say("That was already sent."))
-            r.code == "draft_closed" -> Outcome.Stopped(r.say("Cancelled. Nothing was sent."))
-            r.code == "processing" -> Outcome.Unsure(ON_ITS_WAY)
-            else -> Outcome.NotSent(r.code.ifBlank { "failed" }, true, r.say(CANNOT_CANCEL))
+            r.ok -> Outcome.Stopped(r.say(words.cancelled))
+            r.code == "already_executed" -> Outcome.Sent(r.obj.text("reference"), r.say(words.alreadySent))
+            r.code == "draft_closed" -> Outcome.Stopped(r.say(words.cancelled))
+            r.code == "processing" -> Outcome.Unsure(onItsWay(draftId))
+            else -> Outcome.NotSent(r.code.ifBlank { "failed" }, true, r.say(words.cancelFailed))
         }
     }
 
     override suspend fun awaitDecision(draftId: String): Outcome {
         var misses = 0
+        var atBank = 0
         while (true) {
             delay(2_000)
             // A dropped poll or a proxy error page is not a decision.
             val o = peek(draftId)
             if (o == null) {
                 misses += 1
-                if (misses >= 60) return Outcome.Unsure("I cannot reach the bank to hear your approver's answer. Do not send it again. Check your balance in a few minutes.")
+                if (misses >= 60) return Outcome.Unsure(words.approverUnreachable)
                 continue
             }
             misses = 0
             val say = o.text("say")
             when (DraftStatus.fromWire(o.text("status"))) {
-                DraftStatus.AwaitingApproval, DraftStatus.Processing -> continue
-                DraftStatus.Executed -> return Outcome.Sent(o.text("reference"), say.ifBlank { "Approved and sent." })
-                DraftStatus.Cancelled -> return Outcome.Stopped(say.ifBlank { "Your approver said no. Nothing was sent." })
-                DraftStatus.Expired -> return Outcome.Expired(say.ifBlank { "Your approver did not answer in time. Nothing was sent." })
-                DraftStatus.AwaitingConfirm -> return backWithCustomer(o, "The bank did not answer after your approver said yes. Nothing was sent. Try again in a minute.")
-                DraftStatus.Failed, DraftStatus.Paused, null ->
-                    return Outcome.NotSent(o.text("code").ifBlank { "failed" }, false, say.ifBlank { "That did not go through. Nothing was sent." })
+                DraftStatus.AwaitingApproval -> continue
+                DraftStatus.Processing -> {
+                    // About two minutes at the bank: money may have moved, so never say it did not.
+                    atBank += 1
+                    if (atBank >= 60) return Outcome.Unsure(unsure(draftId))
+                }
+                DraftStatus.Executed -> return Outcome.Sent(o.text("reference"), say.ifBlank { words.approvedSent })
+                DraftStatus.Cancelled -> return Outcome.Stopped(say.ifBlank { words.approverSaidNo })
+                DraftStatus.Expired -> return Outcome.Expired(say.ifBlank { words.approvalExpired })
+                DraftStatus.AwaitingConfirm -> return backWithCustomer(draftId, o, words.bankDidNotTake)
+                // Held after the approval: the customer answers the pause.
+                DraftStatus.Paused -> return Outcome.Paused(say.ifBlank { words.pauseFull })
+                DraftStatus.Failed -> return Outcome.NotSent(o.text("code").ifBlank { "failed" }, false, say.ifBlank { words.didNotGoThrough })
+                null -> return Outcome.Unsure(unsure(draftId))
             }
         }
-        return Outcome.Unsure(UNSURE)
     }
 
-    private fun backWithCustomer(o: JSONObject, fallbackLine: String): Outcome {
-        val say = o.text("say").ifBlank { fallbackLine }
-        val code = o.text("code")
+    // Back with the customer: a readback that changed since they confirmed is heard again, else the same one can be confirmed again.
+    private fun backWithCustomer(draftId: String, o: JSONObject, fallbackLine: String): Outcome {
+        val say = o.text("say")
         val rb = o.optJSONObject("readback")
         val hash = o.text("readback_hash")
-        return if (code == "readback_mismatch" && rb != null && hash.isNotBlank()) {
-            Outcome.HearAgain(readbackFrom(rb), hash, say)
+        val changed = if (rb != null && hash.isNotBlank() && hash != heardHashes[draftId]) runCatching { readbackFrom(rb) }.getOrNull() else null
+        return if (changed != null) {
+            Outcome.HearAgain(changed, hash, say.ifBlank { words.readbackChanged })
         } else {
-            Outcome.NotSent(code.ifBlank { "not_sent" }, true, say)
+            Outcome.NotSent("not_sent", true, say.ifBlank { fallbackLine })
         }
     }
 
@@ -613,7 +670,7 @@ class GatewayOminiraApi(
         expiresAt = o.text("expires_at").ifBlank { null },
         reference = o.text("reference").ifBlank { null },
         say = o.text("say").ifBlank { null },
-    )
+    ).also { kinds[it.id] = it.kind }
 
     private fun readbackFrom(rb: JSONObject): Readback {
         val spoken = rb.optJSONArray("spoken") ?: JSONArray()
@@ -631,11 +688,6 @@ class GatewayOminiraApi(
 
     private companion object {
         const val TAG = "OminiraGateway"
-        const val PAUSE = "Is someone on the phone telling you to send this? Nothing has been sent."
-        const val UNREACHABLE = "I cannot reach the bank right now. Nothing was sent. Try again in a minute."
-        const val CANNOT_CANCEL = "I could not reach the bank to cancel it. It is still waiting. Try again."
-        const val UNSURE = "I could not tell if it went through. Do not send it again. Check your balance in a minute."
-        const val ON_ITS_WAY = "Your transfer is still on its way. Do not send it again. Check your balance in a few minutes."
     }
 }
 

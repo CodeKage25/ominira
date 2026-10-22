@@ -236,10 +236,12 @@ other field, needs no PIN.
 | `POST /v1/conversations/{id}/voice-turns` | raw `audio/wav` body | as above plus `"reply_audio_url"` (nullable) and `"timings"` |
 
 `heard` is the text with numbers masked: `ACCOUNT_1` (10 digits), `[BVN]` (11), `[CARD]` (12 to 19),
-`[PIN]`. Numbers split by spaces, dots, commas, slashes or dashes, and numbers glued to letters, are
-masked too. An `ACCOUNT_n` label keeps its number for the whole conversation (held in memory on the
-Gateway, never stored). A PIN is caught in either order ("my PIN is 2075", "2075 is my PIN") and in
-Pidgin, Yorùbá, Hausa and Igbo phrasings.
+`[PIN]`. Numbers split by spaces, dots, commas, slashes or dashes into chunks of any size ("01234 50213",
+"012345 0213"), and numbers glued to letters, are masked too; amounts with thousands commas ("1,500,000")
+are not. An `ACCOUNT_n` label keeps its number for the whole conversation (held in memory on the
+Gateway, never stored). A PIN is caught in either order ("my PIN is 2075", "2075 is my PIN"), written
+"2,075", "PIN2075" or "P.I.N.", said "twenty seventy five", and in Pidgin, Yorùbá, Hausa and Igbo
+phrasings. An amount near the word ("send Tolu 2000, I will pulse my pin") is not a PIN.
 `engine` is `rules` for a turn stopped by the PIN guard and for a voice turn where nothing was heard. A turn that contains a spoken PIN
 ("my PIN is 2075") is caught in code before any model call: no draft, and `say` tells the customer
 never to say it aloud. "Send money to Tolu" then "twenty thousand" works across two turns, and so does "send money to

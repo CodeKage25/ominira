@@ -51,6 +51,9 @@ class Prompt internal constructor(
     }
 
     internal fun deliver(text: String?) = handler(this, text)
+
+    // Asking, listening or working out the answer: a reminder must wait.
+    val busy: Boolean get() = job?.isActive == true || ears.busy
 }
 
 @Composable

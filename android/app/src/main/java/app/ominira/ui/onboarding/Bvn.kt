@@ -106,7 +106,7 @@ fun BvnScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
 
     val waiting = !open && !checking
     // The reminder opens the mic again: a silence or two misses must not leave only the buttons.
-    RemindWhileWaiting(session, waiting) { prompt.ask(askLine) }
+    RemindWhileWaiting(session, waiting, listening = { prompt.busy }) { prompt.ask(askLine) }
 
     Page(
         modifier = if (touch) {

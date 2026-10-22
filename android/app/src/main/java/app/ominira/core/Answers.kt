@@ -30,12 +30,16 @@ object Answers {
         // Yorùbá
         "rara", "beeko",
         // Hausa
-        "a'a", "aa",
+        "a'a", "aa", "babu",
         // Igbo
         "mba",
     )
+    // "bee ko" is "bẹ́ẹ̀ kọ́" with its marks gone; "a a" is "aʼa" with the Hausa apostrophe gone.
     private val noPhrases = listOf("read it myself", "read and tap", "i'll read", "i will read", "by myself", "no o",
-        "mi o gba", "n o gba", "ko dara", "ban yarda", "ban amince", "ekweghi m", "o dighi mma")
+        "mi o gba", "n o gba", "ko dara", "ban yarda", "ban amince", "ekweghi m", "o dighi mma",
+        "bee ko", "a a")
+    // Said for "sure": taken out before looking for a no.
+    private val noButYes = listOf("no wahala", "no problem", "no shaking", "no qualms", "babu matsala")
 
     // Then yo, ha and ig: the words the screens ask for.
     private val startWords = setOf("start", "ready", "begin", "go", "now", "proceed", "continue", "oya", "bere", "fara", "malite")
@@ -77,11 +81,23 @@ object Answers {
         return phrases.any { padded.contains(" $it ") }
     }
 
-    fun isNo(text: String): Boolean = words(text).any { it in noWords } || hasPhrase(text, noPhrases + noWords.filter { ' ' in it })
+    private fun withoutNoButYes(text: String): String {
+        var padded = " " + normalise(text) + " "
+        for (phrase in noButYes) {
+            while (padded.contains(" $phrase ")) padded = padded.replace(" $phrase ", " ")
+        }
+        return padded
+    }
+
+    fun isNo(text: String): Boolean {
+        val padded = withoutNoButYes(text)
+        if (padded.split(' ').any { it in noWords }) return true
+        return (noPhrases + noWords.filter { ' ' in it }).any { padded.contains(" $it ") }
+    }
 
     fun isYes(text: String): Boolean {
         if (isNo(text)) return false
-        return words(text).any { it in yesWords } || hasPhrase(text, yesPhrases)
+        return words(text).any { it in yesWords } || hasPhrase(text, yesPhrases + noButYes)
     }
 
     fun isStart(text: String): Boolean = !isNo(text) && (isYes(text) || words(text).any { it in startWords })
