@@ -19,6 +19,7 @@ import app.ominira.core.Readback
 import app.ominira.core.Turn
 import app.ominira.core.Txn
 import app.ominira.core.Unlock
+import app.ominira.core.Words
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -28,7 +29,6 @@ import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
-import java.util.Collections
 import java.util.UUID
 
 private class GatewayTrouble(message: String) : IOException(message)
@@ -49,8 +49,6 @@ class GatewayOminiraApi(
 
     @Volatile var offline = false
         private set
-
-    private val gatewayDrafts: MutableSet<String> = Collections.synchronizedSet(HashSet())
 
     @Volatile private var accountId: String? = null
     @Volatile private var conversationId: String? = null
@@ -114,15 +112,13 @@ class GatewayOminiraApi(
         }
     }
 
-    // Non-money calls only: a money call never falls back offline.
+    // Non-money calls only. A Gateway reply (401, 429, 5xx) is thrown to the caller; only a lost connection goes offline.
     private suspend fun <T> orOffline(offlineCall: suspend () -> T, online: suspend () -> T): T {
         if (offline) return offlineCall()
         return try {
             online()
         } catch (e: IOException) {
-            goOffline(e)
-            offlineCall()
-        } catch (e: JSONException) {
+            if (!Reach.unreachable(e)) throw e
             goOffline(e)
             offlineCall()
         }
@@ -135,7 +131,24 @@ class GatewayOminiraApi(
 
     private fun Reply.orTrouble(): Reply = if (ok) this else throw GatewayTrouble("HTTP $status $code")
 
-    private fun ours(draftId: String): Boolean = draftId in gatewayDrafts
+    // Gateway on: the customer is whoever this token says. A new one starts a new conversation.
+    fun switchCustomer(token: String) {
+        bearer = token
+        conversationId = null
+        accountId = null
+        syncedLang = null
+        offline = false
+    }
+
+    // The first name and language the Gateway holds for this customer; null when it cannot say.
+    suspend fun profile(): Pair<String?, Lang?>? = try {
+        val o = call("GET", "/me/preferences").orTrouble().obj
+        o.text("first_name").ifBlank { null } to Lang.fromCode(o.text("lang"))
+    } catch (e: IOException) {
+        null
+    } catch (e: JSONException) {
+        null
+    }
 
     override suspend fun startOnboarding(lang: Lang): OnboardingSession = orOffline({ fallback.startOnboarding(lang) }) {
         val o = call("POST", "/onboarding/sessions", JSONObject().put("lang", lang.code), auth = false).orTrouble().obj
@@ -180,13 +193,17 @@ class GatewayOminiraApi(
         }
     }
 
-    override suspend fun setPin(sessionId: String, pinBlock: String): Boolean = orOffline({ fallback.setPin(sessionId, pinBlock) }) {
-        val r = call("POST", "/onboarding/$sessionId/pin", JSONObject().put("pin_block", pinBlock), auth = false)
-        when {
-            r.ok -> true
-            r.status in 400..499 -> false
-            else -> throw GatewayTrouble("HTTP ${r.status}")
+    // The PIN that moves money is set with the Gateway or not at all.
+    override suspend fun setPin(sessionId: String, pinBlock: String): Boolean {
+        val r = try {
+            call("POST", "/onboarding/$sessionId/pin", JSONObject().put("pin_block", pinBlock), auth = false)
+        } catch (e: IOException) {
+            if (Reach.unreachable(e)) goOffline(e)
+            return false
+        } catch (e: JSONException) {
+            return false
         }
+        return r.ok
     }
 
     override suspend fun completeOnboarding(sessionId: String): Boolean = orOffline({ fallback.completeOnboarding(sessionId) }) {
@@ -238,21 +255,32 @@ class GatewayOminiraApi(
     }
 
     override suspend fun transactions(accountId: String, limit: Int, direction: String?): List<Txn> =
-        orOffline({ fallback.transactions(accountId, limit, direction) }) {
-            val query = "?limit=$limit" + (direction?.let { "&direction=$it" } ?: "")
-            val a = call("GET", "/accounts/${accountIdOr(accountId)}/transactions$query").orTrouble().list
-            List(a.length()) { i ->
-                val o = a.getJSONObject(i)
-                Txn(
-                    id = o.getString("id"),
-                    who = o.text("who"),
-                    amountKobo = o.getLong("amount_kobo"),
-                    incoming = o.optBoolean("incoming", false),
-                    at = o.text("at"),
-                    reference = o.text("reference").ifBlank { null },
-                )
-            }
+        orOffline({ fallback.transactions(accountId, limit, direction) }) { liveTransactions(accountId, limit, direction) }
+
+    // Money in to announce: a real Gateway reply or nothing, never the bank inside the app.
+    suspend fun incomingNow(limit: Int): List<Txn>? = try {
+        liveTransactions("", limit, "in")
+    } catch (e: IOException) {
+        null
+    } catch (e: JSONException) {
+        null
+    }
+
+    private suspend fun liveTransactions(accountId: String, limit: Int, direction: String?): List<Txn> {
+        val query = "?limit=$limit" + (direction?.let { "&direction=$it" } ?: "")
+        val a = call("GET", "/accounts/${accountIdOr(accountId)}/transactions$query").orTrouble().list
+        return List(a.length()) { i ->
+            val o = a.getJSONObject(i)
+            Txn(
+                id = o.getString("id"),
+                who = o.text("who"),
+                amountKobo = o.getLong("amount_kobo"),
+                incoming = o.optBoolean("incoming", false),
+                at = o.text("at"),
+                reference = o.text("reference").ifBlank { null },
+            )
         }
+    }
 
     override suspend fun incomeSummary(accountId: String): String = orOffline({ fallback.incomeSummary(accountId) }) {
         call("GET", "/accounts/${accountIdOr(accountId)}/income-summary").orTrouble().obj.text("say")
@@ -301,7 +329,7 @@ class GatewayOminiraApi(
         }
     }
 
-    override suspend fun turn(text: String, lang: Lang): Turn = orOffline({ fallback.turn(text, lang) }) {
+    override suspend fun turn(text: String, lang: Lang): Turn = orOffline({ offlineTurn(text, lang) }) {
         if (syncedLang != lang) {
             call("PUT", "/me/preferences", JSONObject().put("lang", lang.code))
             syncedLang = lang
@@ -323,30 +351,45 @@ class GatewayOminiraApi(
         }
     }
 
+    // Offline, the bank inside the app may answer a question, but never hands back a draft of its own.
+    private suspend fun offlineTurn(text: String, lang: Lang): Turn {
+        val t = fallback.turn(text, lang)
+        if (t.draft == null) return t
+        val line = Words.of(lang).cannotReachBank
+        return Turn(t.heard, line, line, t.engine, null)
+    }
+
     private suspend fun postTurn(text: String): Reply {
         val id = conversationId ?: call("POST", "/conversations").orTrouble().obj.getString("id").also { conversationId = it }
         // The Gateway answers by rules after 8 s; keep this timeout above that.
         return call("POST", "/conversations/$id/turns", JSONObject().put("text", text), timeoutMs = 25_000)
     }
 
-    override suspend fun draftTransfer(payeeId: String, amountKobo: Long): Drafted =
-        orOffline({ fallback.draftTransfer(payeeId, amountKobo) }) {
-            val body = JSONObject().put("kind", "transfer").put("amount_kobo", amountKobo).put("payee_id", payeeId).put("source", "app")
-            made(call("POST", "/drafts", body), "I could not prepare that transfer. Nothing was sent.")
-        }
+    override suspend fun draftTransfer(payeeId: String, amountKobo: Long): Drafted {
+        val body = JSONObject().put("kind", "transfer").put("amount_kobo", amountKobo).put("payee_id", payeeId).put("source", "app")
+        return drafting(body, "I could not prepare that transfer. Nothing was sent.")
+    }
 
-    override suspend fun draftTransferToAccount(bankCode: String, accountNumber: String, amountKobo: Long): Drafted =
-        orOffline({ fallback.draftTransferToAccount(bankCode, accountNumber, amountKobo) }) {
-            val body = JSONObject().put("kind", "transfer").put("amount_kobo", amountKobo)
-                .put("bank_code", bankCode).put("account_number", accountNumber).put("source", "app")
-            made(call("POST", "/drafts", body), "I could not prepare that transfer. Nothing was sent.")
-        }
+    override suspend fun draftTransferToAccount(bankCode: String, accountNumber: String, amountKobo: Long): Drafted {
+        val body = JSONObject().put("kind", "transfer").put("amount_kobo", amountKobo)
+            .put("bank_code", bankCode).put("account_number", accountNumber).put("source", "app")
+        return drafting(body, "I could not prepare that transfer. Nothing was sent.")
+    }
 
-    override suspend fun draftCardBlock(cardId: String): Drafted =
-        orOffline({ fallback.draftCardBlock(cardId) }) {
-            val body = JSONObject().put("kind", "card_block").put("card_id", cardId).put("source", "app")
-            made(call("POST", "/drafts", body), "I could not prepare blocking that card. Nothing has changed.")
-        }
+    override suspend fun draftCardBlock(cardId: String): Drafted {
+        val body = JSONObject().put("kind", "card_block").put("card_id", cardId).put("source", "app")
+        return drafting(body, "I could not prepare blocking that card. Nothing has changed.")
+    }
+
+    // Money is drafted by the Gateway or not at all, even when the session has gone offline.
+    private suspend fun drafting(body: JSONObject, line: String): Drafted = try {
+        made(call("POST", "/drafts", body), line)
+    } catch (e: IOException) {
+        if (Reach.unreachable(e)) goOffline(e)
+        Drafted.Refused(Drafted.UNREACHABLE, UNREACHABLE)
+    } catch (e: JSONException) {
+        Drafted.Refused(Drafted.UNREACHABLE, UNREACHABLE)
+    }
 
     private fun made(r: Reply, line: String): Drafted = when {
         r.ok -> Drafted.Made(draftFrom(r.obj))
@@ -354,10 +397,7 @@ class GatewayOminiraApi(
         else -> Drafted.Refused(r.code.ifBlank { "failed" }, r.say(line))
     }
 
-    override suspend fun draft(draftId: String): Draft? {
-        if (!ours(draftId)) return fallback.draft(draftId)
-        return peek(draftId)?.let { draftFrom(it) }
-    }
+    override suspend fun draft(draftId: String): Draft? = peek(draftId)?.let { draftFrom(it) }
 
     private suspend fun peek(draftId: String): JSONObject? = try {
         val r = call("GET", "/drafts/$draftId")
@@ -369,7 +409,6 @@ class GatewayOminiraApi(
     }
 
     override suspend fun confirm(draftId: String, readbackHash: String, pinBlock: String, callActive: Boolean): Outcome {
-        if (!ours(draftId)) return fallback.confirm(draftId, readbackHash, pinBlock, callActive)
         val body = JSONObject().put("readback_hash", readbackHash).put("pin_block", pinBlock).put("call_active", callActive)
         // Reuse this key only to resend a lost answer: the Gateway replays it.
         val key = UUID.randomUUID().toString()
@@ -479,7 +518,6 @@ class GatewayOminiraApi(
     }
 
     override suspend fun answerPause(draftId: String, stop: Boolean): Outcome {
-        if (!ours(draftId)) return fallback.answerPause(draftId, stop)
         val r = try {
             call("POST", "/drafts/$draftId/pause-answer", JSONObject().put("answer", if (stop) "stop" else "chose_myself"))
         } catch (e: IOException) {
@@ -497,7 +535,6 @@ class GatewayOminiraApi(
     }
 
     override suspend fun cancel(draftId: String): Outcome {
-        if (!ours(draftId)) return fallback.cancel(draftId)
         val r = try {
             call("POST", "/drafts/$draftId/cancel")
         } catch (e: IOException) {
@@ -515,7 +552,6 @@ class GatewayOminiraApi(
     }
 
     override suspend fun awaitDecision(draftId: String): Outcome {
-        if (!ours(draftId)) return fallback.awaitDecision(draftId)
         var misses = 0
         while (true) {
             delay(2_000)
@@ -567,21 +603,17 @@ class GatewayOminiraApi(
         }
     }
 
-    private fun draftFrom(o: JSONObject): Draft {
-        val d = Draft(
-            id = o.getString("id"),
-            kind = DraftKind.fromWire(o.text("kind")),
-            status = DraftStatus.fromWire(o.text("status")) ?: DraftStatus.AwaitingConfirm,
-            source = o.text("source").ifBlank { "app" },
-            readback = readbackFrom(o.getJSONObject("readback")),
-            readbackHash = o.getString("readback_hash"),
-            expiresAt = o.text("expires_at").ifBlank { null },
-            reference = o.text("reference").ifBlank { null },
-            say = o.text("say").ifBlank { null },
-        )
-        gatewayDrafts += d.id
-        return d
-    }
+    private fun draftFrom(o: JSONObject): Draft = Draft(
+        id = o.getString("id"),
+        kind = DraftKind.fromWire(o.text("kind")),
+        status = DraftStatus.fromWire(o.text("status")) ?: DraftStatus.AwaitingConfirm,
+        source = o.text("source").ifBlank { "app" },
+        readback = readbackFrom(o.getJSONObject("readback")),
+        readbackHash = o.getString("readback_hash"),
+        expiresAt = o.text("expires_at").ifBlank { null },
+        reference = o.text("reference").ifBlank { null },
+        say = o.text("say").ifBlank { null },
+    )
 
     private fun readbackFrom(rb: JSONObject): Readback {
         val spoken = rb.optJSONArray("spoken") ?: JSONArray()
