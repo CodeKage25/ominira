@@ -70,6 +70,7 @@ def live(client, monkeypatch):
     monkeypatch.setattr(phone_stream, "speech", lambda lang, text: phone_audio.silence(40))
     monkeypatch.setattr(phone_stream, "start_digit", lambda: 0)
     monkeypatch.setattr(phone_stream, "DIGIT_PAUSE_S", 0)
+    monkeypatch.setattr(phone_stream, "DTMF_LAG_S", 0)
 
     def call(said: list[str], pin: list[int] = (), caller: str = "+2348030000001"):
         heard = list(said)

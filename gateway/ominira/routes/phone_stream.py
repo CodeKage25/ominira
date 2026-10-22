@@ -41,6 +41,7 @@ HEAR_S = 8.0
 # Jude reads English and Pidgin cleanly on a phone line; the others keep YarnGPT's choice.
 VOICES = {"en": "jude", "pcm": "jude"}
 DIGIT_PAUSE_S = 0.6  # between one digit's count and the next
+DTMF_LAG_S = 0.3  # how long after a key press Twilio's report of it arrives, about
 
 # Tests set this to learn when the call starts listening.
 on_listen = None
@@ -405,21 +406,26 @@ class Line:
             self.presses.get_nowait()
         start, gap = start_digit(), settings.phone_pulse_gap_s
         ticks: list[tuple[str, int]] = []
-        for i in range(30):
-            digit = (start + i) % 10
-            name = f"t{run}-{i}"
-            ticks.append((name, digit))
-            await self.mark(name)  # comes back as this tick starts to play
-            await self.stream(phone_audio.ZERO if digit == 0 else phone_audio.TICK)
+        for i in range(31):
+            # A press that came in late, after the last wait ended, is taken before another tick is played.
+            if self.presses.empty() and i < 30:
+                digit = (start + i) % 10
+                name = f"t{run}-{i}"
+                ticks.append((name, digit))
+                await self.mark(name)  # comes back as this tick starts to play
+                await self.stream(phone_audio.ZERO if digit == 0 else phone_audio.TICK)
             try:
                 pressed = await self.race(self.presses.get(), gap)
             except TimeoutError:
                 continue
-            playing = [d for n, d in ticks if self.marks.get(n, float("inf")) <= pressed]
+            # Twilio reports a key a moment after it is pressed: count from when it was pressed.
+            when = pressed - DTMF_LAG_S
+            playing = [(n, d) for n, d in ticks if self.marks.get(n, float("inf")) <= when]
             if not playing:
                 continue  # pressed before the count began
+            log.info("Pulse PIN press %d ms after its tick began", int((pressed - self.marks[playing[-1][0]]) * 1000))
             await self.stream(phone_audio.GOT_IT)
-            return playing[-1]
+            return playing[-1][1]
         return None
 
     async def pulse_pin(self) -> str | None:
