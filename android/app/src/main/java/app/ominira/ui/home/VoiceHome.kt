@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -80,11 +81,25 @@ fun VoiceHomeScreen(session: Session, actions: HomeActions) {
     val w = session.words
     val s = session.spoken
 
+    // Silence keeps the mic open a while longer: the customer may still be thinking.
+    var quietTries by remember { mutableIntStateOf(0) }
     val prompt = rememberPrompt(session, onWarned = { orb = OrbState.Speaking }) { said ->
-        if (said.isNullOrBlank()) orb = OrbState.Idle else request = said
+        when {
+            !said.isNullOrBlank() -> {
+                quietTries = 0
+                request = said
+            }
+            session.talksFirst && quietTries < 2 -> {
+                quietTries += 1
+                orb = OrbState.Listening
+                listenNow()
+            }
+            else -> orb = OrbState.Idle
+        }
     }
 
     fun ask(vararg lines: String) {
+        quietTries = 0
         if (session.talksFirst) orb = OrbState.Listening
         prompt.ask(*lines, listen = session.talksFirst)
     }
