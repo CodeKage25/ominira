@@ -50,6 +50,8 @@ Android app  ──HTTPS──>  Gateway  ──>  Zenith core (a mock now, the 
 
 Òmìnira serves people who are often targeted by fraud and who may not be able to check a screen. So the AI is kept to understanding and speaking, and everything that touches money stays in plain, tested code.
 
+The full account, including how we used AI to build Òmìnira and the risks still open, is in [RESPONSIBLE_AI.md](RESPONSIBLE_AI.md).
+
 **Where AI is used**
 
 | What | Model | Where it runs | What it sees |
