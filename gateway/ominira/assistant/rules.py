@@ -25,6 +25,11 @@ def _any(text: str, patterns) -> bool:
     return any(re.search(p, text) for p in patterns)
 
 
+# Words of a request, never the start of a name.
+_NOT_NAMES = {"send", "transfer", "money", "naira", "thousand", "hundred", "million", "please", "abeg", "account",
+              "give", "dash", "wire", "remit", "make", "with", "from", "bank", "zenith"}
+
+
 def _named_payee(text: str, people: list[Payee]) -> Payee | None:
     for p in people:
         if re.search(rf"\b{re.escape(p.nickname.lower())}\b", text):
@@ -32,6 +37,12 @@ def _named_payee(text: str, people: list[Payee]) -> Payee | None:
     for p in people:
         for part in p.name.lower().split():
             if len(part) > 3 and re.search(rf"\b{re.escape(part)}\b", text):
+                return p
+    # A short form: "Tolu" for Tolulope.
+    said = [w for w in re.findall(r"[a-z]+", text) if len(w) >= 4 and w not in _NOT_NAMES]
+    for p in people:
+        for part in (p.nickname.lower(), *p.name.lower().split()):
+            if any(part.startswith(w) for w in said):
                 return p
     return None
 
@@ -66,7 +77,7 @@ def _turn(db, customer, conv, text, mem: Memory, lang, source):
     amount = amounts.parse_kobo(text)
     named = _named_payee(text, people)
     label = next((m.upper() for m in re.findall(r"\baccount_\d+\b", text) if m.upper() in mem.labels), None)
-    bank_code = toolbox.bank_in_text(text) if label else None
+    bank_code = (toolbox.bank_in_text(text) or toolbox.zenith_if_own(mem.labels[label])) if label else None
     waiting = next((p for p in people if p.id == conv.waiting_payee_id), None)
     sending = _any(text, _SEND)
 

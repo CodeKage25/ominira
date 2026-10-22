@@ -45,3 +45,32 @@ def test_and_back_again(client):
 def test_the_assistant_never_sees_the_full_number(client):
     from tests.conftest import ASSISTANT
     assert "number" not in client.get("/v1/accounts", headers=ASSISTANT).json()[0]
+
+
+def _turn(c, headers: dict, text: str) -> dict:
+    conv = c.post("/v1/conversations", headers=headers).json()["id"]
+    r = c.post(f"/v1/conversations/{conv}/turns", headers=headers, json={"text": text})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_a_new_customer_starts_with_people_saved(client):
+    chinedu, _ = _sign_up(client, "Chinedu Okafor", "4826")
+    saved = {p["nickname"]: p for p in client.get("/v1/payees", headers=chinedu).json()}
+    assert {"Tolu", "Mama", "Musa", "Chika", "Aisha", "Emeka"} <= saved.keys()
+    assert saved["Chika"]["name"] == "Okonkwo Chika" and saved["Chika"]["bank"] == "Access Bank"
+    said = _turn(client, chinedu, "send twenty thousand to Tolu")
+    assert said["draft"]["readback"]["name"] == "Adebayo Tolulope"
+
+
+def test_a_short_form_finds_the_saved_name(client):
+    said = _turn(client, CUSTOMER, "send five thousand to Tolulo")
+    assert said["draft"]["readback"]["name"] == "Adebayo Tolulope"
+
+
+def test_a_spoken_zenith_number_needs_no_bank(client):
+    _, number = _sign_up(client, "Chinedu Okafor", "4826")
+    said = _turn(client, CUSTOMER, f"send five thousand to {number}")
+    assert said["draft"]["readback"]["name"] == "Chinedu Okafor"
+    # Not a Zenith customer's number: the bank is still asked for.
+    assert "Which bank" in _turn(client, CUSTOMER, "send five thousand to 0691234567")["say"]

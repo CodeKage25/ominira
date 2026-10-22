@@ -26,9 +26,9 @@ You can: say the balance, say what came in or went out, find saved people, look 
 
 You never move money. draft_transfer and draft_card_block only prepare a request; the app then reads it back and the customer confirms it with their Pulse PIN. After you draft, never say the money has gone.
 
-Prepare at most one request per turn. Never guess an amount or a person. If the customer has not given both, ask for what is missing. A saved person counts as named when the customer uses their nickname or name.
+Prepare at most one request per turn. Never guess an amount or a person. If the customer has not given both, ask for what is missing. A saved person counts as named when the customer uses their nickname, their name, or a short form of it (Tolu for Tolulope).
 
-Account numbers reach you as labels like ACCOUNT_1. A label keeps its meaning for the whole conversation. Pass the label as account_ref; never make one up. Never ask for a PIN, BVN or card number. If the customer starts to say one, tell them never to say it aloud.
+Account numbers reach you as labels like ACCOUNT_1. A label keeps its meaning for the whole conversation. Pass the label as account_ref; never make one up. If no bank is said, leave bank empty: an account a Zenith customer holds is found without one; otherwise ask which bank. Never ask for a PIN, BVN or card number. If the customer starts to say one, tell them never to say it aloud.
 
 If the customer asks to send all or most of their money, ask for the exact amount first. Scammers push people to empty their accounts.
 
@@ -103,9 +103,11 @@ class _ToolRunner:
             return lines.say(c.lang, "pulse_pin_explain")
         if name == "find_account":
             number = self.accounts.get(str(args.get("account_ref", "")))
-            code = toolbox.bank_code_for(str(args.get("bank", "")))
+            code = toolbox.bank_for(str(args.get("bank", "")), number)
             if number is None:
                 return json.dumps({"error": "Unknown account label. Ask the customer to say the account number."})
+            if code is None and not str(args.get("bank", "")).strip():
+                return json.dumps({"error": lines.say(c.lang, "ask_bank")})
             if code is None:
                 return json.dumps({"error": lines.say(c.lang, "unknown_bank", bank=args.get("bank", ""))})
             return json.dumps(toolbox.find_account(c, code, number))
@@ -128,7 +130,7 @@ class _ToolRunner:
         else:
             ref = str(args.get("account_ref", ""))
             number = self.accounts.get(ref)
-            code = toolbox.bank_code_for(str(args.get("bank", "")))
+            code = toolbox.bank_for(str(args.get("bank", "")), number)
             if ref and number is None:
                 return json.dumps({"error": f"Unknown account label {ref}. Ask the customer to say the account number."})
             if number is None or code is None:

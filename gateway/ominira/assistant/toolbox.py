@@ -12,6 +12,8 @@ from ominira.database import utcnow
 from ominira.drafting import enquire_account
 from ominira.tables import Customer, Draft, Payee
 
+ZENITH = "057"
+
 _BANK_ALIASES = {
     "gtb": "058", "gt": "058", "gtbank": "058", "guaranty": "058", "guaranty trust": "058",
     "firstbank": "011", "first": "011", "first bank": "011", "uba": "033", "united bank": "033",
@@ -83,6 +85,17 @@ def bank_in_text(text: str) -> str | None:
         if re.search(rf"\b{re.escape(alias)}\b", low):
             return _BANK_ALIASES[alias]
     return None
+
+
+def zenith_if_own(number: str) -> str | None:
+    """No bank said: a number one of Zenith's own customers holds is taken as Zenith's."""
+    return ZENITH if get_core().customer_for_account(number) else None
+
+
+def bank_for(said: str, number: str | None) -> str | None:
+    if said.strip():
+        return bank_code_for(said)
+    return zenith_if_own(number) if number else None
 
 
 def find_account(customer: Customer, bank_code: str, number: str) -> dict:

@@ -9,8 +9,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ominira import audit_log, lines
-from ominira.core import get_core
+from ominira.core import get_core, mock_core
 from ominira.database import get_session
+from ominira.demo_world import give_starter_payees
 from ominira.drafting import new_id
 from ominira.problems import Problem
 from ominira.tables import Customer, Onboarding, Token
@@ -132,6 +133,8 @@ def complete(sid: str, db: Session = Depends(get_session)):
         db.add(customer)
         db.flush()
         db.add(Token(token=secrets.token_urlsafe(24), role="customer", customer_id=customer.id))
+        if mock_core() is not None:
+            give_starter_payees(db, customer.id, core_ref)
         row.customer_id = customer.id
         row.completed = True
         db.commit()
