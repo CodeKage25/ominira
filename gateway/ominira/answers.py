@@ -2,6 +2,7 @@
 
 A clear no beats a yes. Yorùbá, Hausa and Igbo words are unreviewed drafts, matched without their tone marks."""
 
+import difflib
 import re
 import unicodedata
 
@@ -22,7 +23,29 @@ _LANGUAGES = {
     "ig": ("igbo", "ibo", "egbo"),
 }
 _DIGITS = {"zero": "0", "oh": "0", "o": "0", "nought": "0", "one": "1", "two": "2", "to": "2", "too": "2",
-           "three": "3", "four": "4", "for": "4", "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9"}
+           "three": "3", "four": "4", "for": "4", "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9",
+           # What a recogniser writes for digits said down a phone line.
+           "won": "1", "wan": "1", "tu": "2", "tree": "3", "free": "3", "fo": "4", "fore": "4", "fife": "5",
+           "fiv": "5", "sicks": "6", "siks": "6", "sevin": "7", "seben": "7", "ate": "8", "eit": "8", "nain": "9",
+           "nayn": "9", "niner": "9"}
+_DIGIT_WORDS = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
+
+
+def _digit_word(w: str) -> str | None:
+    """One word as digits, forgiving a recogniser: "oight" is "oh eight", "sevn" is "seven"."""
+    if w in _DIGITS:
+        return _DIGITS[w]
+    # "oh" run into the next digit first: "oight" is closer to "eight" than to anything, but means 0 8.
+    for lead in ("oh", "o"):
+        rest = w[len(lead):]
+        if w.startswith(lead) and len(rest) >= 2:
+            if rest in _DIGITS:
+                return "0" + _DIGITS[rest]
+            close = difflib.get_close_matches(rest, _DIGIT_WORDS, n=1, cutoff=0.75)
+            if close:
+                return "0" + _DIGITS[close[0]]
+    close = difflib.get_close_matches(w, _DIGIT_WORDS, n=1, cutoff=0.75)
+    return _DIGITS[close[0]] if close else None
 
 
 def plain(text: str) -> str:
@@ -71,6 +94,6 @@ def digits(text: str) -> str:
     for w in re.findall(r"[a-z]+|\d+", plain(text)):
         if w.isdigit():
             out.append(w)
-        elif w in _DIGITS:
-            out.append(_DIGITS[w])
+        elif (d := _digit_word(w)) is not None:
+            out.append(d)
     return "".join(out)

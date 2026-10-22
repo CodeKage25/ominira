@@ -161,6 +161,9 @@ def test_a_stream_without_a_ticket_is_refused(client):
 def test_spoken_answers():
     assert answers.language("Yorùbá") == "yo" and answers.language("I want Hausa") == "ha"
     assert answers.digits("two oh eight, 1 2 3") == "208123"
+    # What YarnGPT wrote for "two oh eight, one two three, four five six seven" down a phone line.
+    assert answers.digits("two oight, one two, three, four five, six seven.") == "2081234567"
+    assert answers.digits("won tree ate nain sevn") == "13897"
     assert answers.is_yes("Yes, send it") and not answers.is_yes("No, don't send it")
     assert answers.is_no("Rárá") and answers.is_stop("stop it") and answers.is_stop("yes")
     assert answers.is_bye("that's all, bye")

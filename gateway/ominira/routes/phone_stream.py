@@ -167,6 +167,8 @@ class Line:
         self.listener = phone_audio.Listener()
         self.utterances: asyncio.Queue[bytes] = asyncio.Queue()
         self.presses: asyncio.Queue[float] = asyncio.Queue()
+        self.typed: list[str] = []  # keypad digits, for an account number typed instead of said
+        self.typed_ten = asyncio.Event()
         self.began = asyncio.Event()
         self.started = asyncio.Event()
         self.closed = asyncio.Event()
@@ -219,6 +221,11 @@ class Line:
                         self.utterances.put_nowait(said)
                 elif event == "dtmf":
                     self.presses.put_nowait(self.loop.time())
+                    digit = str(msg.get("dtmf", {}).get("digit", ""))
+                    if digit.isdigit():
+                        self.typed.append(digit)
+                        if len(self.typed) >= 10:
+                            self.typed_ten.set()
                 elif event == "mark":
                     name = msg.get("mark", {}).get("name", "")
                     self.marks[name] = self.loop.time()
@@ -318,10 +325,14 @@ class Line:
         """An account number, said in groups with pauses between: longer pauses are allowed, and what is heard
         is added up until there are ten digits or the caller stops."""
         self.listener.end_frames = 1600 // 20
+        self.typed.clear()
+        self.typed_ten.clear()
         digits = ""
         try:
             for _ in range(4):
-                said = await self.hear(12 if not digits else 4)
+                said = await self.hear(12 if not digits else 4, stop=self.typed_ten)
+                if self.typed_ten.is_set():
+                    return "".join(self.typed)[:10]
                 if not said:
                     break
                 digits += answers.digits(said)
@@ -329,16 +340,26 @@ class Line:
                     break
         finally:
             self.listener.end_frames = phone_audio.Listener().end_frames
+        log.info("account number on a call: %d digits heard", len(digits))  # how many, never which
         return digits[:10] if len(digits) >= 10 else digits
 
-    async def hear(self, timeout: float = HEAR_S) -> str:
-        """What the caller says next, as text; empty when they said nothing or it could not be understood."""
+    async def hear(self, timeout: float = HEAR_S, stop: asyncio.Event | None = None) -> str:
+        """What the caller says next, as text; empty when they said nothing, it could not be understood, or
+        `stop` was set first."""
         if on_listen is not None:
             on_listen()
         if self.utterances.empty() and not self.listener.speaking:
+            waits = [asyncio.ensure_future(self.began.wait())]
+            if stop is not None:
+                waits.append(asyncio.ensure_future(stop.wait()))
             try:
-                await self.race(self.began.wait(), timeout)
+                await self.race(asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED), timeout)
             except TimeoutError:
+                return ""
+            finally:
+                for w in waits:
+                    w.cancel()
+            if stop is not None and stop.is_set() or not self.began.is_set():
                 return ""
         try:
             said = await self.race(self.utterances.get(), 15)
