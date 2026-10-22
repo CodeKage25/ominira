@@ -25,6 +25,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
@@ -35,6 +36,31 @@ import app.ominira.ui.theme.Glyphs
 import app.ominira.ui.theme.Om
 
 enum class Grouping { None, Fours, Thousands }
+
+@Composable
+fun NameField(label: String, value: String, onValueChange: (String) -> Unit, modifier: Modifier = Modifier, hint: String? = null) {
+    val c = Om.color
+    var focused by remember { mutableStateOf(false) }
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(label, style = Om.type.label, color = c.text)
+        if (hint != null) Text(hint, style = Om.type.small, color = c.muted)
+        BasicTextField(
+            value = value,
+            onValueChange = { typed -> onValueChange(typed.take(120)) },
+            singleLine = true,
+            textStyle = Om.type.bodyStrong.copy(color = c.text),
+            cursorBrush = SolidColor(c.text),
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, keyboardType = KeyboardType.Text),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = Om.size.target)
+                .onFocusChanged { focused = it.isFocused }
+                .background(c.raised, Corners.sm)
+                .border(width = if (focused) 3.dp else 2.dp, color = if (focused) c.focus else c.lineStrong, shape = Corners.sm)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+        )
+    }
+}
 
 @Composable
 fun DigitField(

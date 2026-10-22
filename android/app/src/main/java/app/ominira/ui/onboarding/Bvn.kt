@@ -146,7 +146,7 @@ fun BvnScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
         Heading(w.bvnConsentHeading)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Badge(Tone.Ok, w.selfie)
-            Badge(Tone.Ok, w.idCard)
+            Badge(Tone.Ok, w.nameKicker)
             Badge(if (open) Tone.Ok else Tone.Caution, "BVN")
         }
         Hint(w.bvnConsent)

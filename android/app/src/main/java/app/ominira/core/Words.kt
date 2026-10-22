@@ -212,14 +212,54 @@ class Words private constructor(val lang: Lang) {
     val lastCheck get() = t("Last check", "Last check", "Àyẹ̀wò tó kẹ́yìn", "Bincike na ƙarshe", "Nlele ikpeazụ")
     val selfie get() = t("Selfie", "Selfie", "Fọ́tò ojú", "Hoton fuska", "Foto ihu")
     val idCard get() = t("ID card", "ID card", "Káàdì ìdánimọ̀", "Katin shaida", "Kaadị njirimara")
+    // The customer's name, said or typed: it stands in for the name a real bank reads from the BVN record
+    val nameKicker get() = t("Your name", "Your name", "Orúkọ yín", "Sunanku", "Aha gị")
+    val askName get() = t(
+        "What is your full name?",
+        "Wetin be your full name?",
+        "Kí ni orúkọ yín ní kíkún?",
+        "Menene cikakken sunanku?",
+        "Gịnị bụ aha gị zuru ezu?",
+    )
+    val sayOrTypeName get() = t(
+        "Say it, or type it below.",
+        "Talk am, or type am for down.",
+        "Ẹ sọ ọ́, tàbí ẹ tẹ̀ ẹ́ sísàlẹ̀.",
+        "Ku faɗe shi, ko ku rubuta shi a ƙasa.",
+        "Kwuo ya, ma ọ bụ dee ya n'okpuru.",
+    )
+    fun nameHeard(name: String) = t(
+        "I heard $name. Say yes if that is right, or say your name again.",
+        "I hear $name. Talk yes if e correct, or talk your name again.",
+        "Mo gbọ́ $name. Ẹ sọ bẹ́ẹ̀ni tí ó bá tọ́, tàbí ẹ tún orúkọ yín sọ.",
+        "Na ji $name. Ku ce eh idan daidai ne, ko ku sake faɗin sunanku.",
+        "Anụrụ m $name. Kwuo ee ma ọ bụrụ na ọ dị mma, ma ọ bụ kwuo aha gị ọzọ.",
+    )
+    val nameLabel get() = t("Your full name", "Your full name", "Orúkọ yín ní kíkún", "Cikakken sunanku", "Aha gị zuru ezu")
+    val nameHint get() = t(
+        "As it is on your bank records.",
+        "As e dey for your bank record.",
+        "Bí ó ṣe wà nínú àkọsílẹ̀ báǹkì yín.",
+        "Kamar yadda yake a bayanan bankinku.",
+        "Dị ka o si dị na ndekọ ụlọ akụ gị.",
+    )
+    val nameSave get() = t("That is my name", "Na my name be that", "Orúkọ mi nìyẹn", "Sunana ke nan", "Nke ahụ bụ aha m")
+    val nameFailed get() = t(
+        "I could not save your name. Check the connection and try again.",
+        "I no fit save your name. Check your network and try again.",
+        "Mi ò lè fi orúkọ yín pamọ́. Ẹ ṣàyẹ̀wò ìsopọ̀ kí ẹ sì tún gbìyànjú.",
+        "Ban iya ajiye sunanku ba. Ku duba haɗin kuma ku sake gwadawa.",
+        "Enweghị m ike ichekwa aha gị. Lelee njikọ wee nwaa ọzọ.",
+    )
+
     // BVN by consent: Zenith asks NIBSS, so the customer never says the 11 digits
     val bvnConsentHeading get() = t("Confirm your BVN", "Confirm your BVN", "Ẹ jẹ́rìí BVN yín", "Tabbatar da BVN ɗinku", "Kwado BVN gị")
     val bvnConsent get() = t(
-        "Zenith will confirm your BVN with NIBSS, using your NIN and this phone number. You do not need to say it.",
-        "Zenith go confirm your BVN with NIBSS, with your NIN and this phone number. You no need talk am.",
-        "Zenith yóò jẹ́rìí BVN yín lọ́dọ̀ NIBSS, pẹ̀lú NIN yín àti nọ́ńbà fóònù yìí. Ẹ kò nílò láti sọ ọ́.",
-        "Zenith za ta tabbatar da BVN ɗinku a NIBSS, ta amfani da NIN ɗinku da lambar wannan wayar. Ba sai kun faɗa ba.",
-        "Zenith ga-akwado BVN gị na NIBSS, site na NIN gị na nọmba ekwentị a. Ịchọghị ikwu ya.",
+        "Zenith will confirm your BVN with NIBSS, using your name and this phone number. You do not need to say it.",
+        "Zenith go confirm your BVN with NIBSS, with your name and this phone number. You no need talk am.",
+        "Zenith yóò jẹ́rìí BVN yín lọ́dọ̀ NIBSS, pẹ̀lú orúkọ yín àti nọ́ńbà fóònù yìí. Ẹ kò nílò láti sọ ọ́.",
+        "Zenith za ta tabbatar da BVN ɗinku a NIBSS, ta amfani da sunanku da lambar wannan wayar. Ba sai kun faɗa ba.",
+        "Zenith ga-akwado BVN gị na NIBSS, site na aha gị na nọmba ekwentị a. Ịchọghị ikwu ya.",
     )
     val allowYesOrTap get() = t(
         "Say yes, or tap anywhere, to allow it.",

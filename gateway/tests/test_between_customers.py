@@ -74,3 +74,12 @@ def test_a_spoken_zenith_number_needs_no_bank(client):
     assert said["draft"]["readback"]["name"] == "Chinedu Okafor"
     # Not a Zenith customer's number: the bank is still asked for.
     assert "Which bank" in _turn(client, CUSTOMER, "send five thousand to 0691234567")["say"]
+
+
+def test_a_name_alone_opens_the_account(client):
+    sid = client.post("/v1/onboarding/sessions").json()["id"]
+    r = client.post(f"/v1/onboarding/{sid}/id-document", json={"full_name": "Kemi Bello"})
+    assert r.status_code == 200 and r.json()["full_name"] == "Kemi Bello"
+    client.post(f"/v1/onboarding/{sid}/bvn-check")
+    token = client.post(f"/v1/onboarding/{sid}/complete").json()["token"]
+    assert client.get("/v1/me/preferences", headers={"Authorization": f"Bearer {token}"}).json()["first_name"] == "Kemi"

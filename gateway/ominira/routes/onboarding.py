@@ -35,10 +35,11 @@ class PinIn(BaseModel):
 
 
 class IdIn(BaseModel):
-    """What the phone read off the card. Only the name is kept; the rest is echoed back."""
+    """The customer's name, said or typed (a real bank reads it from the BVN record), with the card's details
+    when a card was read. Only the name is kept; the rest is echoed back."""
     full_name: str = Field(min_length=2, max_length=120)
-    nin_last4: str = Field(pattern=r"^\d{4}$")
-    born_on: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    nin_last4: str = Field("", pattern=r"^(\d{4})?$")
+    born_on: str = Field("", pattern=r"^(\d{4}-\d{2}-\d{2})?$")
 
 
 def _customer_of(db: Session, row: Onboarding) -> Customer:
