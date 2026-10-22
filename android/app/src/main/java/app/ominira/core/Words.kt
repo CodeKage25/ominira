@@ -94,6 +94,21 @@ class Words private constructor(val lang: Lang) {
     )
     val sayTheseNumbers get() = t("Got it. Now say these numbers.", "I don see am. Now talk these numbers.", "Mo ti rí i. Ẹ sọ àwọn nọ́ńbà wọ̀nyí.", "Na samu. Yanzu ku faɗi waɗannan lambobi.", "Ahụla m ya. Ugbu a kwuo nọmba ndị a.")
     fun sayNumbers(list: String) = t("Say these numbers: $list", "Talk these numbers: $list", "Ẹ sọ àwọn nọ́ńbà wọ̀nyí: $list", "Ku faɗi waɗannan lambobi: $list", "Kwuo nọmba ndị a: $list")
+    // Four boxed digits look like a PIN: say plainly that they are not.
+    val notYourPin get() = t(
+        "They show you are really here. They are not your PIN.",
+        "Dem dey show say na you dey here. Dem no be your PIN.",
+        "Wọ́n fi hàn pé ẹ̀yin gan-an wà níbí. Wọn kì í ṣe PIN yín.",
+        "Suna nuna cewa ku ne a nan da gaske. Ba PIN ɗinku ba ne.",
+        "Ha na-egosi na ọ bụ gị nọ ebe a n'ezie. Ha abụghị PIN gị.",
+    )
+    val digitsAgain get() = t(
+        "I didn't catch the numbers. Please say them again.",
+        "I no hear the numbers well. Abeg talk dem again.",
+        "Kò yé mi àwọn nọ́ńbà náà. Ẹ jọ̀ọ́ ẹ tún wọn sọ.",
+        "Ban ji lambobin sosai ba. Don Allah ku sake faɗa.",
+        "Anụghị m nọmba ndị ahụ nke ọma. Biko kwuo ha ọzọ.",
+    )
     val notYou get() = t(
         "I could not confirm that was you. Let's try once more.",
         "I no fit confirm say na you. Make we try again.",

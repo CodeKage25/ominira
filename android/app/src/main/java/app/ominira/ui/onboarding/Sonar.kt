@@ -4,6 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -31,6 +32,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.ominira.Session
 import app.ominira.core.Answers
@@ -51,7 +53,9 @@ import app.ominira.ui.theme.Om
 import app.ominira.voice.Tones
 import app.ominira.voice.rememberPrompt
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 @Composable
 fun SonarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
@@ -68,6 +72,38 @@ fun SonarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
     val aiming = rememberAiming(session, Lens.Face)
 
     fun next() = leave.run(onNext)
+
+    // Set while the app waits for the four numbers to be said back; the prompt hands what it heard here.
+    var heardDigits by remember { mutableStateOf<CompletableDeferred<String?>?>(null) }
+    var startAsked by remember { mutableStateOf(false) }
+
+    val prompt = rememberPrompt(session) { heard ->
+        val waiting = heardDigits
+        when {
+            waiting != null -> waiting.complete(heard)
+            heard == null -> session.say(s.tapToStart)
+            Answers.isStart(heard) -> startAsked = true
+            misses < 2 -> {
+                misses += 1
+                ask(s.sayStartOrTap)
+            }
+            else -> session.say(s.tapWhenReady)
+        }
+    }
+
+    // The liveness check: the numbers are said, then heard back. Two tries; null when never heard right.
+    suspend fun sayBack(expected: String): List<Int>? {
+        repeat(2) { attempt ->
+            val answer = CompletableDeferred<String?>()
+            heardDigits = answer
+            val lines = if (attempt == 0) arrayOf(s.sayTheseNumbers, s.notYourPin, s.digits(expected)) else arrayOf(s.digitsAgain, s.digits(expected))
+            prompt.ask(*lines, listen = true)
+            val said = withTimeoutOrNull(30_000) { answer.await() }?.let { Answers.digits(it) }
+            heardDigits = null
+            if (said == expected) return said.map { it - '0' }
+        }
+        return null
+    }
 
     fun selfie() {
         scope.launch {
@@ -90,9 +126,9 @@ fun SonarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
             session.haptics.lock()
             // A fast lock must not cut off the line still playing: let it finish first.
             session.speaker.awaitQuiet()
-            session.say(s.sayTheseNumbers, digits.joinToString(", "))
-            val live = runCatching { session.api.sendSelfie(id, digits) }.getOrDefault(true)
-            delay(4_000)
+            // Voice customers say the numbers back; for everyone else the held face is the check.
+            val spoken = if (session.talksFirst) sayBack(digits.joinToString("")) ?: emptyList() else null
+            val live = runCatching { session.api.sendSelfie(id, spoken) }.getOrDefault(false)
             if (!live) {
                 problem = w.notYou
                 session.say(s.notYou)
@@ -125,15 +161,10 @@ fun SonarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
         }
     }
 
-    val prompt = rememberPrompt(session) { heard ->
-        when {
-            heard == null -> session.say(s.tapToStart)
-            Answers.isStart(heard) -> start()
-            misses < 2 -> {
-                misses += 1
-                ask(s.sayStartOrTap)
-            }
-            else -> session.say(s.tapWhenReady)
+    LaunchedEffect(startAsked) {
+        if (startAsked) {
+            startAsked = false
+            start()
         }
     }
 
@@ -206,20 +237,30 @@ fun SonarScreen(session: Session, onBack: () -> Unit, onNext: () -> Unit) {
                     style = Stroke(width = 4.dp.toPx(), pathEffect = if (locked) null else PathEffect.dashPathEffect(floatArrayOf(18f, 12f))),
                 )
             }
-            if (phase == 4 && digits.isNotEmpty()) {
-                Row(
+            // The numbers are for voice customers, who say them back.
+            if (phase == 4 && digits.isNotEmpty() && session.talksFirst) {
+                Column(
                     Modifier
                         .align(Alignment.TopCenter)
                         .padding(16.dp)
-                        .semantics(mergeDescendants = true) { contentDescription = w.sayNumbers(digits.joinToString(", ")) },
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        .clip(Corners.lg)
+                        .background(Color(0xE606170F))
+                        .padding(12.dp)
+                        .semantics(mergeDescendants = true) {
+                            contentDescription = w.sayNumbers(digits.joinToString(", ")) + ". " + w.notYourPin
+                        },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    for (d in digits) {
-                        Box(
-                            Modifier.size(width = 48.dp, height = 56.dp).clip(Corners.sm).background(Om.color.sun),
-                            contentAlignment = Alignment.Center,
-                        ) { Text(d.toString(), style = Om.type.titleSmall, color = Om.color.onSun) }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        for (d in digits) {
+                            Box(
+                                Modifier.size(width = 48.dp, height = 56.dp).clip(Corners.sm).background(Om.color.sun),
+                                contentAlignment = Alignment.Center,
+                            ) { Text(d.toString(), style = Om.type.titleSmall, color = Om.color.onSun) }
+                        }
                     }
+                    Text(w.notYourPin, style = Om.type.small, color = Om.color.bandText, textAlign = TextAlign.Center)
                 }
             }
             val line = aiming.aim?.takeIf { aiming.active }?.let { w.aim(it, card = false) } ?: w.sonarSteps[phase]
