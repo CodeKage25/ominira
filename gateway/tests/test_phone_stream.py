@@ -32,6 +32,7 @@ class FakeTwilio:
         self.heard_media = 0
         self.closed = False
         self.ticks: dict[str, int] = {}
+        self.key = "5"  # which key a press uses: the Pulse PIN does not care
 
     def send(self, message: dict) -> None:
         with self.lock:
@@ -56,7 +57,7 @@ class FakeTwilio:
                         # The count starts at zero in this test, so tick i is digit i.
                         if self.pin and int(i) % 10 == self.pin[0]:
                             self.pin.pop(0)
-                            self.send({"event": "dtmf", "dtmf": {"digit": "5"}})
+                            self.send({"event": "dtmf", "dtmf": {"digit": self.key}})
         except Exception:
             self.closed = True
 
@@ -195,3 +196,26 @@ def test_the_account_number_takes_the_first_ten_digit_answer(monkeypatch):
     monkeypatch.setattr(phone_stream, "_google", lambda said, lang, model: None)
     monkeypatch.setattr(phone_stream, "transcribe", lambda said: "two oight one two three four five six seven")
     assert phone_stream.transcribe_number(b"\xff" * 800) == "2081234567"
+
+
+def test_a_typed_pin_works_on_a_call(live, client, monkeypatch):
+    """Four keys at once, for a quick demo: the first counts as a press, the four as the PIN."""
+    real_receive = FakeTwilio.receive
+
+    def receive(self):
+        original_send = self.send
+
+        def send(message):
+            original_send(message)
+            if message.get("event") == "dtmf":
+                for d in "075":
+                    original_send({"event": "dtmf", "dtmf": {"digit": d}})
+        self.send = send
+        self.key = "2"
+        real_receive(self)
+    monkeypatch.setattr(FakeTwilio, "receive", receive)
+    before = balance(client)
+    # Each PIN (proving the account, then sending): the first key lands on tick 2 as "2", then 0 7 5 at once.
+    live(["English", "2081234567", "send twenty thousand to Tolu", "yes", "goodbye"], pin=[2, 2],
+         caller="+2348034444444")
+    assert balance(client) == before - 2_000_000

@@ -42,6 +42,7 @@ HEAR_S = 8.0
 VOICES = {"en": "jude", "pcm": "jude"}
 DIGIT_PAUSE_S = 0.6  # between one digit's count and the next
 DTMF_LAG_S = 0.8  # how long after a key press Twilio's report of it arrives, when no tone was heard
+TYPED_WITHIN_S = 2.5  # after the first key: the other three of a typed PIN come within this
 KEY_TONE_LEVEL = 2500.0  # a keypad tone is loud and sudden on the line
 
 # Tests set this to learn when the call starts listening.
@@ -196,6 +197,7 @@ class Line:
         self.was_loud = False
         self.typed: list[str] = []  # keypad digits, for an account number typed instead of said
         self.typed_ten = asyncio.Event()
+        self.typed_more = asyncio.Event()
         self.began = asyncio.Event()
         self.started = asyncio.Event()
         self.closed = asyncio.Event()
@@ -257,6 +259,7 @@ class Line:
                     digit = str(msg.get("dtmf", {}).get("digit", ""))
                     if digit.isdigit():
                         self.typed.append(digit)
+                        self.typed_more.set()
                         if len(self.typed) >= 10:
                             self.typed_ten.set()
                 elif event == "mark":
@@ -442,15 +445,35 @@ class Line:
             return playing[-1][1]
         return None
 
+    async def typed_four(self, within: float) -> bool:
+        """True once four keypad digits have come in, within `within` seconds of now."""
+        deadline = self.loop.time() + within
+        while len(self.typed) < 4:
+            left = deadline - self.loop.time()
+            if left <= 0:
+                return False
+            self.typed_more.clear()
+            try:
+                await self.race(self.typed_more.wait(), left)
+            except TimeoutError:
+                return False
+        return True
+
     async def pulse_pin(self) -> str | None:
         await self.say(lines.say(self.lang, "phone_v_pin_short" if self.pin_explained else "phone_v_pin"),
                        barge=False)
         self.pin_explained = True
+        self.typed.clear()
         digits: list[int] = []
         for run in range(4):
             digit = await self.pulse_digit(self.count * 10 + run)
             if digit is None:
                 return None
+            if run == 0 and settings.phone_typed_pin and await self.typed_four(TYPED_WITHIN_S):
+                # Four keys in a moment: the PIN was typed, not pulsed.
+                block = seal([int(d) for d in self.typed[:4]])
+                self.typed.clear()
+                return block
             digits.append(digit)
             await asyncio.sleep(DIGIT_PAUSE_S)
         block = seal(digits)
