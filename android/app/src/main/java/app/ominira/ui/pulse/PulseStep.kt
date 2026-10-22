@@ -95,18 +95,6 @@ fun PulseStep(
         top = {
             if (onBack != null) IconAction(Glyphs.Back, backLabel, onBack)
             if (topStart != null) topStart() else Spacer(Modifier.weight(1f))
-            if (doneLine == null && !locked) {
-                ActionButton(
-                    if (typing) w.pulseInstead else w.typePin,
-                    onClick = {
-                        session.speaker.stop()
-                        typed = ""
-                        typing = !typing
-                    },
-                    style = Emphasis.Secondary,
-                    wide = false,
-                )
-            }
             ActionButton(
                 if (showCount) w.hideCount else w.showCount,
                 onClick = { showCount = !showCount },
@@ -163,6 +151,18 @@ fun PulseStep(
                     }
                 }
             }
+        }
+        // Below the pad, not in the top bar: the bar keeps room for the brand.
+        if (doneLine == null && !locked && !busy) {
+            ActionButton(
+                if (typing) w.pulseInstead else w.typePin,
+                onClick = {
+                    session.speaker.stop()
+                    typed = ""
+                    typing = !typing
+                },
+                style = Emphasis.Secondary,
+            )
         }
         if (showCount) Text(w.demoPin, style = Om.type.small, color = c.bandMuted)
     }

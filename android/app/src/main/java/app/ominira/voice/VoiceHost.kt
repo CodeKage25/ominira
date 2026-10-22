@@ -211,15 +211,16 @@ class Voice internal constructor(
             if (!isActive) return@launch
             val turn = answer
             when {
-                number.isNotBlank() -> ask(s.accountNumberIs(s.digits(number)), s.anythingElse)
+                // A request is an open answer: the phone hears it even when the cloud voice is resting.
+                number.isNotBlank() -> ask(s.accountNumberIs(s.digits(number)), s.anythingElse, listen = session.talksFirst)
                 turn == null -> session.say(s.couldNotDo)
                 turn.draft != null -> {
                     spokeAt = SystemClock.elapsedRealtime()
                     routeDraft(turn)
                 }
                 !session.talksFirst -> session.say(turn.say)
-                turn.say.trimEnd().endsWith("?") -> ask(turn.say)
-                else -> ask(turn.say, s.anythingElse)
+                turn.say.trimEnd().endsWith("?") -> ask(turn.say, listen = true)
+                else -> ask(turn.say, s.anythingElse, listen = session.talksFirst)
             }
         }
     }
