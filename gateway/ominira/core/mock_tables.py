@@ -26,6 +26,7 @@ class MockAccount(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     customer_ref: Mapped[str] = mapped_column(ForeignKey("mock_customers.ref"))
+    bank_code: Mapped[str] = mapped_column(String(10), default="057")
     number: Mapped[str] = mapped_column(String(10))
     name: Mapped[str] = mapped_column(String(60))
     balance_kobo: Mapped[int] = mapped_column(BigInteger)

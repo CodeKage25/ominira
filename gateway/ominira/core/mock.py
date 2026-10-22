@@ -200,8 +200,7 @@ class MockZenith(ZenithCore):
             ).first()
             if (known is not None and known.status != "active") or (known is None and number.endswith("0006")):
                 raise CoreError(base.DORMANT, "account is dormant")
-            own = self._zenith_owner(db, bank_code, number)
-            name = own or (known.name if known else generated_name(bank_code, number))
+            name = known.name if known else (self._owner(db, bank_code, number) or generated_name(bank_code, number))
             enquiry = MockEnquiry(ref="NE" + secrets.token_hex(8), bank_code=bank_code, number=number, name=name)
             db.add(enquiry)
             db.commit()
@@ -313,10 +312,8 @@ class MockZenith(ZenithCore):
                     db.add(MockTxn(id="tx_" + secrets.token_hex(5), account_id=acct.id,
                                    who=" ".join(p.capitalize() for p in enquiry.name.split()),
                                    amount_kobo=amount_kobo, incoming=False, reference=move.reference))
-                    # Zenith to Zenith: the money lands in the same database transaction it leaves in.
-                    dest = None
-                    if enquiry.bank_code == ZENITH:
-                        dest = db.scalars(select(MockAccount).where(MockAccount.number == enquiry.number)).first()
+                    # To an account the mock holds, at any bank: it lands in the same database transaction.
+                    dest = self._account_at(db, enquiry.bank_code, enquiry.number)
                     if dest is not None and dest.id != acct.id:
                         dest.balance_kobo += amount_kobo
                         db.add(MockTxn(id="tx_" + secrets.token_hex(5), account_id=dest.id, who=c.full_name,
@@ -376,24 +373,26 @@ class MockZenith(ZenithCore):
         return BvnCheck(len(bvn) == 11 and bvn.isdigit() and bvn != "12345678901")
 
     @staticmethod
-    def _zenith_owner(db: Session, bank_code: str, number: str) -> str | None:
-        """A Zenith account the mock bank holds: its owner's name, as name enquiry gives it."""
-        if bank_code != ZENITH:
-            return None
-        acct = db.scalars(select(MockAccount).where(MockAccount.number == number)).first()
+    def _account_at(db: Session, bank_code: str, number: str) -> MockAccount | None:
+        return db.scalars(select(MockAccount).where(MockAccount.bank_code == bank_code,
+                                                    MockAccount.number == number)).first()
+
+    def _owner(self, db: Session, bank_code: str, number: str) -> str | None:
+        """An account the mock holds: its owner's name, as name enquiry gives it."""
+        acct = self._account_at(db, bank_code, number)
         owner = db.get(MockCustomer, acct.customer_ref) if acct else None
         return owner.full_name.upper() if owner else None
 
     def customer_for_account(self, account_number: str) -> str | None:
         with self._sessions() as db:
-            acct = db.scalars(select(MockAccount).where(MockAccount.number == account_number.strip())).first()
+            acct = self._account_at(db, ZENITH, account_number.strip())
             return acct.customer_ref if acct else None
 
     def open_customer(self, full_name: str) -> str:
         with self._money_lock, self._sessions() as db:
             ref = "ZC-" + self._reference("", 10)
             number = self._reference("20", 8)
-            while db.scalars(select(MockAccount).where(MockAccount.number == number)).first() is not None:
+            while self._account_at(db, ZENITH, number) is not None:
                 number = self._reference("20", 8)
             db.add(MockCustomer(ref=ref, full_name=full_name, first_name=full_name.split()[0], bvn="", pin="",
                                 pin_tries_left=3, per_transaction_kobo=100_000_000, daily_kobo=500_000_000))

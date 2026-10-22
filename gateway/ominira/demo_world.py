@@ -2,7 +2,7 @@
 
 from datetime import timedelta
 
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, inspect, select, text
 from sqlalchemy.orm import Session
 
 from ominira.core.mock_tables import (
@@ -13,6 +13,7 @@ from ominira.tables import Approver, Customer, Payee, Token
 
 CUSTOMER_ID = "cus_ronke"
 CORE_REF = "ZC-2210934471"
+ACCOUNT_NUMBER = "2081234567"
 APPROVER_ID = "ap_funmi"
 CUSTOMER_TOKEN = "demo-customer"
 APPROVER_TOKEN = "demo-approver"
@@ -29,18 +30,44 @@ STARTERS = (
     ("Emeka", "057", "Zenith Bank", "2234567890", "NWOSU EMEKA", True),
 )
 
+# The same people are customers too, so money sent to them lands. nickname: (language, first name, card ending)
+PEOPLE = {
+    "Tolu": ("yo", "Tolulope", "3104"),
+    "Mama": ("yo", "Folake", "5530"),
+    "Musa": ("ha", "Musa", "7702"),
+    "Chika": ("ig", "Chika", "6618"),
+    "Aisha": ("ha", "Aisha", "2290"),
+    "Emeka": ("ig", "Emeka", "4437"),
+}
+
+# Columns added after a database was first made: create_all only adds missing tables.
+_ADDED_COLUMNS = (
+    ("mock_accounts", "bank_code", "VARCHAR(10) NOT NULL DEFAULT '057'"),
+    ("onboarding", "pin_set", "BOOLEAN NOT NULL DEFAULT FALSE"),
+)
+
 
 def ensure(engine: Engine) -> None:
     """Create tables, and seed the demo world if it is not there yet."""
     Base.metadata.create_all(engine)
+    _add_columns(engine)
     with Session(engine) as db:
         if db.get(Customer, CUSTOMER_ID) is None:
             _seed(db)
+        _seed_people(db)
         # Sign-ups from before starters existed get them too.
         for customer in db.scalars(select(Customer).where(Customer.id != CUSTOMER_ID)):
             if db.scalars(select(Payee).where(Payee.customer_id == customer.id)).first() is None:
                 give_starter_payees(db, customer.id, customer.core_ref)
         db.commit()
+
+
+def _add_columns(engine: Engine) -> None:
+    tables = inspect(engine)
+    with engine.begin() as conn:
+        for table, column, ddl in _ADDED_COLUMNS:
+            if column not in {c["name"] for c in tables.get_columns(table)}:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
 
 
 def rebuild(engine: Engine) -> None:
@@ -60,7 +87,7 @@ def _seed(db: Session) -> None:
                         per_transaction_kobo=100_000_000,  # ₦1,000,000
                         daily_kobo=500_000_000))  # ₦5,000,000
     db.flush()
-    db.add(MockAccount(id="ac_1", customer_ref=CORE_REF, number="2081234567", name="Current account",
+    db.add(MockAccount(id="ac_1", customer_ref=CORE_REF, number=ACCOUNT_NUMBER, name="Current account",
                        balance_kobo=84_230_000))  # ₦842,300
     db.flush()
     db.add_all([
@@ -105,7 +132,39 @@ def _seed(db: Session) -> None:
         Token(token=APPROVER_TOKEN, role="approver", customer_id=CUSTOMER_ID, approver_id=APPROVER_ID),
         Token(token=ASSISTANT_TOKEN, role="assistant", customer_id=CUSTOMER_ID),
     ])
+    _seed_people(db)
     db.commit()
+
+
+def _seed_people(db: Session) -> None:
+    """Each saved person as a customer in their own language, with Ronke saved so they can send back."""
+    now = utcnow()
+    for i, (nickname, code, _, number, name, _) in enumerate(STARTERS, start=1):
+        key = nickname.lower()
+        customer_id = f"cus_{key}"
+        if db.get(Customer, customer_id) is not None:
+            continue
+        lang, first_name, card = PEOPLE[nickname]
+        ref = f"ZC-DEMO-{nickname.upper()}"
+        full_name = " ".join(part.capitalize() for part in name.split())
+        db.add(MockCustomer(ref=ref, full_name=full_name, first_name=first_name, bvn="", pin="2075",
+                            pin_tries_left=3, per_transaction_kobo=100_000_000, daily_kobo=500_000_000))
+        db.flush()
+        db.add_all([
+            MockAccount(id=f"ac_{key}", customer_ref=ref, bank_code=code, number=number, name="Current account",
+                        balance_kobo=25_000_000),  # ₦250,000
+            MockCard(id=f"cd_{key}", customer_ref=ref, last4=card, holder=full_name),
+            MockBeneficiary(ref=f"BEN-ronke-{key}", customer_ref=ref, bank_code="057", number=ACCOUNT_NUMBER),
+            Customer(id=customer_id, core_ref=ref, phone=f"+2348000000{i:03d}", lang=lang),
+        ])
+        db.flush()
+        db.add_all([
+            Payee(id=f"py_ronke_{key}", customer_id=customer_id, nickname="Ronke", name="Ronke Adeyemi",
+                  bank_code="057", bank="Zenith Bank", account_last4=ACCOUNT_NUMBER[-4:],
+                  beneficiary_ref=f"BEN-ronke-{key}", first_paid_at=now - timedelta(days=30)),
+            Token(token=f"demo-{key}", role="customer", customer_id=customer_id),
+        ])
+        db.flush()
 
 
 def give_starter_payees(db: Session, customer_id: str, core_ref: str) -> None:
