@@ -31,6 +31,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.ominira.Session
 import app.ominira.core.Answers
+import app.ominira.core.Command
+import app.ominira.core.Commands
 import app.ominira.core.Draft
 import app.ominira.core.Drafted
 import app.ominira.core.Naira
@@ -58,12 +60,14 @@ import app.ominira.ui.kit.Progress
 import app.ominira.ui.kit.ReadbackPanel
 import app.ominira.ui.kit.Timeline
 import app.ominira.ui.kit.Tone
+import app.ominira.ui.kit.VoiceDock
 import app.ominira.ui.kit.touchAnswer
 import app.ominira.ui.pulse.PulseStep
 import app.ominira.ui.theme.Glyphs
 import app.ominira.ui.theme.Om
 import app.ominira.voice.Tones
-import app.ominira.voice.rememberPrompt
+import app.ominira.voice.LocalVoice
+import app.ominira.voice.rememberVoice
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -100,7 +104,10 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
     var numberText by remember { mutableStateOf("") }
     var amountText by remember { mutableStateOf("") }
     var misses by remember { mutableIntStateOf(0) }
-    val voice = session.talksFirst
+    val host = LocalVoice.current
+    // Spoken to get here: this screen talks back even outside voice mode.
+    val byVoice = remember { host.cameByVoice() }
+    val voice = session.talksFirst || byVoice
     val w = session.words
     val s = session.spoken
     val touch = session.answersByTouch
@@ -222,7 +229,10 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
                     draft = made.draft
                     step = Step.Readback
                 }
-                is Drafted.Refused -> {
+                is Drafted.Refused -> if (made.code == Drafted.UNREACHABLE) {
+                    problem = w.cannotReachBank
+                    session.say(s.cannotReachBank)
+                } else {
                     problem = made.say
                     session.say(made.say)
                 }
@@ -311,56 +321,101 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
         }
     }
 
-    val prompt = rememberPrompt(session) { said ->
-        if (said == null) return@rememberPrompt
-        when (step) {
-            Step.Ask -> request(said)
-            Step.Readback -> when {
-                Answers.isNo(said) || Answers.mentions(said, "wrong", "stop", "cancel") -> cancelDraft()
-                Answers.isAgain(said) -> draft?.let { ask(*it.readback.spoken.toTypedArray(), confirmLine) }
-                Answers.isYes(said) || Answers.isStart(said) -> {
-                    problem = null
-                    step = Step.Pulse
-                }
-                misses < 2 -> {
-                    misses += 1
-                    ask(confirmLine)
-                }
-                else -> session.say(s.useButtons)
+    // Words a yes-or-no question did not take: ask again twice, then point at the buttons.
+    val missed: (String) -> Unit = {
+        when {
+            misses >= 2 -> session.say(s.useButtons)
+            step == Step.Readback -> {
+                misses += 1
+                host.ask(confirmLine, listen = voice && session.understands)
             }
-            Step.Paused -> when {
-                Answers.isCarryOn(said) -> carryOn()
-                Answers.isStop(said) -> stopAtPause()
-                misses < 2 -> {
-                    misses += 1
-                    ask(s.sayStopOrCarryOn)
-                }
-                else -> session.say(s.useButtons)
+            else -> {
+                misses += 1
+                host.ask(s.sayStopOrCarryOn, listen = voice && session.understands)
             }
-            Step.Done, Step.Stopped, Step.Unsure -> when {
-                Answers.mentions(said, "send", "another", "more", "ranse", "aika", "ziga") -> startOver(null)
-                Answers.mentions(said, "balance", "owo", "kudi", "ego") -> onBalance()
-                else -> onHome()
-            }
-            Step.Pulse, Step.Approval -> Unit
         }
     }
+    rememberVoice(
+        onHeard = { said ->
+            when (step) {
+                Step.Ask -> when (Commands.parse(said)) {
+                    null -> {
+                        request(said)
+                        true
+                    }
+                    Command.Send -> {
+                        host.ask(s.whoAndHowMuch, listen = voice)
+                        true
+                    }
+                    else -> false
+                }
+                Step.Readback -> when {
+                    Answers.isNo(said) || Answers.mentions(said, "wrong", "stop", "cancel") -> {
+                        cancelDraft()
+                        true
+                    }
+                    Answers.isAgain(said) -> {
+                        draft?.let { host.ask(*it.readback.spoken.toTypedArray(), confirmLine, listen = voice && session.understands) }
+                        true
+                    }
+                    Answers.isYes(said) || Answers.isStart(said) -> {
+                        problem = null
+                        step = Step.Pulse
+                        true
+                    }
+                    else -> false
+                }
+                Step.Paused -> when {
+                    Answers.isCarryOn(said) -> {
+                        carryOn()
+                        true
+                    }
+                    Answers.isStop(said) -> {
+                        stopAtPause()
+                        true
+                    }
+                    else -> false
+                }
+                Step.Done, Step.Stopped, Step.Unsure -> when {
+                    Answers.mentions(said, "send", "another", "more", "ranse", "aika", "ziga") -> {
+                        startOver(null)
+                        true
+                    }
+                    Answers.mentions(said, "balance", "owo", "kudi", "ego") -> {
+                        onBalance()
+                        true
+                    }
+                    // "Say that again" and the like are still commands here.
+                    Commands.parse(said) != null -> false
+                    else -> {
+                        onHome()
+                        true
+                    }
+                }
+                Step.Pulse, Step.Approval -> false
+            }
+        },
+        onMissed = if (step == Step.Readback || step == Step.Paused) missed else null,
+    )
 
     LaunchedEffect(step, draft?.readbackHash) {
         misses = 0
         val d = draft
         when (step) {
-            Step.Ask -> if (voice) prompt.ask(*listOfNotNull(askLead?.invoke(s), s.whoAndHowMuch).toTypedArray(), listen = session.talksFirst)
+            Step.Ask -> if (voice) {
+                val lead = askLead?.invoke(s) ?: s.placeSend
+                host.ask(lead, s.whoAndHowMuch, listen = voice)
+            }
             Step.Readback -> if (d != null) {
                 val lines = listOfNotNull(problem) + d.readback.spoken
-                if (voice) prompt.ask(*(lines + confirmLine).toTypedArray()) else session.say(*lines.toTypedArray())
+                if (voice) host.ask(*(lines + confirmLine).toTypedArray(), listen = session.understands) else session.say(*lines.toTypedArray())
             }
             Step.Paused -> {
                 val lines = arrayOf(s.pauseQuestion, s.newAndLarge, if (touch) s.touchPause else s.sayStopOrCarryOn)
-                if (voice) prompt.ask(*lines) else session.say(*lines)
+                if (voice) host.ask(*lines, listen = session.understands) else session.say(*lines)
             }
             Step.Done, Step.Stopped, Step.Unsure -> {
-                if (voice) prompt.ask(ending, if (touch) s.touchHome else s.homeOrSendMore) else session.say(ending)
+                if (voice) host.ask(ending, if (touch) s.touchHome else s.homeOrSendMore, listen = session.understands) else session.say(ending)
             }
             Step.Pulse, Step.Approval -> Unit
         }
@@ -368,7 +423,7 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
     LaunchedEffect(replyCount) {
         val r = reply
         if (replyCount > 0 && r != null && step == Step.Ask) {
-            if (voice) prompt.ask(r, listen = session.talksFirst) else session.say(r)
+            if (voice) host.ask(r, listen = voice) else session.say(r)
         }
     }
 
@@ -406,7 +461,7 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
             .touchAnswer(
                 touch && step in setOf(Step.Readback, Step.Paused, Step.Done, Step.Stopped, Step.Unsure),
                 onTap = {
-                    prompt.cancel()
+                    host.cancel()
                     when (step) {
                         Step.Readback -> {
                             problem = null
@@ -417,7 +472,7 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
                     }
                 },
                 onHold = {
-                    prompt.cancel()
+                    host.cancel()
                     when (step) {
                         Step.Readback -> cancelDraft()
                         Step.Paused -> carryOn()
@@ -431,7 +486,7 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
             modifier = if (step == Step.Paused) Modifier.clearAndSetSemantics { } else Modifier,
             top = {
                 IconAction(Glyphs.Back, w.backToHome, {
-                    prompt.cancel()
+                    host.cancel()
                     waiting?.cancel()
                     onHome()
                 })
@@ -446,27 +501,27 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
                             ActionButton(
                                 w.pulseButtonSend(amountOf(d.readback).orEmpty()),
                                 onClick = {
-                                    prompt.cancel()
+                                    host.cancel()
                                     problem = null
                                     step = Step.Pulse
                                 },
                                 icon = Glyphs.Pulse,
                             )
                             ActionButton(w.somethingWrong, onClick = {
-                                prompt.cancel()
+                                host.cancel()
                                 cancelDraft()
                             }, style = Emphasis.Secondary)
                         }
                     }
                     Step.Done, Step.Stopped, Step.Unsure -> ActionButton(w.backToHome, onClick = {
-                        prompt.cancel()
+                        host.cancel()
                         onHome()
                     }, icon = Glyphs.Home)
                     Step.Approval -> ActionButton(w.cancelTransfer, onClick = { cancelWaiting() }, style = Emphasis.Secondary)
-                    Step.Ask -> ActionButton(w.sayIt, onClick = { prompt.listenNow() }, style = Emphasis.Sun, icon = Glyphs.Mic)
-                    Step.Pulse, Step.Paused -> Unit
+                    Step.Ask, Step.Pulse, Step.Paused -> Unit
                 }
             },
+            dock = { VoiceDock(session) },
         ) {
             when (step) {
                 Step.Ask -> {
@@ -483,7 +538,7 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
                             selected = picked?.id == p.id,
                             minHeight = 64.dp,
                             onClick = {
-                                prompt.cancel()
+                                host.cancel()
                                 picked = p
                                 someoneNew = false
                             },
@@ -494,7 +549,7 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
                         selected = someoneNew,
                         minHeight = 64.dp,
                         onClick = {
-                            prompt.cancel()
+                            host.cancel()
                             picked = null
                             someoneNew = true
                         },
@@ -596,11 +651,11 @@ fun SendMoneyScreen(session: Session, onHome: () -> Unit, onBalance: () -> Unit,
                 Text(w.newAndLargeTakeTime, style = Om.type.body, color = Om.color.text)
                 problem?.let { Notice(Tone.Danger, it) }
                 ActionButton(w.yesStopPayment, onClick = {
-                    prompt.cancel()
+                    host.cancel()
                     stopAtPause()
                 }, style = Emphasis.Caution, icon = Glyphs.Pause, busy = busy)
                 ActionButton(w.noChoseMyself, onClick = {
-                    prompt.cancel()
+                    host.cancel()
                     carryOn()
                 }, style = Emphasis.Secondary, busy = busy)
             }

@@ -39,6 +39,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.ominira.ui.theme.Corners
@@ -126,18 +127,19 @@ fun Orb(state: OrbState, onClick: () -> Unit, modifier: Modifier = Modifier, siz
     }
 }
 
+// live false where the line was already said or announced: TalkBack must not read it twice.
 @Composable
-fun CaptionBox(who: String, text: String, modifier: Modifier = Modifier) {
+fun CaptionBox(who: String, text: String, modifier: Modifier = Modifier, maxLines: Int = Int.MAX_VALUE, live: Boolean = true) {
     Column(
         modifier
             .fillMaxWidth()
             .clip(Corners.md)
             .background(Om.color.infoSoft)
             .padding(horizontal = 16.dp, vertical = 12.dp)
-            .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
+            .semantics(mergeDescendants = true) { if (live) liveRegion = LiveRegionMode.Polite },
     ) {
         Text(who, style = Om.type.smallStrong, color = Om.color.info)
-        Text(text, style = Om.type.lead, color = Om.color.text)
+        Text(text, style = Om.type.lead, color = Om.color.text, maxLines = maxLines, overflow = TextOverflow.Ellipsis)
     }
 }
 

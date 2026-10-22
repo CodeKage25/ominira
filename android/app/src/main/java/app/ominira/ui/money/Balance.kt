@@ -23,7 +23,9 @@ import app.ominira.ui.kit.Notice
 import app.ominira.ui.kit.Page
 import app.ominira.ui.kit.Tone
 import app.ominira.ui.kit.TxnRows
+import app.ominira.ui.kit.VoiceDock
 import app.ominira.ui.theme.Glyphs
+import app.ominira.voice.rememberVoice
 
 private fun spokenTxn(w: Words, t: Txn): String = w.txn(t.incoming, w.money(t.amountKobo), t.who, Days.spoken(t.at, lang = w.lang))
 
@@ -35,8 +37,11 @@ fun BalanceScreen(session: Session, onHome: () -> Unit) {
     var cameIn by remember { mutableStateOf("") }
     var failed by remember { mutableStateOf(false) }
     val w = session.words
+    val voice = rememberVoice()
 
     LaunchedEffect(Unit) {
+        // Read now: the arrival line waits for the bank, which may be slow.
+        val talk = session.talksFirst || voice.cameByVoice()
         val a = session.mainAccount()
         if (a == null) {
             failed = true
@@ -50,7 +55,7 @@ fun BalanceScreen(session: Session, onHome: () -> Unit) {
         }
         txns = runCatching { session.api.transactions(a.id, 20, null) }.getOrDefault(emptyList())
         cameIn = runCatching { session.api.incomeSummary(a.id) }.getOrDefault("")
-        session.sayOnArrival(*listOf(balanceSay, cameIn).filter { it.isNotBlank() }.toTypedArray())
+        if (talk) voice.ask(session.spoken.placeBalance, *listOf(balanceSay, cameIn).filter { it.isNotBlank() }.toTypedArray(), listen = false)
     }
 
     Page(
@@ -67,6 +72,7 @@ fun BalanceScreen(session: Session, onHome: () -> Unit) {
                 enabled = txns.isNotEmpty(),
             )
         },
+        dock = { VoiceDock(session) },
     ) {
         if (failed) Notice(Tone.Danger, w.accountUnreachable, body = w.tryInAMinute)
         account?.let { a ->

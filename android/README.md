@@ -35,8 +35,9 @@ To approve as Funmi, open `<gateway>/approve?token=demo-approver` on a second ph
 
 ### When the network is bad
 
-- A call that moves no money (onboarding, sign in, balance, payees, the assistant, making a draft) falls back to the bank inside the app if the Gateway cannot be reached. The rest of the session stays offline, and Settings says so.
-- A draft the Gateway made always stays with the Gateway. Its confirm never falls back.
+- A call that moves no money (onboarding, sign in, balance, payees, the assistant) falls back to the bank inside the app only when the Gateway cannot be reached at all (no network, no host, a timeout, a broken TLS handshake). The rest of the session stays offline, and Settings says so. A reply from the Gateway, even a 401, 429 or 500, never takes the session offline (`bank/Reach.kt`).
+- Money never runs on the bank inside the app while the Gateway is on. Drafting a transfer or a card block, setting the PIN, confirming, pausing and cancelling go to the Gateway or fail with "I cannot reach the bank. Nothing was sent." Offline, the assistant may still answer a question, but never hands back a draft.
+- Money coming in is announced only from a real Gateway reply, in the customer's language, after the app stops speaking and the microphone closes.
 - Each PIN entry is a new confirm attempt with its own Idempotency-Key. If the answer is lost, the app sends the same request once more with the same key (the Gateway replays the stored answer), then asks `GET /v1/drafts/{id}` what happened. If it still cannot tell, the customer hears "Do not send it again", never "nothing was sent".
 - With cloud voice on, speech goes through the Gateway (YarnGPT, all five languages). A rising tone means speak now, a falling tone means got it. Any failure rests cloud speech for a minute and the phone's own voice and recogniser take over.
 
@@ -49,7 +50,7 @@ To approve as Funmi, open `<gateway>/approve?token=demo-approver` on a second ph
 5. **BVN by consent.** "Zenith will confirm your BVN with NIBSS, using your NIN and this phone number. You do not need to say it. Say yes, or tap anywhere, to allow it." Then the account is open.
 6. **Choose your Pulse PIN.** Pulse four digits, then the same four again. One digit four times, a run up or down, a repeated pair, and the birthday on the ID just read are refused on the phone, and the bank refuses the easy ones again. Sealed at once, then home.
 7. **Pulse PIN.** Tap to start the count. One beat per digit, starting at a random digit; zero is a strong double buzz. Tap when the count reaches your digit, four times; the count rests after each digit. "How does it work?" explains it, "Practise first" runs a round where nothing is entered and zero also sounds. Three wrong tries locks it. In voice mode the screen stays dark; "Show count" draws it. Wired earphones move the count to quiet ticks in the ears. Speed: Settings, 1.8, 1.3 or 0.9 seconds a beat (switch and plain start at 1.8).
-8. **Home.** Voice home (greets and listens), plain home (also the home for sign mode) or switch scanning, depending on the ways in.
+8. **Home.** Voice home (greets and listens), plain home (also the home for sign mode) or switch scanning, depending on the ways in. A phone that has signed up, or was handed to a demo person, opens next time on its Pulse PIN instead of the language picker; **Settings > Start again from welcome** forgets it.
    - "Send twenty thousand to Tolu", or "Send money to Tolu" then "Twenty thousand": readback, "Say yes", Pulse PIN, "Sent. Tolu has it."
    - Without voice: Send money, pick Tolu, Mama or Musa, type the amount, "Check it before sending".
    - With **Settings > Pretend I am on a phone call** on, send ₦150,000 to Musa: the scam pause ("say stop, or say carry on"). Carry on, pulse the PIN again (the gate wants a fresh PIN block), then the co-approver wait. Offline, Funmi approves by herself after about six seconds; on the Gateway, approve on `/approve`.
@@ -62,6 +63,16 @@ Every screen follows the language picked first. Phones have no recogniser for Yo
 Before a live demo: turn media volume up, unpair Bluetooth speakers, and grant the microphone and the camera once during rehearsal so no permission box appears on stage. Yorùbá and Hausa play from bundled clips with no network. The Gateway's YarnGPT voice is limited to 120 calls a day: do not spend them rehearsing on the morning of the pitch.
 
 What does not work yet, and the plan for each: [`docs/known-issues.md`](../docs/known-issues.md).
+
+## The voice dock
+
+Every screen after onboarding has the same dock at the bottom: one big **Speak** button (it says **Stop** while the app listens or talks) with the last thing heard and the last thing said as captions above it. Switch scanning offers Speak as a scan item instead. Pulse PIN screens have no dock. There is one microphone for all these screens (`voice/VoiceHost.kt`): a screen that is waiting for an answer (yes or no at a readback, stop or carry on at the scam pause, home or branch for a new card) hears first; anything else goes to the commands below, then to the assistant. With TalkBack on the app never listens by itself; pressing Speak announces "Listening" and opens the microphone once TalkBack is done.
+
+Commands are answered on the phone, in any of the five languages, mixed (`core/Commands.kt`): go home, go back, my balance, send money, my card, settings, help (what can I say), say that again, where am I, and stop. A command is the whole request: "send money" opens Send and asks who, "send twenty thousand to Tolu" goes to the assistant.
+
+## Whose phone is this (demo)
+
+With the live Gateway on, **Settings > Whose phone is this** turns the phone into Ronke (`demo-customer`) or one of the Gateway's seeded people: Tolu and Mama (Yorùbá), Musa and Aisha (Hausa), Emeka and Chika (Igbo), all with the PIN 2 0 7 5. The app switches its Gateway token, speaks that person's language, greets them by name, and announces their money in that language. The choice is kept until **Start again from welcome**.
 
 ## What is placeholder
 
@@ -93,6 +104,8 @@ app/src/main/java/app/ominira/
     Naira.kt               ₦ formatting and British English number words
     SpokenAmount.kt        amounts from speech and typing ("20k", "twenty thousand", "150,000")
     Answers.kt             yes, no, stop, carry on, start, again, language names, digits
+    Commands.kt            voice commands answered on the phone, in all five languages
+    People.kt              the Gateway's seeded demo people, for Whose phone is this
     PinBlock.kt            the placeholder PIN block
     ReadbackHash.kt        readback_hash exactly as the Gateway computes it (for the fake bank)
     Words.kt               every screen line in all five languages, side by side
@@ -107,12 +120,14 @@ app/src/main/java/app/ominira/
     OminiraApi.kt          the customer's side of docs/api.md
     FakeOminiraApi.kt      the bank inside the app: same demo world, same gate order
     GatewayOminiraApi.kt   HTTPS client with the offline and lost-answer rules
+    Reach.kt               which failures mean the Gateway cannot be reached
   voice/                   Speaker (bundled clips, cloud voice, phone voice), CloudVoice, Ears (listening),
                            Hearing (which languages the phone's recogniser takes), Prompt (ask then
-                           listen), WavRecorder, Tones, Clips
+                           listen, for onboarding), VoiceHost (the one microphone after onboarding),
+                           WavRecorder, Tones, Clips
   device/                  Haptics tokens; Signals (call, TalkBack, wired earphones, reduced motion)
   ui/theme/                Palette (three looks), Type, Theme, Glyphs (the icon set)
-  ui/kit/                  Page, buttons, choices, notices, fields, money views, the voice orb, touch answers
+  ui/kit/                  Page, buttons, choices, notices, fields, money views, the voice dock, touch answers
   ui/camera/               CameraFeed (CameraX and ML Kit), Aiming (pings and spoken directions)
   ui/pulse/                PulsePad and PulseStep
   ui/onboarding/           language, welcome, ways in, sonar, ID, BVN, choosing the PIN, unlock
