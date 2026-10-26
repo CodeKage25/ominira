@@ -47,6 +47,17 @@ class Settings:
 
     idempotency_secret: str = field(default_factory=lambda: _env("IDEMPOTENCY_SECRET", "") or secrets.token_hex(32))
 
+    speech_provider: str = field(default_factory=lambda: _env("SPEECH_PROVIDER", "elevenlabs").lower())  # or yarngpt
+    elevenlabs_api_key: str = field(default_factory=lambda: _env("ELEVENLABS_API_KEY", ""))
+    elevenlabs_base: str = field(default_factory=lambda: _env("ELEVENLABS_BASE", "https://api.elevenlabs.io"))
+    elevenlabs_tts_model: str = field(default_factory=lambda: _env("ELEVENLABS_TTS_MODEL", "eleven_v3"))
+    elevenlabs_live_model: str = field(default_factory=lambda: _env("ELEVENLABS_LIVE_MODEL", "eleven_v4_turbo"))
+    elevenlabs_stt_model: str = field(default_factory=lambda: _env("ELEVENLABS_STT_MODEL", "scribe_v2"))
+    elevenlabs_voices: str = field(default_factory=lambda: _env("ELEVENLABS_VOICES", ""))
+    elevenlabs_default_voice: str = field(default_factory=lambda: _env("ELEVENLABS_DEFAULT_VOICE", "JBFqnCBsd6RMkjVDRZzb"))
+    # enable_logging=false on every call: an enterprise plan feature, refused on the others.
+    elevenlabs_zero_retention: bool = field(default_factory=lambda: _flag("ELEVENLABS_ZERO_RETENTION", False))
+
     yarngpt_api_key: str = field(default_factory=lambda: _env("YARNGPT_API_KEY", ""))
     # YARNGPT_API_KEY2 to YARNGPT_API_KEY9, tried in turn when the key before is out of calls or credit.
     yarngpt_more_keys: list[str] = field(
@@ -75,7 +86,7 @@ class Settings:
 
     @property
     def speech_enabled(self) -> bool:
-        return bool(self.yarngpt_api_key)
+        return bool(self.yarngpt_api_key if self.speech_provider == "yarngpt" else self.elevenlabs_api_key)
 
 
 settings = Settings()

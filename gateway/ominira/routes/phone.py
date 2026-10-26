@@ -27,7 +27,7 @@ from ominira.database import SessionFactory
 from ominira.problems import Problem
 from ominira.security import Caller
 from ominira.settings import settings
-from ominira.speech import yarngpt
+from ominira.speech import provider
 from ominira.tables import Conversation, Customer, Token
 
 log = logging.getLogger("ominira.phone")
@@ -35,7 +35,7 @@ router = APIRouter(prefix="/phone")
 
 LANGS = ("en", "pcm", "yo", "ha", "ig")
 CLIPS = Path(__file__).resolve().parents[1] / "static" / "phone"
-# English and Pidgin use Twilio's voice, which answers at once; the others are YarnGPT's.
+# English and Pidgin use Twilio's voice, which answers at once; the others are the speech provider's.
 TWILIO_VOICES = ("en", "pcm")
 CALL_TTL_S = 3600
 
@@ -101,15 +101,16 @@ def _voice_text(text: str) -> str:
 
 
 def _say(request: Request, lang: str, text: str) -> str:
-    """Speech in the caller's language: a bundled clip, else YarnGPT live, else Twilio's English voice."""
+    """Speech in the caller's language: a bundled clip, else the speech provider live, else Twilio's English voice."""
     if lang not in TWILIO_VOICES:
         key = hashlib.sha256(text.strip().encode()).hexdigest()[:16]
         if (CLIPS / lang / f"{key}.mp3").exists():
             return f"<Play>{escape(_base(request))}/phone/clips/{lang}/{key}.mp3</Play>"
-        if settings.speech_enabled:
+        if provider.enabled():
             try:
-                return f"<Play>{escape(yarngpt.prepare(_voice_text(text), lang)['audio_url'])}</Play>"
-            except yarngpt.SpeechUnavailable as err:
+                url = provider.prepare(_voice_text(text), lang, _base(request))["audio_url"]
+                return f"<Play>{escape(url)}</Play>"
+            except provider.SpeechUnavailable as err:
                 log.warning("phone speech fell back: %s", err)
     return f'<Say voice="Polly.Amy-Neural" language="en-GB">{escape(_voice_text(text))}</Say>'
 
@@ -219,7 +220,7 @@ def _open(request: Request, call: Call, customer_id: str, first: str) -> Respons
 
 
 def _ask(request: Request, call: Call, prompt: str) -> Response:
-    """Listen for a request: Twilio hears English and Pidgin; YarnGPT hears the other three."""
+    """Listen for a request: Twilio hears English and Pidgin; the speech provider hears the other three."""
     if call.lang in TWILIO_VOICES:
         return _twiml(f'<Gather input="speech" language="en-NG" speechTimeout="auto" timeout="6" '
                       f'action="/phone/heard">{prompt}</Gather>',
@@ -256,8 +257,8 @@ def _recorded(request: Request, form: dict[str, str], call: Call) -> Response:
             time.sleep(1)
         if audio:
             try:
-                text = yarngpt.transcribe(audio, "audio/wav")["text"]
-            except yarngpt.SpeechUnavailable as err:
+                text = provider.transcribe(audio, "audio/wav", call.lang)["text"]
+            except provider.SpeechUnavailable as err:
                 log.warning("phone listening failed: %s", err)
     return _request(request, call, text)
 

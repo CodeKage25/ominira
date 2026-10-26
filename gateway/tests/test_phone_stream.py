@@ -76,7 +76,7 @@ def live(client, monkeypatch):
 
     def call(said: list[str], pin: list[int] = (), caller: str = "+2348030000001"):
         heard = list(said)
-        monkeypatch.setattr(phone_stream, "transcribe", lambda audio: heard.pop(0) if heard else "")
+        monkeypatch.setattr(phone_stream, "transcribe", lambda audio, *_: heard.pop(0) if heard else "")
         form = {"CallSid": "CA1", "From": caller}
         r = client.post("/phone/voice", data=form,
                         headers={"X-Twilio-Signature": phone._signature("http://testserver/phone/voice", form)})
@@ -190,11 +190,11 @@ def test_an_account_number_said_in_two_parts(live, client):
 def test_the_account_number_takes_the_first_ten_digit_answer(monkeypatch):
     answers_by_model = {"default": "A-League 1234567", "phone_call": "2081234567"}
     monkeypatch.setattr(phone_stream, "_google", lambda said, lang, model: answers_by_model[model])
-    monkeypatch.setattr(phone_stream, "transcribe", lambda said: "two oh eight")
+    monkeypatch.setattr(phone_stream, "transcribe", lambda said, *_: "two oh eight")
     assert phone_stream.transcribe_number(b"\xff" * 800)[0] == "2081234567"
-    # Google unreachable: YarnGPT's transcript is read instead.
+    # Google unreachable: the speech provider's transcript is read instead.
     monkeypatch.setattr(phone_stream, "_google", lambda said, lang, model: None)
-    monkeypatch.setattr(phone_stream, "transcribe", lambda said: "two oight one two three four five six seven")
+    monkeypatch.setattr(phone_stream, "transcribe", lambda said, *_: "two oight one two three four five six seven")
     assert phone_stream.transcribe_number(b"\xff" * 800) == ["2081234567"]
 
 

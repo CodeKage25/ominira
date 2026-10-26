@@ -9,6 +9,7 @@ import wave
 import httpx
 
 from ominira.settings import settings
+from ominira.speech import SpeechUnavailable
 
 log = logging.getLogger("ominira.speech")
 
@@ -33,14 +34,8 @@ transport: httpx.BaseTransport | None = None
 _voice_cache: tuple[float, list[dict]] | None = None
 
 
-class SpeechUnavailable(Exception):
-    def __init__(self, code: str, detail: str = ""):
-        super().__init__(f"{code}: {detail}" if detail else code)
-        self.code = code
-
-
 def enabled() -> bool:
-    return settings.speech_enabled
+    return bool(settings.yarngpt_api_key)
 
 
 # Out of calls or credit on this key: the next key may still have some.

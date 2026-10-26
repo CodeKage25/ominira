@@ -7,8 +7,9 @@ import httpx
 import pytest
 
 from ominira.settings import settings
-from ominira.speech import yarngpt
+from ominira.speech import elevenlabs, yarngpt
 from tests.conftest import APPROVER, CUSTOMER, PIN_OK
+from tests.test_elevenlabs import FakeEleven
 from tests.test_speech import WAV, FakeYarn
 
 API_MD = Path(__file__).resolve().parents[2] / "docs" / "api.md"
@@ -58,7 +59,13 @@ def yarn(monkeypatch):
     return fake
 
 
-def test_walk_every_endpoint(client, yarn):
+@pytest.fixture
+def eleven(monkeypatch):
+    monkeypatch.setattr(settings, "elevenlabs_api_key", "test-key")
+    monkeypatch.setattr(elevenlabs, "transport", httpx.MockTransport(FakeEleven()))
+
+
+def test_walk_every_endpoint(client, yarn, eleven):
     c = client
     C, A = CUSTOMER, APPROVER
 
@@ -168,6 +175,13 @@ def test_walk_every_endpoint(client, yarn):
     yarn.polls = 0
     _keys(_call(c, "POST", "/v1/speech/listen", expect=200, headers=C | {"Content-Type": "audio/wav"},
                 content=WAV).json(), {"text", "seconds", "say"})
+    # ElevenLabs' audio is held on the Gateway and played from there without a token.
+    settings.speech_provider = "elevenlabs"
+    held = _call(c, "POST", "/v1/speech/say", expect=200, headers=C, json={"text": "Sent. Tolu has it."}).json()
+    ticket = held["audio_url"].rsplit("/", 1)[1].removesuffix(".mp3")
+    played = _call(c, "GET", "/v1/speech/audio/{}.mp3", ticket, expect=200)
+    assert played.headers["content-type"] == "audio/mpeg" and played.content
+    settings.speech_provider = "yarngpt"
 
     # Audit
     entries = _call(c, "GET", "/v1/audit", expect=200, headers=C).json()
@@ -184,11 +198,11 @@ def test_walk_every_endpoint(client, yarn):
     _keys(_call(c, "POST", "/_mock/reset", expect=200).json(), {"balances", "cards", "controls"})
 
 
-def test_every_documented_endpoint_is_walked(client, yarn):
+def test_every_documented_endpoint_is_walked(client, yarn, eleven):
     if not API_MD.exists():
         pytest.skip("docs/api.md is not next to this checkout")
     if not WALKED:
-        test_walk_every_endpoint(client, yarn)
+        test_walk_every_endpoint(client, yarn, eleven)
     documented = _documented()
     assert documented, "no endpoints found in docs/api.md"
     missing = documented - WALKED

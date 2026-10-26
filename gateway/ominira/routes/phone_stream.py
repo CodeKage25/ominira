@@ -1,5 +1,5 @@
 """The live call: Twilio streams the call's audio here both ways, so the whole call is by voice. The caller's
-words go to YarnGPT; the replies are bundled clips or YarnGPT's voice; the Pulse PIN is four key presses timed
+words go to the speech provider; the replies are bundled clips or its voice; the Pulse PIN is four key presses timed
 against a count of ticks, so no digit is ever pressed or said. The same assistant and confirm gate as the app.
 
 /phone/voice answers a call with a one-time ticket for this socket, so only a call Twilio signed gets in."""
@@ -11,7 +11,6 @@ import hashlib
 import json
 import logging
 import secrets
-import shutil
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
@@ -27,7 +26,7 @@ from ominira.database import SessionFactory
 from ominira.problems import Problem
 from ominira.security import Caller
 from ominira.settings import settings
-from ominira.speech import google_stt, yarngpt
+from ominira.speech import google_stt, provider
 from ominira.tables import Conversation, Customer, Token
 
 log = logging.getLogger("ominira.phone")
@@ -37,9 +36,6 @@ LANGS = ("en", "pcm", "yo", "ha", "ig")
 CLIPS = Path(__file__).resolve().parents[1] / "static" / "phone"
 TICKET_TTL_S = 60
 HEAR_S = 8.0
-# The call's voice for each language, for the bundled prompts and live lines alike, so a call keeps one voice.
-# Jude reads English and Pidgin cleanly on a phone line; the others keep YarnGPT's choice.
-VOICES = {"en": "jude", "pcm": "jude"}
 DIGIT_PAUSE_S = 0.6  # between one digit's count and the next
 DTMF_LAG_S = 0.8  # how long after a key press Twilio's report of it arrives, when no tone was heard
 TYPED_WITHIN_S = 2.5  # after the first key: the other three of a typed PIN come within this
@@ -87,25 +83,12 @@ def _voice_text(text: str) -> str:
     return text
 
 
-def voice(lang: str) -> str | None:
-    return VOICES.get(lang) or yarngpt.voice_for(lang)
-
-
 def has_clip(lang: str, text: str) -> bool:
     return (CLIPS / lang / f"{clip_key(text)}.ul").is_file()
 
 
-def _fetch(said: str, lang: str) -> bytes:
-    """MP3 when ffmpeg is here (about three times sooner), else WAV."""
-    if shutil.which("ffmpeg"):
-        return phone_audio.mp3_to_ulaw(yarngpt.download(
-            yarngpt.prepare(said, lang, output_format="mp3", voice=voice(lang))["audio_url"]))
-    return phone_audio.wav_to_ulaw(yarngpt.download(
-        yarngpt.prepare(said, lang, output_format="wav", voice=voice(lang))["audio_url"]))
-
-
 def speech(lang: str, text: str) -> bytes:
-    """Phone audio for one line: a bundled clip, else YarnGPT live (the daily calls, then credits). Blocking."""
+    """Phone audio for one line: a bundled clip, else the speech provider live. Blocking."""
     path = CLIPS / lang / f"{clip_key(text)}.ul"
     if path.is_file():
         return path.read_bytes()
@@ -113,20 +96,13 @@ def speech(lang: str, text: str) -> bytes:
     if cached is not None:
         _live.move_to_end((lang, text))
         return cached
-    if not settings.speech_enabled:
+    if not provider.enabled():
         return b""
-    said = _voice_text(text)
     audio = b""
     try:
-        audio = _fetch(said, lang)
-    except (yarngpt.SpeechUnavailable, ValueError) as err:
-        log.warning("live speech on the prepare route failed: %s", err)
-        try:
-            fmt = "mp3" if shutil.which("ffmpeg") else "wav"
-            done = yarngpt.render(said, voice(lang), clip_key(lang + said), output_format=fmt, wait_s=20)
-            audio = phone_audio.mp3_to_ulaw(done) if fmt == "mp3" else phone_audio.wav_to_ulaw(done)
-        except (yarngpt.SpeechUnavailable, ValueError) as err2:
-            log.warning("live speech failed: %s", err2)
+        audio = provider.phone_audio(_voice_text(text), lang)
+    except (provider.SpeechUnavailable, ValueError) as err:
+        log.warning("live speech failed: %s", err)
     if audio:
         _live[(lang, text)] = audio
         while len(_live) > 200:
@@ -134,10 +110,10 @@ def speech(lang: str, text: str) -> bytes:
     return audio
 
 
-def transcribe(said: bytes) -> str:
+def transcribe(said: bytes, lang: str | None = None) -> str:
     try:
-        return yarngpt.transcribe(phone_audio.ulaw_to_wav(said), "audio/wav")["text"]
-    except yarngpt.SpeechUnavailable as err:
+        return provider.transcribe(phone_audio.ulaw_to_wav(said), "audio/wav", lang)["text"]
+    except provider.SpeechUnavailable as err:
         log.warning("phone listening failed: %s", err)
         return ""
 
@@ -150,14 +126,14 @@ def _google(said: bytes, lang: str, model: str) -> str | None:
         return None
 
 
-def transcribe_number(said: bytes) -> list[str]:
+def transcribe_number(said: bytes, lang: str | None = None) -> list[str]:
     """What each recogniser heard of a spoken account number, as digits, likeliest first: Google's two models at
-    once, and YarnGPT too when neither gives ten or eleven digits. Blocking."""
+    once, and the speech provider too when neither gives ten or eleven digits. Blocking."""
     with ThreadPoolExecutor(len(google_stt.MODELS)) as pool:
         heard = list(pool.map(lambda m: _google(said, *m), google_stt.MODELS))
     found = [answers.digits(h) for h in heard if h]
     if not any(len(d) in (10, 11) for d in found):
-        found.append(answers.digits(transcribe(said)))
+        found.append(answers.digits(transcribe(said, lang)))
     return sorted((d for d in found if d), key=lambda d: (len(d) != 10, len(d) != 11))
 
 
@@ -203,6 +179,7 @@ class Line:
         self.sid = ""
         self.caller = ""
         self.lang = "en"
+        self.lang_known = False  # until then the recogniser is not told a language
         self.customer_id: str | None = None
         self.conversation_id: str | None = None
         self.pin_explained = False
@@ -327,7 +304,7 @@ class Line:
     async def say(self, *texts: str, barge: bool = True) -> None:
         """Say lines in the caller's language, then wait until they have played. With barge, the caller may
         talk over them; without, anything said meanwhile is dropped."""
-        # Lines with no clip go to YarnGPT together: one request is quicker, and a short line alone is refused.
+        # Lines with no clip are spoken together: one request is quicker, and YarnGPT refuses a short line alone.
         merged: list[str] = []
         live_last = False
         for t in (t.strip() for t in texts if t and t.strip()):
@@ -387,7 +364,7 @@ class Line:
                     return ["".join(self.typed)[:10]]
                 if not said:
                     break
-                heard = await self.busy(asyncio.to_thread(transcribe_number, said))
+                heard = await self.busy(asyncio.to_thread(transcribe_number, said, self.lang))
                 if not digits and any(len(d) in (10, 11) for d in heard):
                     log.info("account number on a call: %s digits heard", "/".join(str(len(d)) for d in heard))
                     return heard
@@ -403,7 +380,8 @@ class Line:
         """What the caller says next, as text; empty when they said nothing, it could not be understood, or
         `stop` was set first."""
         said = await self.utterance(timeout, stop)
-        return (await self.busy(asyncio.to_thread(transcribe, said))).strip() if said else ""
+        lang = self.lang if self.lang_known else None
+        return (await self.busy(asyncio.to_thread(transcribe, said, lang))).strip() if said else ""
 
     async def utterance(self, timeout: float = HEAR_S, stop: asyncio.Event | None = None) -> bytes | None:
         """The audio of what the caller says next; None when they said nothing or `stop` was set first."""
@@ -542,7 +520,7 @@ class Line:
                 self.speaking = self.barge = False
             chosen = answers.language(await self.hear())
             if chosen:
-                self.lang = chosen
+                self.lang, self.lang_known = chosen, True
                 return True
         return False
 
@@ -550,7 +528,7 @@ class Line:
         known = await asyncio.to_thread(self.known_caller)
         if known is not None:
             customer, first = known
-            self.lang = customer.lang if customer.lang in LANGS else "en"
+            self.lang, self.lang_known = (customer.lang if customer.lang in LANGS else "en"), True
             await self.say(lines.say(self.lang, "phone_v_welcome"), barge=False)
             await asyncio.to_thread(self.start_conversation, customer.id)
             await self.say(lines.say(self.lang, "phone_v_hi", first=first), lines.say(self.lang, "phone_v_what"))

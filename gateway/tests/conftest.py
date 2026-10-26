@@ -16,7 +16,11 @@ os.environ.update({
     "YARNGPT_API_KEY": "",
     **{f"YARNGPT_API_KEY{n}": "" for n in range(2, 10)},
     "YARNGPT_VOICES": "",
+    # The YarnGPT tests keep YarnGPT; tests/test_elevenlabs.py switches to ElevenLabs.
+    "SPEECH_PROVIDER": "yarngpt",
 })
+for _name in [n for n in os.environ if n.startswith("ELEVENLABS_")]:
+    del os.environ[_name]
 
 import dataclasses  # noqa: E402
 
