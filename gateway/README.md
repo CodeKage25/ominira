@@ -27,10 +27,10 @@ uv run --env-file ../.env uvicorn ominira.main:app --port 8080
 ```
 
 Every setting has a safe laptop default; `.env.example` lists them all. Without
-`ANTHROPIC_API_KEY` the assistant uses the offline rule parser, and without `YARNGPT_API_KEY` the
-app uses the phone's own voice, so the demo still runs on venue Wi-Fi that blocks both.
+`ANTHROPIC_API_KEY` the assistant uses the offline rule parser, and without the speech provider's key
+(`ELEVENLABS_API_KEY`, or `YARNGPT_API_KEY` with `SPEECH_PROVIDER=yarngpt`) the app uses the phone's own voice, so the demo still runs on venue Wi-Fi that blocks both.
 
-The tests use a temporary SQLite file, the fast mock profile, and fakes for Claude and YarnGPT, so
+The tests use a temporary SQLite file, the fast mock profile, and fakes for Claude, ElevenLabs and YarnGPT, so
 they need no network. `TEST_DATABASE_URL=postgresql+psycopg://...` runs the same suite on Postgres.
 
 ## Where things are
@@ -42,13 +42,15 @@ they need no network. `TEST_DATABASE_URL=postgresql+psycopg://...` runs the same
 | `ominira/core/base.py` | The interface to Zenith's core; the sandbox client will implement it |
 | `ominira/core/mock.py` | The mock core and its rehearsal controls |
 | `ominira/assistant/` | `guard.py` (spoken PIN, masking), `rules.py`, `claude.py`, `toolbox.py` |
+| `ominira/speech/provider.py` | The speech every caller uses: ElevenLabs or YarnGPT, by `SPEECH_PROVIDER` |
+| `ominira/speech/elevenlabs.py` | ElevenLabs client: text to speech and Scribe transcripts |
 | `ominira/speech/yarngpt.py` | YarnGPT client: speak (ticket links) and listen (transcripts) |
 | `ominira/lines.py`, `amounts.py` | Every line a customer hears, and amounts in words, in all five languages |
 | `ominira/audit_log.py` | Hash-chained audit log |
 | `ominira/idempotency.py` | `Idempotency-Key` replay, 24 hours, per token |
 | `ominira/routes/` | The HTTP endpoints, one file per area |
 | `ominira/static/approve.html` | Funmi's approval page |
-| `scripts/speech_field_test.py` | Checks YarnGPT with a real key |
+| `scripts/speech_field_test.py` | Checks the speech provider with a real key |
 | `scripts/make_language_clips.py` | Makes the language picker's offline clips |
 
 ## The demo world
@@ -196,20 +198,39 @@ ashirin"). English and Pidgin are reviewed copy; Yorùbá, Hausa and Igbo lines 
 unreviewed drafts until native speakers check them. The rule parser understands sending, the
 balance, money in and blocking the card in all five, with or without tone marks.
 
-## Speech (YarnGPT)
+## Speech (ElevenLabs or YarnGPT)
 
-The Gateway is the only place the YarnGPT key lives. Put `YARNGPT_API_KEY` in `../.env`.
+One switch picks who speaks and listens everywhere: the app, the live phone call, the keypad call and
+the clip scripts. `SPEECH_PROVIDER=elevenlabs` (the default) or `SPEECH_PROVIDER=yarngpt`. The Gateway
+is the only place the key lives: put `ELEVENLABS_API_KEY` (or `YARNGPT_API_KEY`) in `../.env`.
+Google's recogniser still hears a ten-digit account number on the live call, whichever is chosen.
 
 | Endpoint | What it does |
 |---|---|
-| `GET /v1/speech/status` | Whether cloud speech is on |
-| `POST /v1/speech/say` | Text in, a five-minute audio link out. The phone plays it straight from YarnGPT |
+| `GET /v1/speech/status` | Whether cloud speech is on, and which provider |
+| `POST /v1/speech/say` | Text in, a five-minute audio link out, which plays without a token |
+| `GET /v1/speech/audio/{ticket}.mp3` | ElevenLabs' audio, held on the Gateway for five minutes (the latest 200) |
 | `POST /v1/speech/listen` | One recording in (raw `audio/wav` body), its transcript out. A spoken PIN comes back as `pin_spoken` |
 | `POST /v1/conversations/{id}/voice-turns` | One recording in: transcript, assistant turn, draft, and the reply as an audio link, with timings |
 
-If YarnGPT is down or slow, these answer `503 speech_unavailable` with a `say` line, and the app
-uses the phone's own voice. Pin a voice per language with `YARNGPT_VOICES="yo=<id>,ha=<id>,ig=<id>"`
-once a native speaker has picked them.
+If the provider is down, slow or out of credit, these answer `503 speech_unavailable` with a `say`
+line, and the app uses the phone's own voice.
+
+**ElevenLabs.** The app's voice is `ELEVENLABS_TTS_MODEL` (default `eleven_v3`); the live phone call
+asks `ELEVENLABS_LIVE_MODEL` (default `eleven_v4_turbo`) for 8 kHz μ-law, which streams to Twilio as it
+is, with no ffmpeg. Listening is Scribe (`ELEVENLABS_STT_MODEL`, default `scribe_v2`), told the
+customer's language. The models list English, Yorùbá and Hausa, so those are sent with their
+language code. **No model lists Igbo or Nigerian Pidgin**: those are spoken without a language code
+(Pidgin is close to English), so judge them by ear with a native speaker before relying on them.
+Pin a voice per language with `ELEVENLABS_VOICES="en=<id>,pcm=<id>,yo=<id>,ha=<id>,ig=<id>"`;
+any language without one uses `ELEVENLABS_DEFAULT_VOICE`. `ELEVENLABS_BASE` points at another
+region's API, and `ELEVENLABS_ZERO_RETENTION=true` asks ElevenLabs to keep nothing (enterprise plans).
+The live call's bundled prompts in `ominira/static/phone` still play first; remake them in the
+ElevenLabs voices with `scripts/make_phone_clips.py --remake en pcm yo ha ig` to keep one voice per call.
+
+**YarnGPT.** Pin a voice per language with `YARNGPT_VOICES="yo=<id>,ha=<id>,ig=<id>"` once a native
+speaker has picked them. Its workarounds (padding short text and short recordings, saying a short clip
+line several times and cutting it) apply only when it is the provider.
 
 **Field test** (about fifteen calls of credit):
 
@@ -219,9 +240,9 @@ uv run python scripts/speech_field_test.py                       # all five lang
 uv run python scripts/speech_field_test.py --gateway http://localhost:8080
 ```
 
-It lists the voices and the languages transcription covers, speaks a line in each language the
-way the phone receives it (ticket, then stream) into `speech_out/`, transcribes each back, and times
-every step.
+It lists the voice for each language (and YarnGPT's catalogue), speaks a line in each language into
+`speech_out/`, transcribes each back, and times every step. With `--gateway` it also plays the `say`
+link without a token, as the phone does.
 
 **Language picker clips.** The app's first screen speaks one line per language before sign-in, so
 those clips ship inside the APK:
@@ -233,7 +254,8 @@ uv run python scripts/make_language_clips.py --only yo --voice yo=<id> --out /tm
 ```
 
 The five lines sit in `LINES` at the top of the script for native speakers to edit. Each language
-uses its pinned voice, else the first catalogue voice for that language, else YarnGPT's default.
+uses its pinned voice, else `ELEVENLABS_DEFAULT_VOICE`, or with YarnGPT the first catalogue voice for
+that language, else YarnGPT's default.
 The script prints each clip's size and length and stops with a clear message when the key is missing.
 
 ## The phone line (Twilio)
@@ -251,22 +273,22 @@ one-time ticket for a WebSocket, and Twilio streams the call's audio both ways. 
    number sounds the same as a real one. Once it passes, the caller's number is remembered, so the next
    call starts at 3. A stranger's number may give five account numbers an hour, and an account takes one
    stranger's PIN an hour, so nobody can learn who banks here or spend the customer's three PIN tries.
-3. The request. The Gateway finds where the caller stops speaking and YarnGPT transcribes it, in all five
-   languages. A caller can talk over a prompt; the readback and the PIN instructions they must hear out.
+3. The request. The Gateway finds where the caller stops speaking and the speech provider transcribes it,
+   in all five languages. A caller can talk over a prompt; the readback and the PIN instructions they must hear out.
 4. The readback, then "say yes to send it". Then the Pulse PIN: the call counts with ticks from a random
    start, a high double tick for zero, and the caller presses any key when the count reaches each digit.
    The digit is the tick that had begun playing (Twilio reports each tick's start as a mark), so which key
    is pressed tells nobody anything. A phone call is always a call, so a large transfer to someone new
    always meets the scam pause, answered by voice.
 
-Speech is YarnGPT's voice: the fixed prompts are bundled as 8 kHz μ-law in `ominira/static/phone`
+Speech is the speech provider's voice: the fixed prompts are bundled as 8 kHz μ-law in `ominira/static/phone`
 (`scripts/make_phone_clips.py`, needs ffmpeg) and play at once; lines with a name or an amount are made
 live. `YARNGPT_API_KEY2`, if set, is tried when the first key is out of calls or credit. Cloud Run's request
 timeout must cover a call (`--timeout=3600`).
 
 **The step-by-step call** (`PHONE_STREAM=false`, `ominira/routes/phone.py`): the same flow with the keypad
 for the language, the account number, yes or no and a four-digit PIN, Twilio's voice for English and Pidgin,
-and recordings sent to YarnGPT for Yorùbá, Hausa and Igbo. The account number goes straight to the
+and recordings sent to the speech provider for Yorùbá, Hausa and Igbo. The account number goes straight to the
 customer only from their own number; from any other, the account's PIN is asked first, as on the live call.
 Kept as the fallback.
 
@@ -301,6 +323,9 @@ Things that matter on Cloud Run:
 - **`--no-invoker-iam-check` is required.** Without it Cloud Run reads `Authorization: Bearer demo-customer` as a Google token and answers 401.
 - **Cloud Run reserves `/healthz`.** The health check is `GET /health`.
 - **`--max-instances 1` while the state lives in SQLite.** The rate limits and idempotency locks are in memory too.
+- **The speech provider.** `SPEECH_PROVIDER` defaults to `elevenlabs`: add `ELEVENLABS_API_KEY=elevenlabs-api-key:latest`
+  to `--set-secrets` once the key exists, or put `SPEECH_PROVIDER=yarngpt` in `--set-env-vars` to stay on YarnGPT.
+  ElevenLabs' audio links are held in this instance's memory, one more reason for a single instance.
 - The container runs as `nobody`, so the SQLite file lives in `/tmp` and resets when the instance restarts.
 - With `MOCK_ADMIN_TOKEN` set, the app's "reset demo" call needs the `X-Mock-Admin` header.
 

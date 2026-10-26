@@ -250,16 +250,29 @@ The rule parser understands sending, the balance, money in and blocking the card
 with or without tone marks, and amounts in their words or digits: "fi ẹgbẹ̀rún ogún ránṣẹ́ sí Tolu",
 "aika dubu ashirin zuwa ga Musa", "ziga puku iri abụọ nye Emeka", "Elo lo wa ninu account mi".
 
-### Speech (YarnGPT behind the Gateway; the phone never holds the key)
+### Speech (ElevenLabs or YarnGPT behind the Gateway; the phone never holds the key)
+
+`SPEECH_PROVIDER` picks the provider: `elevenlabs` or `yarngpt`. The calls are the same for both.
 
 | Call | Who | Response |
 |---|---|---|
-| `GET /v1/speech/status` | any token | `{"enabled": bool, "provider": "yarngpt"\|null}` |
+| `GET /v1/speech/status` | any token | `{"enabled": bool, "provider": "elevenlabs"\|"yarngpt"\|null}` (`null` when off) |
 | `POST /v1/speech/say` `{"text", "lang"?}` | customer | `{"audio_url", "expires_in": 300, "lang", "voice"}` (`voice` may be null: YarnGPT's default) |
 | `POST /v1/speech/listen` raw `audio/wav` | customer | `{"text", "seconds", "say"}`, or `{"text": "", "pin_spoken": true, "seconds", "say"}` |
+| `GET /v1/speech/audio/{ticket}.mp3` | none: the ticket is the credential | the MP3 bytes, `Content-Type: audio/mpeg`, `Cache-Control: no-store`; `404 not_found` when unknown or expired |
 
-Recordings: 1 KB to 4 MB, any `audio/*` type. `say` is limited to 90 a minute and listening
-(including voice turns) to 30 a minute per customer.
+`audio_url` is absolute and plays without a token. With YarnGPT it is a ticket link on YarnGPT. With
+ElevenLabs the Gateway holds the audio for five minutes under a random 128-bit ticket and the link is
+`GET /v1/speech/audio/{ticket}.mp3` on the Gateway itself (the same link a voice turn's
+`reply_audio_url` and the keypad phone line's `<Play>` use). The Gateway keeps the latest 200.
+
+Recordings: 1 KB to 4 MB, any `audio/*` type. ElevenLabs is told the customer's language (not for
+Pidgin, which it detects), and hears nothing under a tenth of a second (`text` comes back empty).
+`say` is limited to 90 a minute and listening (including voice turns) to 30 a minute per customer.
+
+A `503 speech_unavailable` carries the provider's reason in `provider_code`. From ElevenLabs:
+`not_configured` (no key), `bad_key`, `quota_exceeded` (out of credit or too many requests at once),
+`network`, or `http_<status>`. YarnGPT's are its own codes, such as `RATE_LIMITED`.
 
 ### Audit
 

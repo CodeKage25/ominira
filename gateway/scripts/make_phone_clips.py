@@ -1,4 +1,4 @@
-"""Make the phone line's fixed prompts, so a call only uses live YarnGPT for lines with a name or an amount.
+"""Make the phone line's fixed prompts, so a call only uses live speech for lines with a name or an amount.
 
     set -a; . ../.env; set +a
     uv run python scripts/make_phone_clips.py            # job route
@@ -21,9 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import make_speech_clips as clips  # noqa: E402
 from ominira import answers, lines, phone_audio  # noqa: E402
-from ominira.routes.phone_stream import voice as call_voice  # noqa: E402
-from ominira.settings import settings  # noqa: E402
-from ominira.speech import yarngpt  # noqa: E402
+from ominira.speech import provider  # noqa: E402
 
 OUT = Path(__file__).resolve().parents[1] / "ominira" / "static" / "phone"
 LANGS = ("en", "pcm", "yo", "ha", "ig")
@@ -58,11 +56,11 @@ def to_ulaw(mp3: bytes) -> bytes:
     return done.stdout
 
 
-def heard_right(text: str, ul: bytes) -> bool:
+def heard_right(text: str, ul: bytes, lang: str) -> bool:
     """Most of the line's words come back when the clip is transcribed: a garbled or repeating clip does not."""
     try:
-        heard = yarngpt.transcribe(phone_audio.ulaw_to_wav(ul), "audio/wav")["text"]
-    except yarngpt.SpeechUnavailable:
+        heard = provider.transcribe(phone_audio.ulaw_to_wav(ul), "audio/wav", lang)["text"]
+    except provider.SpeechUnavailable:
         return True  # no way to check: keep it
     want, got = answers.plain(text).split(), answers.plain(heard).split()
     if not want:
@@ -83,8 +81,8 @@ def main() -> int:
     if not shutil.which("ffmpeg"):
         raise SystemExit("ffmpeg is needed on the PATH.")
     clips.ROUTE = args.route
-    if not args.dry_run and not settings.yarngpt_api_key:
-        raise SystemExit("YARNGPT_API_KEY is not set.")
+    if not args.dry_run and not provider.enabled():
+        raise SystemExit(f"{provider.key_name()} is not set.")
     failed = 0
     for lang in args.only:
         folder = OUT / lang
@@ -95,7 +93,7 @@ def main() -> int:
         if args.dry_run or not missing:
             continue
         folder.mkdir(parents=True, exist_ok=True)
-        voice = call_voice(lang)
+        voice = provider.call_voice(lang)
         for key, text in missing.items():
             mp3_path = folder / f"{key}.mp3"
             try:
@@ -105,14 +103,14 @@ def main() -> int:
                     mp3 = clips.fetch(clips.voice_text(text), lang, voice) if fresh and attempt else (
                         clips.make(text, lang, voice) if fresh else mp3_path.read_bytes())
                     ul = to_ulaw(mp3)
-                    if not args.check or heard_right(text, ul):
+                    if not args.check or heard_right(text, ul, lang):
                         break
                     print(f"     garbled, again  {text[:50]}")
                 if lang in MP3_LANGS and (remake or not mp3_path.exists()):
                     mp3_path.write_bytes(mp3)
                 (folder / f"{key}.ul").write_bytes(ul)
                 print(f"     made  {text[:60]}")
-            except (yarngpt.SpeechUnavailable, RuntimeError) as err:
+            except (provider.SpeechUnavailable, RuntimeError) as err:
                 failed += 1
                 print(f"     FAILED {err}  {text[:60]}")
     return 1 if failed else 0

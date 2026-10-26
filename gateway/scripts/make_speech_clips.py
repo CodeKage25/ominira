@@ -4,7 +4,7 @@ Phones have no Yorùbá, Hausa or Igbo voice, so without these the app falls bac
 when the network is down. Lines with a name or an amount in them cannot be recorded ahead;
 those still go to the cloud voice, or the phone's.
 
-    set -a; . ../.env; set +a                       # YARNGPT_API_KEY, and YARNGPT_VOICES if pinned
+    set -a; . ../.env; set +a                       # the speech provider's key, and its voices if pinned
     uv run python scripts/make_speech_clips.py --dry-run
     uv run python scripts/make_speech_clips.py
     uv run python scripts/make_speech_clips.py --only en pcm
@@ -16,13 +16,14 @@ kept: the names it reads from `s.`, `spoken.` and the bank inside the app.
 Writes android/app/src/main/assets/audio/<lang>/<key>.mp3 plus index.json, which maps the key of
 each line, and of its English twin, to its clip. The key is ClipKey.of(text) in the app: a changed
 line gets a new clip, an unchanged one is never made twice, and clips no line uses are deleted.
-With ffmpeg on the PATH, each clip is re-encoded to 32 kbps mono, and a line too short for YarnGPT
-is said a few times over and cut at its first pause.
+With ffmpeg on the PATH, each clip is re-encoded to 32 kbps mono, and with YarnGPT a line too short
+for it is said a few times over and cut at its first pause.
 
-Clips go through YarnGPT's job route, billed in credits (about 1 per 1,000 characters), so they
-never use the 120 prepare calls a day the Gateway's live voice needs. The job route has its own
-120 a day; --route prepare spends the live voice's instead, for a day with no demo. --max-clips caps a run, and
-the run stops cleanly if YarnGPT rate-limits it; run it again and it carries on where it stopped.
+Speech comes from SPEECH_PROVIDER. ElevenLabs bills characters and has one route. With YarnGPT, clips
+go through its job route, billed in credits (about 1 per 1,000 characters), so they never use the 120
+prepare calls a day the Gateway's live voice needs. The job route has its own 120 a day; --route prepare
+spends the live voice's instead, for a day with no demo. --max-clips caps a run, and the run stops
+cleanly when the provider's limit or quota is reached; run it again and it carries on where it stopped.
 """
 
 import argparse
@@ -40,8 +41,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from make_language_clips import choose_voice, mp3_seconds  # noqa: E402
-from ominira.settings import settings  # noqa: E402
-from ominira.speech import yarngpt  # noqa: E402
+from ominira.speech import provider  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 ANDROID = ROOT / "android"
@@ -153,12 +153,12 @@ ROUTE = "job"
 
 def fetch(text: str, lang: str, voice: str | None) -> bytes:
     if ROUTE == "prepare":
-        audio = yarngpt.download(yarngpt.prepare(text, lang, output_format="mp3", voice=voice)["audio_url"])
+        audio = provider.mp3(text, lang, voice)
     else:
         # Same line, same key: a retry gets the first job back and is not billed again.
-        audio = yarngpt.render(text, voice, key=f"ominira-clip-{lang}-{clip_key(text)}")
+        audio = provider.render(text, lang, key=f"ominira-clip-{lang}-{clip_key(text)}", voice=voice)
     if not audio:
-        raise yarngpt.SpeechUnavailable("empty_audio", "YarnGPT returned no audio")
+        raise provider.SpeechUnavailable("empty_audio", "no audio came back")
     return audio
 
 
@@ -166,16 +166,16 @@ def make(text: str, lang: str, voice: str | None) -> bytes:
     text = voice_text(text)
     try:
         return squeeze(fetch(text, lang, voice))
-    except yarngpt.SpeechUnavailable as err:
-        if err.code != "INPUT_TOO_SHORT":
+    except provider.SpeechUnavailable as err:
+        if err.code != "INPUT_TOO_SHORT" or provider.name() != "yarngpt":
             raise
     if not shutil.which("ffmpeg"):
-        raise yarngpt.SpeechUnavailable("too_short", "needs ffmpeg to cut a repeated short line")
+        raise provider.SpeechUnavailable("too_short", "needs ffmpeg to cut a repeated short line")
     said = " ".join([text.rstrip(".") + "."] * max(2, -(-SHORT // len(text)) + 1))
     audio = fetch(said, lang, voice)
     pause = first_pause_s(audio)
     if pause is None:
-        raise yarngpt.SpeechUnavailable("no_pause", "could not find where the first saying ends")
+        raise provider.SpeechUnavailable("no_pause", "could not find where the first saying ends")
     return squeeze(cut(audio, pause + 0.15))
 
 
@@ -198,11 +198,11 @@ def main(argv: list[str] | None = None) -> int:
     rows = json.loads(args.lines.read_text(encoding="utf-8")) if args.lines else export_lines()
     spoken = spoken_names()
 
-    if not args.dry_run and not settings.yarngpt_api_key:
-        raise SystemExit("YARNGPT_API_KEY is not set. Put it in the environment (for example "
+    if not args.dry_run and not provider.enabled():
+        raise SystemExit(f"{provider.key_name()} is not set. Put it in the environment (for example "
                          "`set -a; . ../.env; set +a`) and run this again. Nothing was written.")
     if args.voice:
-        settings.yarngpt_voices = ",".join([settings.yarngpt_voices, *args.voice]).strip(",")
+        provider.pin_voices(args.voice)
 
     failed = 0
     budget = args.max_clips
@@ -229,9 +229,9 @@ def main(argv: list[str] | None = None) -> int:
             budget -= 1
             try:
                 audio = make(text, lang, voice)
-            except yarngpt.SpeechUnavailable as err:
-                if err.code == "RATE_LIMITED":
-                    stopped = "YarnGPT's daily limit is reached"
+            except provider.SpeechUnavailable as err:
+                if err.code in ("RATE_LIMITED", "quota_exceeded"):
+                    stopped = f"{provider.name()}'s limit is reached"
                     break
                 print(f"     FAILED {key}: {err}  {text[:60]}")
                 failed += 1

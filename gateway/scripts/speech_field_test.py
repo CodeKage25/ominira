@@ -1,6 +1,6 @@
-"""Field test for YarnGPT speech, run on a laptop with internet before relying on it in a demo.
+"""Field test for the speech provider (SPEECH_PROVIDER), run on a laptop with internet before a demo.
 
-    set -a; . ../.env; set +a                      # YARNGPT_API_KEY, and YARNGPT_VOICES if pinned
+    set -a; . ../.env; set +a                      # the provider's key, and its voices if pinned
     uv run python scripts/speech_field_test.py                       # all five languages
     uv run python scripts/speech_field_test.py --only yo ha          # some of them
     uv run python scripts/speech_field_test.py --voice yo=idera      # try a voice for one language
@@ -8,17 +8,16 @@
     uv run python scripts/speech_field_test.py --gateway http://localhost:8080   # through the Gateway too
 
 What it does, timing each step:
-  1. lists the voices and the languages transcription covers;
-  2. for each language, prepares a ticket exactly as the Gateway does, downloads the audio from the
-     stream URL exactly as the phone does, saves it to speech_out/<lang>.mp3, and transcribes it back;
-  3. with --gateway, calls /v1/speech/status, /say and /listen on a running Gateway.
+  1. lists the voice for each language (and for YarnGPT, its catalogue and the languages it hears);
+  2. for each language, makes the audio, saves it to speech_out/<lang>.mp3, and transcribes it back;
+  3. with --gateway, calls /v1/speech/status, /say and /listen on a running Gateway, and plays the
+     say link without a key, as the phone does.
 
-Every call spends YarnGPT credit; a full run is about fifteen calls. Judge the voices with a native
-speaker of each language, not by ear alone.
+Every call spends credit; a full run is about fifteen calls. Judge the voices with a native speaker
+of each language, not by ear alone.
 """
 
 import argparse
-import os
 import sys
 import time
 from pathlib import Path
@@ -28,7 +27,7 @@ import httpx
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from ominira.settings import settings  # noqa: E402
-from ominira.speech import yarngpt  # noqa: E402
+from ominira.speech import provider, yarngpt  # noqa: E402
 
 SAMPLES = {
     "en": "Twenty thousand naira. To Adebayo Tolulope. Zenith Bank, ending four, four, seven, one. Pulse your PIN to send.",
@@ -47,7 +46,11 @@ def step(title: str) -> None:
 
 
 def show_catalogue() -> None:
-    step("1. Voices")
+    step(f"1. Voices ({provider.name()})")
+    for lang in SAMPLES:
+        print(f"   {lang:3} {provider.voice_for(lang) or 'default'}")
+    if provider.name() != "yarngpt":
+        return
     started = time.monotonic()
     try:
         for v in yarngpt.voices():
@@ -71,32 +74,20 @@ def round_trip(lang: str) -> None:
     text = SAMPLES[lang]
     t0 = time.monotonic()
     try:
-        ticket = yarngpt.prepare(text, lang)
-    except yarngpt.SpeechUnavailable as err:
-        print(f"   {lang:3} prepare FAILED: {err}")
+        audio = provider.mp3(text, lang, provider.voice_for(lang))
+    except provider.SpeechUnavailable as err:
+        print(f"   {lang:3} speech FAILED: {err}")
         return
     t1 = time.monotonic()
-    first_byte = None
-    audio = bytearray()
-    with httpx.Client(timeout=60) as c, c.stream("GET", ticket["audio_url"]) as r:  # no key: the ticket is the credential
-        if r.status_code >= 400:
-            r.read()
-            print(f"   {lang:3} stream FAILED: {r.status_code} {r.text[:200]}")
-            return
-        for chunk in r.iter_bytes():
-            if first_byte is None:
-                first_byte = time.monotonic() - t1
-            audio += chunk
-    t2 = time.monotonic()
     path = OUT / f"{lang}.mp3"
-    path.write_bytes(bytes(audio))
+    path.write_bytes(audio)
     try:
-        heard = yarngpt.transcribe(bytes(audio), "audio/mpeg", wait_s=60)
-    except yarngpt.SpeechUnavailable as err:
+        heard = provider.transcribe(audio, "audio/mpeg", lang)
+    except provider.SpeechUnavailable as err:
         print(f"   {lang:3} transcribe FAILED: {err}")
         return
-    print(f"   {lang:3} voice={ticket['voice'] or 'default'}  ticket {t1 - t0:.2f} s, first audio {first_byte or 0:.2f} s, "
-          f"all audio {t2 - t1:.2f} s, transcript {heard['seconds']:.2f} s  -> {path}")
+    print(f"   {lang:3} voice={provider.voice_for(lang) or 'default'}  audio {t1 - t0:.2f} s, "
+          f"transcript {heard['seconds']:.2f} s  -> {path}")
     print(f"       said:  {text}")
     print(f"       heard: {heard['text']}")
 
@@ -106,9 +97,9 @@ def listen_files(files: list[str]) -> None:
     for name in files:
         p = Path(name)
         try:
-            heard = yarngpt.transcribe(p.read_bytes(), MEDIA.get(p.suffix.lower(), "audio/wav"), wait_s=60)
+            heard = provider.transcribe(p.read_bytes(), MEDIA.get(p.suffix.lower(), "audio/wav"))
             print(f"   {p.name}: {heard['text']!r} ({heard['seconds']:.2f} s)")
-        except (OSError, yarngpt.SpeechUnavailable) as err:
+        except (OSError, provider.SpeechUnavailable) as err:
             print(f"   {p.name} FAILED: {err}")
 
 
@@ -120,6 +111,10 @@ def through_gateway(base: str, files: list[str]) -> None:
         t0 = time.monotonic()
         r = c.post("/v1/speech/say", json={"text": "Sent. Tolu has it.", "lang": "en"})
         print(f"   say: {r.status_code} {r.json()} ({time.monotonic() - t0:.2f} s)")
+        if r.status_code == 200:
+            with httpx.Client(timeout=60) as bare:  # no key: the link is the credential
+                played = bare.get(r.json()["audio_url"])
+            print(f"   the say link, played bare: {played.status_code}, {len(played.content):,} bytes")
         sample = Path(files[0]) if files else OUT / "en.mp3"
         if sample.exists():
             t0 = time.monotonic()
@@ -136,10 +131,10 @@ def main() -> None:
     ap.add_argument("--gateway", help="also test a running Gateway, e.g. http://localhost:8080")
     args = ap.parse_args()
 
-    if not os.environ.get("YARNGPT_API_KEY"):
-        sys.exit("Set YARNGPT_API_KEY first.")
+    if not provider.enabled():
+        sys.exit(f"Set {provider.key_name()} first.")
     if args.voice:
-        settings.yarngpt_voices = ",".join([settings.yarngpt_voices, *args.voice]).strip(",")
+        provider.pin_voices(args.voice)
     OUT.mkdir(exist_ok=True)
 
     show_catalogue()

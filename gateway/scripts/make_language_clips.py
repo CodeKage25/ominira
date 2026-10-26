@@ -2,15 +2,15 @@
 
 The app's first screen speaks these before sign-in, so they ship inside the APK and play offline.
 
-    set -a; . ../.env; set +a                       # YARNGPT_API_KEY, and YARNGPT_VOICES if pinned
+    set -a; . ../.env; set +a                       # the speech provider's key, and its voices if pinned
     uv run python scripts/make_language_clips.py
     uv run python scripts/make_language_clips.py --only yo ha --voice yo=idera
     uv run python scripts/make_language_clips.py --out /tmp/clips
 
-Voice per language: --voice or YARNGPT_VOICES first, then the first voice YarnGPT's catalogue lists
-for that language, then YarnGPT's own default. Writes lang_<code>.mp3 into
-android/app/src/main/assets/audio/ unless --out says otherwise, and prints each clip's size and
-length. Each run spends one or two YarnGPT calls per language.
+Speech comes from SPEECH_PROVIDER. Voice per language: --voice or ELEVENLABS_VOICES / YARNGPT_VOICES
+first, then ELEVENLABS_DEFAULT_VOICE, or for YarnGPT the first voice its catalogue lists for that
+language, then its own default. Writes lang_<code>.mp3 into android/app/src/main/assets/audio/ unless
+--out says otherwise, and prints each clip's size and length. Each run spends one or two calls per language.
 """
 
 import argparse
@@ -19,8 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from ominira.settings import settings  # noqa: E402
-from ominira.speech import yarngpt  # noqa: E402
+from ominira.speech import provider  # noqa: E402
 
 # Native speakers: edit these lines, then run the script again.
 LINES = {
@@ -81,21 +80,20 @@ def mp3_seconds(data: bytes) -> float | None:
 
 def choose_voice(lang: str) -> tuple[str | None, str]:
     """(voice id, where it came from)."""
-    pinned = yarngpt.pinned_voices()
+    pinned = provider.pinned_voices()
     if lang in pinned:
         return pinned[lang], "pinned"
-    voice = yarngpt.voice_for(lang)
+    voice = provider.voice_for(lang)
     if voice:
-        return voice, "catalogue"
+        return voice, "catalogue" if provider.name() == "yarngpt" else "default voice"
     return None, "YarnGPT default"
 
 
 def make_clip(lang: str, out_dir: Path) -> dict:
     voice, source = choose_voice(lang)
-    ticket = yarngpt.prepare(LINES[lang], lang, output_format="mp3", voice=voice)
-    audio = yarngpt.download(ticket["audio_url"])
+    audio = provider.mp3(LINES[lang], lang, voice)
     if not audio:
-        raise yarngpt.SpeechUnavailable("empty_audio", "YarnGPT returned no audio")
+        raise provider.SpeechUnavailable("empty_audio", "no audio came back")
     path = out_dir / f"lang_{lang}.mp3"
     path.write_bytes(audio)
     return {"lang": lang, "voice": voice, "source": source, "path": path, "bytes": len(audio),
@@ -109,18 +107,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--voice", action="append", default=[], help="pin a voice for this run, e.g. yo=idera")
     args = ap.parse_args(argv)
 
-    if not settings.yarngpt_api_key:
-        raise SystemExit("YARNGPT_API_KEY is not set. Put it in the environment (for example "
+    if not provider.enabled():
+        raise SystemExit(f"{provider.key_name()} is not set. Put it in the environment (for example "
                          "`set -a; . ../.env; set +a`) and run this again. Nothing was written.")
     if args.voice:
-        settings.yarngpt_voices = ",".join([settings.yarngpt_voices, *args.voice]).strip(",")
+        provider.pin_voices(args.voice)
 
     args.out.mkdir(parents=True, exist_ok=True)
     failed = []
     for lang in args.only:
         try:
             clip = make_clip(lang, args.out)
-        except yarngpt.SpeechUnavailable as err:
+        except provider.SpeechUnavailable as err:
             print(f"{lang:3}  FAILED: {err}")
             failed.append(lang)
             continue
