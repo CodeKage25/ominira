@@ -25,6 +25,8 @@ jobs:
       - name: Build the debug APK and run the unit tests
         env:
           OMINIRA_GATEWAY_URL: ${{ secrets.OMINIRA_GATEWAY_URL }}
+          # ClipLinesTest writes every line the app speaks here, for scripts/make_speech_clips.py --lines.
+          OMINIRA_CLIP_LINES: ${{ runner.temp }}/ominira_clip_lines.json
         run: |
           fake=true
           if [ -n "$OMINIRA_GATEWAY_URL" ]; then fake=false; fi
@@ -34,6 +36,11 @@ jobs:
         with:
           name: ominira-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ominira-clip-lines
+          path: ${{ runner.temp }}/ominira_clip_lines.json
           retention-days: 14
 
   # main only: the latest APK on a "demo" pre-release, to download straight onto the demo phones.
