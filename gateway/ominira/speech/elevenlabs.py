@@ -12,7 +12,7 @@ from ominira.speech import SpeechUnavailable
 MP3 = "mp3_44100_128"
 TTS_TIMEOUT_S = 15.0
 STT_TIMEOUT_S = 25.0
-# No model lists Igbo or Pidgin: those are sent without a language code.
+# Only the v4 models list Yoruba, and none lists Igbo or Pidgin: those two go without a language code.
 TTS_LANGS = {"en", "yo", "ha"}
 # Pidgin is left to Scribe's own detection.
 STT_LANGS = {"en", "yo", "ha", "ig"}

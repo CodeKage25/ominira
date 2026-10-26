@@ -216,10 +216,10 @@ Google's recogniser still hears a ten-digit account number on the live call, whi
 If the provider is down, slow or out of credit, these answer `503 speech_unavailable` with a `say`
 line, and the app uses the phone's own voice.
 
-**ElevenLabs.** The app's voice is `ELEVENLABS_TTS_MODEL` (default `eleven_v3`); the live phone call
+**ElevenLabs.** The app's voice is `ELEVENLABS_TTS_MODEL` (default `eleven_v4`); the live phone call
 asks `ELEVENLABS_LIVE_MODEL` (default `eleven_v4_turbo`) for 8 kHz μ-law, which streams to Twilio as it
 is, with no ffmpeg. Listening is Scribe (`ELEVENLABS_STT_MODEL`, default `scribe_v2`), told the
-customer's language. The models list English, Yorùbá and Hausa, so those are sent with their
+customer's language. The v4 models list English, Yorùbá and Hausa (v3 has no Yorùbá), so those are sent with their
 language code. **No model lists Igbo or Nigerian Pidgin**: those are spoken without a language code
 (Pidgin is close to English), so judge them by ear with a native speaker before relying on them.
 Pin a voice per language with `ELEVENLABS_VOICES="en=<id>,pcm=<id>,yo=<id>,ha=<id>,ig=<id>"`;

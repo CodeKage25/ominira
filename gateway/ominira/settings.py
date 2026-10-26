@@ -50,7 +50,7 @@ class Settings:
     speech_provider: str = field(default_factory=lambda: _env("SPEECH_PROVIDER", "elevenlabs").lower())  # or yarngpt
     elevenlabs_api_key: str = field(default_factory=lambda: _env("ELEVENLABS_API_KEY", ""))
     elevenlabs_base: str = field(default_factory=lambda: _env("ELEVENLABS_BASE", "https://api.elevenlabs.io"))
-    elevenlabs_tts_model: str = field(default_factory=lambda: _env("ELEVENLABS_TTS_MODEL", "eleven_v3"))
+    elevenlabs_tts_model: str = field(default_factory=lambda: _env("ELEVENLABS_TTS_MODEL", "eleven_v4"))
     elevenlabs_live_model: str = field(default_factory=lambda: _env("ELEVENLABS_LIVE_MODEL", "eleven_v4_turbo"))
     elevenlabs_stt_model: str = field(default_factory=lambda: _env("ELEVENLABS_STT_MODEL", "scribe_v2"))
     elevenlabs_voices: str = field(default_factory=lambda: _env("ELEVENLABS_VOICES", ""))

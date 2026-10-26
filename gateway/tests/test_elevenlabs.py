@@ -71,7 +71,7 @@ def test_speech_request_shape(eleven, lang, voice, code):
     assert req.url.path == f"/v1/text-to-speech/{voice}"
     assert dict(req.url.params) == {"output_format": "mp3_44100_128"}
     body = json.loads(req.content)
-    assert body["text"] == "Twenty thousand naira to Tolu." and body["model_id"] == "eleven_v3"
+    assert body["text"] == "Twenty thousand naira to Tolu." and body["model_id"] == "eleven_v4"
     assert body.get("language_code") == code
 
 
